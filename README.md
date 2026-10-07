@@ -23,3 +23,15 @@ Rust 1.89 or newer, edition 2024, Bevy 0.18.1. Dependencies are locked in Cargo.
 cargo fmt --all --check
 cargo clippy --offline --workspace --all-targets --all-features -- -D warnings
 ```
+
+## Captured-view projection
+
+`--view /path/to/view.txt` projects the Hangar source instances through a captured original camera. It reports CPU projection counts and does not open a game window. The strict text format contains three records:
+
+```text
+camera X Y Z
+matrix M00 M01 M02 M10 M11 M12 M20 M21 M22
+viewport RIGHT BOTTOM LEFT TOP NEAR FAR UNKNOWN FOCAL CENTER_X CENTER_Y
+```
+
+Camera coordinates are signed integer source units, matrix entries are signed 16-bit Q12, and viewport fields are unsigned 16-bit values. The original viewport's far distance is multiplied by 1.5. This path supports unrotated source items and normal projection; runtime object changes, reflection, lighting and draw submission remain unimplemented. Invalid captures and unsupported item state fail explicitly.

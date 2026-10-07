@@ -5,6 +5,8 @@ use thps2_data::draw::{DrawFace, FaceOverride, PreparedVertex, prepare_face, pre
 use thps2_data::materials::{Surface1555, Texture, TextureSource, resolve_textures};
 use thps2_data::pkr::Archive;
 use thps2_data::psx::Scene;
+mod view;
+use view::{CapturedView, ProjectedInstance, project_hangar};
 
 #[derive(Resource)]
 struct OriginalData(Archive);
@@ -141,7 +143,11 @@ fn prepare_hangar_draws(scene: &Scene, textures: &[Texture]) -> Result<Vec<Vec<D
         .collect()
 }
 
-fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
+fn inspect(
+    root: PathBuf,
+    manifest: bool,
+    captured: Option<CapturedView>,
+) -> Result<(), Box<dyn Error>> {
     let path = root.join("ALL.PKR");
     let bytes =
         std::fs::read(&path).map_err(|error| format!("archive={} {error}", path.display()))?;
@@ -170,10 +176,13 @@ fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
         archive.entries().len()
     );
     let mut app = App::new();
+    if let Some(captured) = captured {
+        app.insert_resource(captured);
+    }
     app.add_plugins(MinimalPlugins)
         .insert_resource(OriginalData(archive))
         .init_resource::<SessionAssets>()
-        .add_systems(Startup, load_hangar);
+        .add_systems(Startup, (load_hangar, project_hangar).chain());
     app.update();
     let assets = app.world().resource::<SessionAssets>();
     if let Some(error) = &assets.error {
@@ -247,6 +256,20 @@ fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
         skater.models.len(),
         skater.embedded_textures.len()
     );
+    if app.world().contains_resource::<CapturedView>() {
+        let mut query = app.world_mut().query::<&ProjectedInstance>();
+        let instances: Vec<_> = query.iter(app.world()).collect();
+        println!(
+            "[projection] items={} vertices={} inside={} source_items_only=true mode=normal gpu_submission=false",
+            instances.len(),
+            instances.iter().map(|i| i.0.len()).sum::<usize>(),
+            instances
+                .iter()
+                .flat_map(|i| &i.0)
+                .filter(|v| v.clip == 0)
+                .count()
+        );
+    }
     Ok(())
 }
 
@@ -254,6 +277,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args_os().skip(1);
     let mut root = None;
     let mut manifest = false;
+    let mut captured = None;
     while let Some(arg) = args.next() {
         if arg == "--data-root" {
             root = Some(PathBuf::from(
@@ -261,18 +285,30 @@ fn run() -> Result<(), Box<dyn Error>> {
             ));
         } else if arg == "--manifest" {
             manifest = true;
+        } else if arg == "--view" {
+            let path = PathBuf::from(args.next().ok_or("--view requires a capture file")?);
+            let text = std::fs::read_to_string(&path)
+                .map_err(|error| format!("view={} {error}", path.display()))?;
+            captured = Some(
+                CapturedView::parse(&text)
+                    .map_err(|error| format!("view={} {error}", path.display()))?,
+            );
         } else if arg == "--help" {
             println!(
-                "Usage: thps2-rs --data-root DIRECTORY [--manifest]\nInspect original resources and load Hangar dependencies through Bevy."
+                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE]\nInspect original resources and optionally project Hangar from a captured view."
             );
             return Ok(());
         } else {
             return Err(format!("unknown argument={arg:?}").into());
         }
     }
+    if manifest && captured.is_some() {
+        return Err("--manifest and --view are mutually exclusive".into());
+    }
     inspect(
         root.ok_or("--data-root is required (directory containing ALL.PKR)")?,
         manifest,
+        captured,
     )
 }
 

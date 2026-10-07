@@ -90,8 +90,11 @@ pub enum Outcome {
 
 type V3 = [i32; 3];
 
+/// The executable scales by the single precision constants 2^-12 and 6.2831854820251465.
+const TWO_PI_F32: f64 = 6.283_185_482_025_146_5;
+
 fn trig_q12(angle: i32) -> (i32, i32) {
-    let radians = f64::from(angle & 0xfff) * std::f64::consts::TAU / 4096.0;
+    let radians = f64::from(angle & 0xfff) * (1.0 / 4096.0) * TWO_PI_F32;
     (
         (radians.cos() * 4096.0) as i32,
         (radians.sin() * 4096.0) as i32,

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use sha2::{Digest, Sha256};
 use std::{error::Error, path::PathBuf, process::ExitCode};
-use thps2_data::materials::{Texture, TextureSource, resolve_textures};
+use thps2_data::materials::{Surface1555, Texture, TextureSource, resolve_textures};
 use thps2_data::pkr::Archive;
 use thps2_data::psx::Scene;
 
@@ -16,6 +16,9 @@ struct SkaterScene(Scene);
 
 #[derive(Resource)]
 struct HangarTextures(Vec<Texture>);
+
+#[derive(Resource)]
+struct HangarSurfaces(Vec<Surface1555>);
 
 #[derive(Component)]
 struct SceneInstance {
@@ -61,7 +64,12 @@ fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResM
                     resolve_textures(&data.0, &scene.texture_checksums, &bank, "Hangar")
                 });
             match textures {
-                Ok(textures) => commands.insert_resource(HangarTextures(textures)),
+                Ok(textures) => {
+                    commands.insert_resource(HangarSurfaces(
+                        textures.iter().map(Texture::surface_1555).collect(),
+                    ));
+                    commands.insert_resource(HangarTextures(textures));
+                }
                 Err(error) => {
                     assets.error = Some(error);
                     return;
@@ -149,6 +157,16 @@ fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
         textures.len(),
         bitmap_count,
         textures.len() - bitmap_count
+    );
+    let surfaces = &app.world().resource::<HangarSurfaces>().0;
+    let transparent = surfaces
+        .iter()
+        .flat_map(|s| &s.pixels)
+        .filter(|&&pixel| pixel == 0)
+        .count();
+    println!(
+        "[surfaces] format=ARGB1555 count={} transparent_pixels={transparent} gpu_upload=false",
+        surfaces.len()
     );
     let skater = &app.world().resource::<SkaterScene>().0;
     println!(

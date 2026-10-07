@@ -97,3 +97,52 @@ pub fn resolve_textures(
         })
         .collect()
 }
+
+#[derive(Debug)]
+pub struct Surface1555 {
+    pub width: u16,
+    pub height: u16,
+    pub pixels: Vec<u16>,
+}
+
+impl Texture {
+    // Normal color mode in the preferred native ARGB1555 surface format.
+    pub fn surface_1555(&self) -> Surface1555 {
+        match &self.source {
+            TextureSource::Bitmap { image, .. } => Surface1555 {
+                width: image.width,
+                height: image.height,
+                pixels: image
+                    .rgb
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|&[r, g, b]| {
+                        if r >= 248 && g == 0 && b >= 248 {
+                            0
+                        } else {
+                            0x8000
+                                | ((r as u16 >> 3) << 10)
+                                | ((g as u16 >> 3) << 5)
+                                | (b as u16 >> 3)
+                        }
+                    })
+                    .collect(),
+            },
+            TextureSource::PaletteWords(words) => Surface1555 {
+                width: self.logical_size[0],
+                height: self.logical_size[1],
+                pixels: words
+                    .iter()
+                    .map(|&word| {
+                        if word & 0x7fff == 0x7c1f {
+                            0
+                        } else {
+                            0x8000 | ((word & 0x1f) << 10) | (word & 0x3e0) | ((word >> 10) & 0x1f)
+                        }
+                    })
+                    .collect(),
+            },
+        }
+    }
+}

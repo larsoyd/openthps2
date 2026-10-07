@@ -10,6 +10,9 @@ struct OriginalData(Archive);
 #[derive(Resource)]
 struct OriginalScene(Scene);
 
+#[derive(Resource)]
+struct SkaterScene(Scene);
+
 #[derive(Component)]
 struct SceneInstance {
     item_index: usize,
@@ -36,6 +39,13 @@ fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResM
                 assets.error = Some(error.to_string());
                 return;
             }
+        }
+    }
+    match Scene::parse(&assets.files[2].1) {
+        Ok(scene) => commands.insert_resource(SkaterScene(scene)),
+        Err(error) => {
+            assets.error = Some(format!("entry={} {error}", HANGAR_FILES[2]));
+            return;
         }
     }
     match Scene::parse(&assets.files[0].1) {
@@ -111,6 +121,12 @@ fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
         placed_faces,
         scene.texture_checksums.len(),
         scene.chunks.len()
+    );
+    let skater = &app.world().resource::<SkaterScene>().0;
+    println!(
+        "[skater] models={} embedded_textures={} animation=false",
+        skater.models.len(),
+        skater.embedded_textures.len()
     );
     Ok(())
 }

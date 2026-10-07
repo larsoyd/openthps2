@@ -37,14 +37,32 @@ pub struct Chunk {
 }
 
 #[derive(Debug)]
+pub struct EmbeddedTexture {
+    pub flags: u32,
+    pub color_count: u32,
+    pub palette_checksum: u32,
+    pub texture_index: u32,
+    pub width: u16,
+    pub height: u16,
+    pub indices: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct Palette {
+    pub checksum: u32,
+    pub colors: Vec<u16>,
+}
+
+#[derive(Debug)]
 pub struct Scene {
     pub header_word: u32,
     pub items: Vec<Item>,
     pub models: Vec<Model>,
     pub chunks: Vec<Chunk>,
     pub texture_checksums: Vec<u32>,
-    pub palettes16: Vec<Vec<u8>>,
-    pub palettes256: Vec<Vec<u8>>,
+    pub palettes16: Vec<Palette>,
+    pub palettes256: Vec<Palette>,
+    pub embedded_textures: Vec<EmbeddedTexture>,
 }
 
 impl Scene {
@@ -110,16 +128,65 @@ impl Scene {
         }
         let count = reader.u32()? as usize;
         let texture_checksums = reader.words(count)?;
-        let palettes16 = reader.records(36)?;
-        let palettes256 = reader.records(516)?;
-        let embedded_count = reader.u32()?;
-        if embedded_count != 0 {
-            return Err(failure(
-                reader.position - 4,
-                format!("unsupported embedded textures={embedded_count}"),
-            ));
+        let palettes16 = reader.palettes(16)?;
+        let palettes256 = reader.palettes(256)?;
+        let embedded_count = reader.u32()? as usize;
+        let texture_offsets = reader.words(embedded_count)?;
+        let texture_start = reader.position;
+        let mut embedded_textures = Vec::with_capacity(embedded_count);
+        for offset in texture_offsets {
+            if (offset as usize) < texture_start {
+                return Err(failure(offset as usize, "embedded texture overlaps tables"));
+            }
+            let mut r = Reader::new(bytes, offset as usize);
+            let flags = r.u32()?;
+            let color_count = r.u32()?;
+            let palette_checksum = r.u32()?;
+            let texture_index = r.u32()?;
+            let width = r.u16()?;
+            let height = r.u16()?;
+            if width == 0 || height == 0 || texture_index as usize >= texture_checksums.len() {
+                return Err(failure(
+                    offset as usize,
+                    format!("invalid texture index={texture_index} dimensions={width}x{height}"),
+                ));
+            }
+            let row_bytes = match color_count {
+                16 => ((width as usize + 3) & !3) / 2,
+                256 => (width as usize + 1) & !1,
+                _ => {
+                    return Err(failure(
+                        offset as usize + 4,
+                        format!("unsupported color_count={color_count}"),
+                    ));
+                }
+            };
+            let packed = r.table(height as usize, row_bytes)?;
+            let mut indices = Vec::with_capacity(width as usize * height as usize);
+            for row in packed.chunks_exact(row_bytes) {
+                for x in 0..width as usize {
+                    let index = if color_count == 16 {
+                        (row[x / 2] >> ((x & 1) * 4)) & 15
+                    } else {
+                        row[x]
+                    };
+                    indices.push(index);
+                }
+            }
+            reader.position = reader.position.max(r.position);
+            embedded_textures.push(EmbeddedTexture {
+                flags,
+                color_count,
+                palette_checksum,
+                texture_index,
+                width,
+                height,
+                indices,
+            });
         }
-        if reader.position != bytes.len() {
+        let aligned_texture_end =
+            embedded_count != 0 && reader.position.next_multiple_of(4) == bytes.len();
+        if reader.position != bytes.len() && !aligned_texture_end {
             return Err(failure(
                 reader.position,
                 format!(
@@ -151,6 +218,7 @@ impl Scene {
             texture_checksums,
             palettes16,
             palettes256,
+            embedded_textures,
         })
     }
 }
@@ -266,13 +334,20 @@ impl<'a> Reader<'a> {
             .collect())
     }
 
-    fn records(&mut self, stride: usize) -> Result<Vec<Vec<u8>>, String> {
+    fn palettes(&mut self, colors: usize) -> Result<Vec<Palette>, String> {
         let count = self.u32()? as usize;
-        Ok(self
-            .table(count, stride)?
-            .chunks_exact(stride)
-            .map(<[u8]>::to_vec)
-            .collect())
+        let records = self.table(count, 4 + colors * 2)?;
+        records
+            .chunks_exact(4 + colors * 2)
+            .map(|record| {
+                let mut r = Reader::new(record, 0);
+                let checksum = r.u32()?;
+                let colors = (0..colors)
+                    .map(|_| r.u16())
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Palette { checksum, colors })
+            })
+            .collect()
     }
 }
 

@@ -297,7 +297,7 @@ impl CollisionWorld {
                     .ok_or_else(|| {
                         format!("collision item={item_index} face={index} invalid normal index")
                     })?;
-                if flags & 0x30000 == 0x10000 || flags & 0x20000 != 0 || flags & 0x400000 != 0 {
+                if flags & 0x30000 == 0x10000 || flags & 0x20000 != 0 {
                     continue;
                 }
                 let normal = std::array::from_fn(|a| {
@@ -352,8 +352,18 @@ impl CollisionWorld {
         Ok(Self { zone, items })
     }
 
-    /// Q12 endpoints, static skater filter, no trigger execution or moving objects.
+    /// Q12 endpoints, static skater filter ignoring lip faces, no trigger execution or moving objects.
     pub fn query(&self, start: [i32; 3], end: [i32; 3]) -> Result<Option<Hit>, String> {
+        self.query_filtered(start, end, true)
+    }
+
+    /// Lip faces carry bit 22 and are skipped only while the native probe flag is raised.
+    pub fn query_filtered(
+        &self,
+        start: [i32; 3],
+        end: [i32; 3],
+        ignore_lips: bool,
+    ) -> Result<Option<Hit>, String> {
         if start == end {
             return Ok(None);
         }
@@ -376,6 +386,7 @@ impl CollisionWorld {
             end,
             delta,
             length,
+            ignore_lips,
         };
         let mut best = None;
         let mut stamped = vec![false; self.items.len()];
@@ -400,6 +411,7 @@ impl CollisionWorld {
             end,
             delta,
             length,
+            ignore_lips,
         } = *query;
         let item = &self.items[item_index];
         let s: [i64; 3] =
@@ -407,6 +419,9 @@ impl CollisionWorld {
         let e: [i64; 3] =
             std::array::from_fn(|a| i64::from(end[a] >> 12) - i64::from(item.position[a] >> 12));
         for face in &item.faces {
+            if ignore_lips && face.flags & 0x400000 != 0 {
+                continue;
+            }
             if (0..3).any(|a| {
                 face.bounds[0][a] > i64::from(start[a].max(end[a]) & !0xfff) + 0x4000
                     || face.bounds[1][a] < i64::from(start[a].min(end[a]) & !0xfff) - 0x4000
@@ -475,6 +490,7 @@ struct Query {
     end: [i32; 3],
     delta: [i64; 3],
     length: i64,
+    ignore_lips: bool,
 }
 
 /// Native a*b/c truncates an x87 quotient, exact division only differs within one extended ulp.

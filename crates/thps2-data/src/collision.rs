@@ -91,6 +91,138 @@ impl ZoneGrid {
         self.cells
             .get(coordinates[1] * self.dimensions[0] + coordinates[0])
     }
+
+    /// Cells a Q12 XZ segment visits in native order, clipped to the zone box first.
+    pub fn walk(&self, start: [i32; 2], end: [i32; 2]) -> Vec<[usize; 2]> {
+        let [mut sx, mut sz] = start.map(i64::from);
+        let [mut ex, mut ez] = end.map(i64::from);
+        let [min_x, min_z] = self.min.map(i64::from);
+        let [max_x, max_z] = self.max.map(i64::from);
+        if (sx < min_x && ex < min_x)
+            || (sx > max_x && ex > max_x)
+            || (sz < min_z && ez < min_z)
+            || (sz > max_z && ez > max_z)
+        {
+            return Vec::new();
+        }
+        let cell = self.cell_size;
+        let dims = self.dimensions.map(|d| d as i64);
+        if sx == ex && sz == ez {
+            let cx = ((sx - min_x) / cell).min(dims[0] - 1);
+            let cz = ((sz - min_z) / cell).min(dims[1] - 1);
+            return vec![[cx as usize, cz as usize]];
+        }
+        if sx < min_x {
+            sz = if sz < ez {
+                sz + muldiv(min_x - sx, ez - sz, ex - sx)
+            } else {
+                ez + muldiv(ex - min_x, sz - ez, ex - sx)
+            };
+            sx = min_x;
+        }
+        if ex < min_x {
+            ez = if ez < sz {
+                ez + muldiv(min_x - ex, sz - ez, sx - ex)
+            } else {
+                sz + muldiv(sx - min_x, ez - sz, sx - ex)
+            };
+            ex = min_x;
+        }
+        if sx > max_x {
+            sz = if ez < sz {
+                ez + muldiv(max_x - ex, sz - ez, sx - ex)
+            } else {
+                sz + muldiv(sx - max_x, ez - sz, sx - ex)
+            };
+            sx = max_x;
+        }
+        if ex > max_x {
+            ez = if sz < ez {
+                sz + muldiv(max_x - sx, ez - sz, ex - sx)
+            } else {
+                ez + muldiv(ex - max_x, sz - ez, ex - sx)
+            };
+            ex = max_x;
+        }
+        if sz < min_z {
+            sx = if sx < ex {
+                sx + muldiv(min_z - sz, ex - sx, ez - sz)
+            } else {
+                ex + muldiv(ez - min_z, sx - ex, ez - sz)
+            };
+            sz = min_z;
+        }
+        if ez < min_z {
+            ex = if ex < sx {
+                ex + muldiv(min_z - ez, sx - ex, sz - ez)
+            } else {
+                sx + muldiv(sz - min_z, ex - sx, sz - ez)
+            };
+            ez = min_z;
+        }
+        if sz > max_z {
+            sx = if ex < sx {
+                ex + muldiv(max_z - ez, sx - ex, sz - ez)
+            } else {
+                sx + muldiv(sz - max_z, ex - sx, sz - ez)
+            };
+            sz = max_z;
+        }
+        if ez > max_z {
+            ex = if sx < ex {
+                sx + muldiv(max_z - sz, ex - sx, ez - sz)
+            } else {
+                ex + muldiv(ez - max_z, sx - ex, ez - sz)
+            };
+            ez = max_z;
+        }
+        let step = |d: i64| if d < 0 { -1 } else { 1 };
+        let (dx, step_x) = ((ex - sx).abs(), step(ex - sx));
+        let (dz, step_z) = ((ez - sz).abs(), step(ez - sz));
+        let (mut cx, mut cz) = ((sx - min_x) / cell, (sz - min_z) / cell);
+        let (mut rx, mut rz) = ((sx - min_x) % cell, (sz - min_z) % cell);
+        let (mut last_x, mut last_z) = ((ex - min_x) / cell, (ez - min_z) / cell);
+        if cx == dims[0] {
+            cx -= 1;
+            rx += cell;
+        }
+        if cz == dims[1] {
+            cz -= 1;
+            rz += cell;
+        }
+        if last_x == dims[0] {
+            last_x -= 1;
+        }
+        if last_z == dims[1] {
+            last_z -= 1;
+        }
+        let mut to_z = muldiv(dx, rz, cell);
+        let mut to_x = muldiv(dz, rx, cell);
+        to_x = if sx < ex { to_x - dz } else { -to_x };
+        if sz < ez {
+            to_z = dx - to_z;
+        }
+        let mut error = to_z + to_x;
+        let mut cells = Vec::new();
+        let in_grid = |x: i64, z: i64| x >= 0 && x < dims[0] && z >= 0 && z < dims[1];
+        while cx != last_x || cz != last_z {
+            if !in_grid(cx, cz) {
+                break;
+            }
+            cells.push([cx as usize, cz as usize]);
+            if error < 0 {
+                error += dx;
+                cz += step_z;
+            } else {
+                error -= dz;
+                cx += step_x;
+            }
+        }
+        if in_grid(cx, cz) {
+            cells.push([cx as usize, cz as usize]);
+        }
+        cells
+    }
 }
 
 #[derive(Debug)]
@@ -221,20 +353,10 @@ impl CollisionWorld {
     }
 
     /// Q12 endpoints, static skater filter, no trigger execution or moving objects.
-    pub fn query_single_cell(&self, start: [i32; 3], end: [i32; 3]) -> Result<Option<Hit>, String> {
+    pub fn query(&self, start: [i32; 3], end: [i32; 3]) -> Result<Option<Hit>, String> {
         if start == end {
             return Ok(None);
         }
-        if [0, 2].into_iter().enumerate().any(|(i, a)| {
-            start[a].max(end[a]) < self.zone.min[i] || start[a].min(end[a]) > self.zone.max[i]
-        }) {
-            return Ok(None);
-        }
-        let start_cell = self.zone.cell_at([start[0], start[2]]);
-        let end_cell = self.zone.cell_at([end[0], end[2]]);
-        let Some(cell) = start_cell.filter(|_| start_cell == end_cell) else {
-            return Err("collision multi-cell/outside-to-inside traversal unsupported".into());
-        };
         let delta: [i64; 3] = std::array::from_fn(|a| i64::from(end[a]) - i64::from(start[a]));
         if delta.iter().any(|&v| i32::try_from(v).is_err()) {
             return Err("collision query delta overflow".into());
@@ -252,79 +374,113 @@ impl CollisionWorld {
         if length == 0 {
             return Ok(None);
         }
-        let mut best: Option<Hit> = None;
-        for &item_index in &self.zone.cell(cell).unwrap().items {
-            let item = &self.items[item_index];
-            let s: [i64; 3] = std::array::from_fn(|a| {
-                i64::from(start[a] >> 12) - i64::from(item.position[a] >> 12)
-            });
-            let e: [i64; 3] = std::array::from_fn(|a| {
-                i64::from(end[a] >> 12) - i64::from(item.position[a] >> 12)
-            });
-            for face in &item.faces {
-                if (0..3).any(|a| {
-                    face.bounds[0][a] > i64::from(start[a].max(end[a]) & !0xfff) + 0x4000
-                        || face.bounds[1][a] < i64::from(start[a].min(end[a]) & !0xfff) - 0x4000
-                }) {
-                    continue;
+        let query = Query {
+            start,
+            end,
+            delta,
+            length,
+        };
+        let mut best = None;
+        let mut stamped = vec![false; self.items.len()];
+        for cell in self.zone.walk([start[0], start[2]], [end[0], end[2]]) {
+            for &item_index in &self.zone.cell(cell).unwrap().items {
+                if !std::mem::replace(&mut stamped[item_index], true) {
+                    self.test_item(item_index, &query, &mut best)?;
                 }
-                let plane = |p: [i64; 3]| -> Result<i64, String> {
-                    let distance: i64 = (0..3)
-                        .map(|a| {
-                            i64::from(face.normal[a]) * (p[a] - i64::from(face.vertices[0][a]))
-                        })
-                        .sum();
-                    i32::try_from(distance)
-                        .map(i64::from)
-                        .map_err(|_| "collision plane distance overflow".into())
-                };
-                let d0 = plane(s)?;
-                let d1 = plane(e)?;
-                if d0 < 0 || d1 > 0 || (d0 < 0x800 && d1 > -0x800) {
-                    continue;
-                }
-                let direction: [f64; 3] = std::array::from_fn(|a| (e[a] - s[a]) as f64);
-                let mut inside = true;
-                for edge in 0..face.vertices.len() {
-                    let a: [f64; 3] =
-                        std::array::from_fn(|i| (i64::from(face.vertices[edge][i]) - s[i]) as f64);
-                    let b: [f64; 3] = std::array::from_fn(|i| {
-                        (i64::from(face.vertices[(edge + 1) % face.vertices.len()][i]) - s[i])
-                            as f64
-                    });
-                    let cross = [
-                        a[1] * b[2] - a[2] * b[1],
-                        a[2] * b[0] - a[0] * b[2],
-                        a[0] * b[1] - a[1] * b[0],
-                    ];
-                    if (0..3).map(|i| cross[i] * direction[i]).sum::<f64>() < 0.0 {
-                        inside = false;
-                        break;
-                    }
-                }
-                if !inside {
-                    continue;
-                }
-                let denominator =
-                    i32::try_from(d0 - d1).map_err(|_| "collision plane difference overflow")?;
-                let t = d0 * 0x4000 / i64::from(denominator);
-                if best.is_some_and(|hit| i64::from(hit.t_q14) <= t) {
-                    continue;
-                }
-                let position_fixed =
-                    std::array::from_fn(|a| (i64::from(start[a]) + delta[a] * t / 0x4000) as i32);
-                best = Some(Hit {
-                    item_index,
-                    model_index: item.model,
-                    face_index: face.index,
-                    t_q14: t as i32,
-                    position_fixed,
-                    normal: face.normal,
-                    distance_units: (length * t / 0x4000) as i32,
-                    flags: face.flags,
-                });
             }
         }
         Ok(best)
     }
+
+    fn test_item(
+        &self,
+        item_index: usize,
+        query: &Query,
+        best: &mut Option<Hit>,
+    ) -> Result<(), String> {
+        let Query {
+            start,
+            end,
+            delta,
+            length,
+        } = *query;
+        let item = &self.items[item_index];
+        let s: [i64; 3] =
+            std::array::from_fn(|a| i64::from(start[a] >> 12) - i64::from(item.position[a] >> 12));
+        let e: [i64; 3] =
+            std::array::from_fn(|a| i64::from(end[a] >> 12) - i64::from(item.position[a] >> 12));
+        for face in &item.faces {
+            if (0..3).any(|a| {
+                face.bounds[0][a] > i64::from(start[a].max(end[a]) & !0xfff) + 0x4000
+                    || face.bounds[1][a] < i64::from(start[a].min(end[a]) & !0xfff) - 0x4000
+            }) {
+                continue;
+            }
+            let plane = |p: [i64; 3]| -> Result<i64, String> {
+                let distance: i64 = (0..3)
+                    .map(|a| i64::from(face.normal[a]) * (p[a] - i64::from(face.vertices[0][a])))
+                    .sum();
+                i32::try_from(distance)
+                    .map(i64::from)
+                    .map_err(|_| "collision plane distance overflow".into())
+            };
+            let d0 = plane(s)?;
+            let d1 = plane(e)?;
+            if d0 < 0 || d1 > 0 || (d0 < 0x800 && d1 > -0x800) {
+                continue;
+            }
+            let direction: [f64; 3] = std::array::from_fn(|a| (e[a] - s[a]) as f64);
+            let mut inside = true;
+            for edge in 0..face.vertices.len() {
+                let a: [f64; 3] =
+                    std::array::from_fn(|i| (i64::from(face.vertices[edge][i]) - s[i]) as f64);
+                let b: [f64; 3] = std::array::from_fn(|i| {
+                    (i64::from(face.vertices[(edge + 1) % face.vertices.len()][i]) - s[i]) as f64
+                });
+                let cross = [
+                    a[1] * b[2] - a[2] * b[1],
+                    a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0],
+                ];
+                if (0..3).map(|i| cross[i] * direction[i]).sum::<f64>() < 0.0 {
+                    inside = false;
+                    break;
+                }
+            }
+            if !inside {
+                continue;
+            }
+            let denominator =
+                i32::try_from(d0 - d1).map_err(|_| "collision plane difference overflow")?;
+            let t = d0 * 0x4000 / i64::from(denominator);
+            if best.is_some_and(|hit| i64::from(hit.t_q14) <= t) {
+                continue;
+            }
+            let position_fixed =
+                std::array::from_fn(|a| (i64::from(start[a]) + delta[a] * t / 0x4000) as i32);
+            *best = Some(Hit {
+                item_index,
+                model_index: item.model,
+                face_index: face.index,
+                t_q14: t as i32,
+                position_fixed,
+                normal: face.normal,
+                distance_units: (length * t / 0x4000) as i32,
+                flags: face.flags,
+            });
+        }
+        Ok(())
+    }
+}
+
+struct Query {
+    start: [i32; 3],
+    end: [i32; 3],
+    delta: [i64; 3],
+    length: i64,
+}
+
+/// Native a*b/c truncates an x87 quotient, exact division only differs within one extended ulp.
+fn muldiv(a: i64, b: i64, c: i64) -> i64 {
+    (i128::from(a) * i128::from(b) / i128::from(c)) as i64
 }

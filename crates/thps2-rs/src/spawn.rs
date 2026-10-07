@@ -31,7 +31,7 @@ fn place(restart: &Restart, collision: &CollisionWorld) -> Result<SkaterPlacemen
         .checked_add(186 * 4096)
         .ok_or("spawn ground probe overflow")?;
     let ground = collision
-        .query_single_cell(above, below)?
+        .query(above, below)?
         .ok_or("spawn has no supporting ground")?;
     if ground.distance_units >= 116 {
         return Err(format!(

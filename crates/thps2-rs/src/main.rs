@@ -2,9 +2,18 @@ use bevy::prelude::*;
 use sha2::{Digest, Sha256};
 use std::{error::Error, path::PathBuf, process::ExitCode};
 use thps2_data::pkr::Archive;
+use thps2_data::psx::Scene;
 
 #[derive(Resource)]
 struct OriginalData(Archive);
+
+#[derive(Resource)]
+struct OriginalScene(Scene);
+
+#[derive(Component)]
+struct SceneInstance {
+    item_index: usize,
+}
 
 #[derive(Resource, Default)]
 struct SessionAssets {
@@ -19,7 +28,7 @@ const HANGAR_FILES: [&str; 4] = [
     "data/HAWK.PSH",
 ];
 
-fn load_hangar(data: Res<OriginalData>, mut assets: ResMut<SessionAssets>) {
+fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResMut<SessionAssets>) {
     for path in HANGAR_FILES {
         match data.0.read(path) {
             Ok(bytes) => assets.files.push((path, bytes.to_vec())),
@@ -28,6 +37,15 @@ fn load_hangar(data: Res<OriginalData>, mut assets: ResMut<SessionAssets>) {
                 return;
             }
         }
+    }
+    match Scene::parse(&assets.files[0].1) {
+        Ok(scene) => {
+            for item_index in 0..scene.items.len() {
+                commands.spawn(SceneInstance { item_index });
+            }
+            commands.insert_resource(OriginalScene(scene));
+        }
+        Err(error) => assets.error = Some(format!("entry={} {error}", HANGAR_FILES[0])),
     }
 }
 
@@ -76,9 +94,23 @@ fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
             Sha256::digest(bytes)
         );
     }
+    let mut instances = app.world_mut().query::<&SceneInstance>();
+    let scene = &app.world().resource::<OriginalScene>().0;
+    let placed_faces: usize = instances
+        .iter(app.world())
+        .map(|instance| {
+            scene.models[scene.items[instance.item_index].model_index as usize]
+                .faces
+                .len()
+        })
+        .sum();
     println!(
-        "[session] level=Hangar skater=Tony_Hawk resources_loaded={} geometry_decoded=false simulation=false",
-        assets.files.len()
+        "[scene] items={} models={} placed_faces={} textures={} raw_chunks={} rendering=false simulation=false",
+        scene.items.len(),
+        scene.models.len(),
+        placed_faces,
+        scene.texture_checksums.len(),
+        scene.chunks.len()
     );
     Ok(())
 }

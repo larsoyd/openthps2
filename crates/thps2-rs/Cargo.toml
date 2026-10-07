@@ -1,0 +1,11 @@
+[package]
+name = "thps2-rs"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+thps2-data = { path = "../thps2-data" }
+sha2.workspace = true
+bevy = { version = "=0.18.1", default-features = false, features = ["std", "multi_threaded"] }

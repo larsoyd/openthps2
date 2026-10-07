@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use sha2::{Digest, Sha256};
 use std::{error::Error, path::PathBuf, process::ExitCode};
+use thps2_data::materials::{Texture, TextureSource, resolve_textures};
 use thps2_data::pkr::Archive;
 use thps2_data::psx::Scene;
 
@@ -13,6 +14,9 @@ struct OriginalScene(Scene);
 #[derive(Resource)]
 struct SkaterScene(Scene);
 
+#[derive(Resource)]
+struct HangarTextures(Vec<Texture>);
+
 #[derive(Component)]
 struct SceneInstance {
     item_index: usize,
@@ -24,11 +28,12 @@ struct SessionAssets {
     error: Option<String>,
 }
 
-const HANGAR_FILES: [&str; 4] = [
+const HANGAR_FILES: [&str; 5] = [
     "data/SKHAN.PSX",
     "data/SKHAN_T.TRG",
     "data/HAWK.PSX",
     "data/HAWK.PSH",
+    "data/SKHAN_L.PSX",
 ];
 
 fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResMut<SessionAssets>) {
@@ -50,6 +55,18 @@ fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResM
     }
     match Scene::parse(&assets.files[0].1) {
         Ok(scene) => {
+            let textures = Scene::parse(&assets.files[4].1)
+                .map_err(|error| format!("entry={} {error}", HANGAR_FILES[4]))
+                .and_then(|bank| {
+                    resolve_textures(&data.0, &scene.texture_checksums, &bank, "Hangar")
+                });
+            match textures {
+                Ok(textures) => commands.insert_resource(HangarTextures(textures)),
+                Err(error) => {
+                    assets.error = Some(error);
+                    return;
+                }
+            }
             for item_index in 0..scene.items.len() {
                 commands.spawn(SceneInstance { item_index });
             }
@@ -121,6 +138,17 @@ fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
         placed_faces,
         scene.texture_checksums.len(),
         scene.chunks.len()
+    );
+    let textures = &app.world().resource::<HangarTextures>().0;
+    let bitmap_count = textures
+        .iter()
+        .filter(|t| matches!(t.source, TextureSource::Bitmap { .. }))
+        .count();
+    println!(
+        "[materials] resolved={} bitmap={} indexed={} gpu_upload=false",
+        textures.len(),
+        bitmap_count,
+        textures.len() - bitmap_count
     );
     let skater = &app.world().resource::<SkaterScene>().0;
     println!(

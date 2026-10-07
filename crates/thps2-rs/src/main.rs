@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use sha2::{Digest, Sha256};
 use std::{error::Error, path::PathBuf, process::ExitCode};
+use thps2_data::draw::{DrawFace, FaceOverride, PreparedVertex, prepare_face, prepare_vertices};
 use thps2_data::materials::{Surface1555, Texture, TextureSource, resolve_textures};
 use thps2_data::pkr::Archive;
 use thps2_data::psx::Scene;
@@ -19,6 +20,12 @@ struct HangarTextures(Vec<Texture>);
 
 #[derive(Resource)]
 struct HangarSurfaces(Vec<Surface1555>);
+
+#[derive(Resource)]
+struct HangarDraws(Vec<Vec<DrawFace>>);
+
+#[derive(Resource)]
+struct HangarVertices(Vec<Vec<PreparedVertex>>);
 
 #[derive(Component)]
 struct SceneInstance {
@@ -65,10 +72,37 @@ fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResM
                 });
             match textures {
                 Ok(textures) => {
+                    match prepare_hangar_draws(&scene, &textures) {
+                        Ok(draws) => {
+                            commands.insert_resource(HangarDraws(draws));
+                        }
+                        Err(error) => {
+                            assets.error = Some(error);
+                            return;
+                        }
+                    }
                     commands.insert_resource(HangarSurfaces(
                         textures.iter().map(Texture::surface_1555).collect(),
                     ));
                     commands.insert_resource(HangarTextures(textures));
+                }
+                Err(error) => {
+                    assets.error = Some(error);
+                    return;
+                }
+            }
+            let vertices: Result<Vec<_>, _> = scene
+                .models
+                .iter()
+                .enumerate()
+                .map(|(index, model)| {
+                    prepare_vertices(&model.vertices)
+                        .map_err(|error| format!("model={index} {error}"))
+                })
+                .collect();
+            match vertices {
+                Ok(vertices) => {
+                    commands.insert_resource(HangarVertices(vertices));
                 }
                 Err(error) => {
                     assets.error = Some(error);
@@ -82,6 +116,29 @@ fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResM
         }
         Err(error) => assets.error = Some(format!("entry={} {error}", HANGAR_FILES[0])),
     }
+}
+
+fn prepare_hangar_draws(scene: &Scene, textures: &[Texture]) -> Result<Vec<Vec<DrawFace>>, String> {
+    scene
+        .models
+        .iter()
+        .enumerate()
+        .map(|(model_index, model)| {
+            let mut draws = Vec::new();
+            for (face_index, face) in model.faces.iter().enumerate() {
+                let size = face
+                    .texture_index
+                    .and_then(|i| textures.get(i as usize))
+                    .map(|t| t.logical_size);
+                draws.extend(
+                    prepare_face(face, FaceOverride::default(), size, true).map_err(|error| {
+                        format!("model={model_index} face={face_index} {error}")
+                    })?,
+                );
+            }
+            Ok(draws)
+        })
+        .collect()
 }
 
 fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
@@ -167,6 +224,22 @@ fn inspect(root: PathBuf, manifest: bool) -> Result<(), Box<dyn Error>> {
     println!(
         "[surfaces] format=ARGB1555 count={} transparent_pixels={transparent} gpu_upload=false",
         surfaces.len()
+    );
+    let vertices = &app.world().resource::<HangarVertices>().0;
+    println!(
+        "[vertices] records={} screen_offsets={} camera_projection=false",
+        vertices.iter().map(Vec::len).sum::<usize>(),
+        vertices
+            .iter()
+            .flatten()
+            .filter(|v| matches!(v, PreparedVertex::ScreenOffset { .. }))
+            .count()
+    );
+    let draws = &app.world().resource::<HangarDraws>().0;
+    println!(
+        "[draws] models={} records={} overrides=identity textured_quad_split=true gpu_submission=false",
+        draws.len(),
+        draws.iter().map(Vec::len).sum::<usize>()
     );
     let skater = &app.world().resource::<SkaterScene>().0;
     println!(

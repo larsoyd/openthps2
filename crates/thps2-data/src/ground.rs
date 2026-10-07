@@ -17,6 +17,9 @@ pub const TURN_MAX_CROUCH: i32 = 0x5a000;
 pub const LEAN_FRAMES: i32 = 0x16;
 pub const LEAN_PROBE_HEIGHT: i32 = 100;
 pub const LEAN_PROBE_REACH: i32 = 0x5a;
+pub const WALL_TURN: i32 = 0x19;
+pub const WALL_PUSH: i32 = 0xcd;
+pub const HEAD_ON_DOT: i32 = 0xb50;
 
 /// Digital pad state for one frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -393,6 +396,148 @@ impl Skater {
         }
     }
 
+    /// Removes the into wall velocity, pushes off and snaps the heading almost parallel to the wall.
+    fn wall_response(&mut self, normal: V3) -> Result<(), String> {
+        let d = dot_q12(self.velocity, normal);
+        if d < 0 {
+            self.velocity = std::array::from_fn(|a| {
+                self.velocity[a] - mul_q12(normal[a], d) + mul_q12(normal[a], WALL_PUSH)
+            });
+        }
+        let away = normal.map(|c| -c);
+        let f = dot_q12(self.forward, away);
+        if f >= 0 {
+            return Ok(());
+        }
+        let sine = sqrt_int(0x1000000 - f * f);
+        let side = dot_q12(self.lateral, away);
+        let signed = if side > 0 { -sine } else { sine };
+        let snap = [f, 0, -signed, 0, 0x1000, 0, signed, 0, f].map(|c| i32::from(c as i16));
+        let mut m = mat_mul_cols(self.basis_matrix(), snap);
+        let angle = if side > 0 {
+            WALL_TURN - 0x400
+        } else {
+            0x400 - WALL_TURN
+        };
+        m = mat_mul_cols(m, rot_y_matrix(angle));
+        self.set_basis(m);
+        let forward = normalize(self.forward);
+        let up = normalize(self.up);
+        let lateral = normalize(cross_q12(short(forward), short(up)));
+        self.forward = short(cross_q12(short(up), short(lateral)));
+        self.lateral = short(lateral);
+        self.up = short(up);
+        Ok(())
+    }
+
+    /// Head on contacts enter the wall hit animation, which is not reproduced yet.
+    fn head_on(&self, normal: V3, needs_speed: bool) -> Result<bool, String> {
+        if self.anim == 0xc {
+            return Ok(false);
+        }
+        if needs_speed {
+            let units = self.velocity.map(|c| c >> 12);
+            let squares = units.iter().map(|c| c * c).sum::<i32>();
+            if sqrt_int(squares) <= 6 {
+                return Ok(false);
+            }
+        }
+        Ok(dot_q12(normal, self.forward) > HEAD_ON_DOT)
+    }
+
+    fn settle_on(
+        &mut self,
+        world: &CollisionWorld,
+        hit: &Hit,
+        normal: V3,
+        keep_hold: bool,
+        frame: FrameScale,
+    ) -> Result<(), String> {
+        let target = add(hit.position_fixed, scaled(normal, STANDING_HEIGHT)?)?;
+        self.position = world.move_retrying(self.position, target)?;
+        if keep_hold && normal == self.last_normal {
+            self.same_normal_time += frame.hold_delta;
+        } else {
+            self.same_normal_time = 0;
+            self.last_normal = normal;
+        }
+        self.smooth_basis();
+        Ok(())
+    }
+
+    /// Movement segment contact in the ground state: walls, perpendicular faces and steps.
+    fn wall_branch(
+        &mut self,
+        world: &CollisionWorld,
+        hit: &Hit,
+        length: i32,
+        frame: FrameScale,
+    ) -> Result<(), String> {
+        let normal = hit.normal.map(i32::from);
+        let lip = hit.flags & 0x400000 != 0;
+        let wall_face = hit.flags & 0x1800000 == 0x1800000;
+        if lip && hit.face_flags & 0x80 == 0 {
+            return Ok(());
+        }
+        if wall_face && !lip {
+            self.position = self.old_position;
+            if self.head_on(normal, false)? {
+                return Err(format!(
+                    "ground head on wall unsupported item={} face={}",
+                    hit.item_index, hit.face_index
+                ));
+            }
+            return self.wall_response(normal);
+        }
+        let d = dot_q12(normal, self.last_normal);
+        if (-0x7ff..=0x7ff).contains(&d) {
+            let [nx, ny, nz] = normal;
+            if -nx.abs() == ny || -ny < nx.abs() || -ny <= nz.abs() {
+                self.position = self.old_position;
+                if self.head_on(normal, true)? {
+                    return Err(format!(
+                        "ground head on wall unsupported item={} face={}",
+                        hit.item_index, hit.face_index
+                    ));
+                }
+                return self.wall_response(normal);
+            }
+            return self.settle_on(world, hit, normal, false, frame);
+        }
+        if hit.distance_units <= length >> 12 {
+            return self.settle_on(world, hit, normal, true, frame);
+        }
+        Ok(())
+    }
+
+    /// Lateral shoulder probe that pushes the skater off a near vertical face.
+    fn bounce(&mut self, world: &CollisionWorld, direction: i32) -> Result<bool, String> {
+        let shoulder = add(self.position, scaled(self.up, STANDING_HEIGHT)?)?;
+        let end = add(shoulder, scaled(self.lateral, direction * BOUNCE_REACH)?)?;
+        let Some(hit) = world.query_filtered(shoulder, end, false)? else {
+            return Ok(false);
+        };
+        let normal = hit.normal.map(i32::from);
+        if !(-0x3ff..=0x3ff).contains(&dot_q12(normal, self.up)) {
+            return Ok(false);
+        }
+        self.position = self.old_position;
+        if self.head_on(normal, true)? {
+            return Err(format!(
+                "ground head on wall unsupported item={} face={}",
+                hit.item_index, hit.face_index
+            ));
+        }
+        self.wall_response(normal)?;
+        let away_start = add(self.position, normal)?;
+        let away_end = add(self.position, scaled(normal, BOUNCE_REACH)?)?;
+        if world.query_filtered(away_start, away_end, false)?.is_none() {
+            self.position = away_end;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     /// Lean wall probe from a hundred units above the origin along the lean side.
     fn lean_probe(&mut self, world: &CollisionWorld) -> Result<(), String> {
         if self.lean == 0 || !(self.anim == 6 || self.anim == 7) {
@@ -455,8 +600,11 @@ impl Skater {
         accel: V3,
         rules: Rules,
         frame: FrameScale,
+        free_move: bool,
     ) -> Result<(), String> {
-        self.position = world.move_retrying(self.old_position, self.position)?;
+        if !free_move {
+            self.position = world.move_retrying(self.old_position, self.position)?;
+        }
         let descent = self.position[1] - self.old_position[1];
         if self.state == State::Air && descent > 0 {
             self.fall += descent;
@@ -470,9 +618,10 @@ impl Skater {
     }
 }
 
-fn wall_probe(world: &CollisionWorld, old: V3, new: V3) -> Result<(), String> {
+/// Probes the movement segment, extended to the wall reach when short, with lips included.
+fn wall_probe(world: &CollisionWorld, old: V3, new: V3) -> Result<(Option<Hit>, i32), String> {
     if old == new {
-        return Ok(());
+        return Ok((None, 0));
     }
     let delta = std::array::from_fn(|a| new[a] - old[a]);
     let length = speed_of(delta)?;
@@ -481,13 +630,7 @@ fn wall_probe(world: &CollisionWorld, old: V3, new: V3) -> Result<(), String> {
         let divisor = length.max(0x800);
         end = std::array::from_fn(|a| WALL_REACH * delta[a] / divisor * 4096 + old[a]);
     }
-    match world.query_filtered(old, end, false)? {
-        Some(hit) => Err(format!(
-            "ground wall contact unsupported item={} face={} distance={}",
-            hit.item_index, hit.face_index, hit.distance_units
-        )),
-        None => Ok(()),
-    }
+    Ok((world.query_filtered(old, end, false)?, length))
 }
 
 fn head_probe(world: &CollisionWorld, s: &Skater) -> Result<(), String> {
@@ -502,23 +645,31 @@ fn head_probe(world: &CollisionWorld, s: &Skater) -> Result<(), String> {
     Ok(())
 }
 
-fn post_contact_probes(world: &CollisionWorld, s: &Skater) -> Result<(), String> {
-    let shoulder = add(s.position, scaled(s.up, STANDING_HEIGHT)?)?;
-    for direction in [-1, 1] {
-        let end = add(shoulder, scaled(s.lateral, direction * BOUNCE_REACH)?)?;
-        if let Some(hit) = world.query_filtered(shoulder, end, false)?
-            && dot_q12(short(hit.normal.map(i32::from)), s.up).abs() < 0x400
-        {
-            return Err(format!(
-                "ground bounce wall unsupported item={} face={}",
-                hit.item_index, hit.face_index
-            ));
+/// Both shoulder bounces, restoring the entry position when both sides push back.
+fn bounce_probes(world: &CollisionWorld, s: &mut Skater) -> Result<bool, String> {
+    let entry = s.position;
+    if s.bounce(world, -1)? {
+        if s.bounce(world, 1)? {
+            s.position = entry;
         }
+        return Ok(true);
     }
+    if !s.bounce(world, 1)? {
+        return Ok(false);
+    }
+    if s.bounce(world, -1)? {
+        s.position = entry;
+    }
+    Ok(true)
+}
+
+fn post_contact_probes(world: &CollisionWorld, s: &mut Skater) -> Result<bool, String> {
+    let bounced = bounce_probes(world, s)?;
     if s.up[1] > 1000 {
         return Err("ground upside down bail unsupported".into());
     }
-    head_probe(world, s)
+    head_probe(world, s)?;
+    Ok(bounced)
 }
 
 /// One native ground frame with digital steering, without bail, manual, triggers or moving objects.
@@ -545,13 +696,17 @@ pub fn ground_step(
     let angle = (frame.scale * (s.turn >> 12)) >> 8;
     s.rotate(old_matrix, angle)?;
     s.spin += angle;
-    wall_probe(world, s.old_position, s.position)?;
+    let (contact, length) = wall_probe(world, s.old_position, s.position)?;
+    if let Some(contact) = contact {
+        s.wall_branch(world, &contact, length, frame)?;
+    }
     s.fast = speed_of(s.velocity)? > stat_speed(rules.speed_stat, 0x186);
     let ignore_lips = s.velocity[1] > 0 || s.forward[1] < 1;
     let start = add(s.position, scaled(s.up, 0x46)?)?;
     let end = add(start, scaled(s.up, -0x100)?)?;
     let hit = world.query_filtered(start, end, ignore_lips)?;
     let mut grounded = false;
+    let mut free_move = false;
     if let Some(hit) = hit {
         let flags = hit.flags;
         let (lip, bit23, bit24) = (
@@ -610,13 +765,13 @@ pub fn ground_step(
             accel = std::array::from_fn(|a| accel[a] - drag[a]);
         }
         s.velocity = v;
-        post_contact_probes(world, s)?;
+        free_move = post_contact_probes(world, s)?;
         s.lean_probe(world)?;
     } else {
         accel = add(accel, [0, GRAVITY, 0])?;
     }
     s.state = if grounded { State::Ground } else { State::Air };
-    s.finish_frame(world, accel, rules, frame)?;
+    s.finish_frame(world, accel, rules, frame, free_move)?;
     Ok(if grounded {
         Outcome::Grounded(hit.unwrap())
     } else {
@@ -698,7 +853,7 @@ pub fn air_step(
         Some(hit) => land(world, s, rules, &hit)?,
         None => accel = add(accel, [0, AIR_GRAVITY, 0])?,
     }
-    s.finish_frame(world, accel, rules, frame)?;
+    s.finish_frame(world, accel, rules, frame, false)?;
     Ok(match hit {
         Some(hit) => Outcome::Landed(hit),
         None => Outcome::Airborne,

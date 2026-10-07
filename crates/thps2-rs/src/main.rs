@@ -283,7 +283,7 @@ fn inspect(
     let triggers = &app.world().resource::<SessionTriggers>().0;
     let collision = &app.world().resource::<SessionCollision>().0;
     println!(
-        "[collision] cells={:?} triggers={} restarts={} traversal=single_cell trigger_execution=false",
+        "[collision] cells={:?} triggers={} restarts={} traversal=zone_walk trigger_execution=false",
         collision.zone.dimensions,
         triggers.nodes.len(),
         triggers.restarts.len()

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use thps2_data::{
     collision::{CollisionWorld, Hit},
+    skater::GROUND_STICK_DISTANCE,
     trig::{Restart, Triggers},
 };
 
@@ -21,28 +22,20 @@ pub(crate) struct SkaterPlacement {
     pub(crate) ground: Hit,
 }
 
+/// Native up vector for an unrotated restart, with source Y pointing down.
+const RESTART_UP: [i32; 3] = [0, -4096, 0];
+
 fn place(restart: &Restart, collision: &CollisionWorld) -> Result<SkaterPlacement, String> {
-    let mut above = restart.position_fixed;
-    let mut below = restart.position_fixed;
-    above[1] = above[1]
-        .checked_sub(70 * 4096)
-        .ok_or("spawn ground probe overflow")?;
-    below[1] = below[1]
-        .checked_add(186 * 4096)
-        .ok_or("spawn ground probe overflow")?;
     let ground = collision
-        .query(above, below)?
+        .ground_probe(restart.position_fixed, RESTART_UP)?
         .ok_or("spawn has no supporting ground")?;
-    if ground.distance_units >= 116 {
+    if ground.distance_units > GROUND_STICK_DISTANCE {
         return Err(format!(
             "spawn ground distance={} outside initial standing range",
             ground.distance_units
         ));
     }
-    let mut position_fixed = ground.position_fixed;
-    position_fixed[1] = position_fixed[1]
-        .checked_sub(30 * 4096)
-        .ok_or("spawn standing position overflow")?;
+    let position_fixed = collision.stand(restart.position_fixed, RESTART_UP, &ground)?;
     Ok(SkaterPlacement {
         restart_node: restart.node_index,
         restart_position_fixed: restart.position_fixed,

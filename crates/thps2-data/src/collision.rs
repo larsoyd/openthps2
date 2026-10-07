@@ -361,15 +361,12 @@ impl CollisionWorld {
         if delta.iter().any(|&v| i32::try_from(v).is_err()) {
             return Err("collision query delta overflow".into());
         }
-        let units = delta.map(|v| v >> 12);
+        // Native folds the unit deltas through shorts before measuring the segment.
+        let units = delta.map(|v| i64::from((v >> 12) as i16));
         let length = if units[0] == 0 && units[2] == 0 {
             units[1].abs()
         } else {
-            units
-                .iter()
-                .map(|&v| (v as f64).powi(2))
-                .sum::<f64>()
-                .sqrt() as i64
+            (units.iter().map(|&v| (v * v) as f64).sum::<f64>()).sqrt() as i64
         };
         if length == 0 {
             return Ok(None);

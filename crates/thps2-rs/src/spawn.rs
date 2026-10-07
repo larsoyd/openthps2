@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use thps2_data::{
     collision::{CollisionWorld, Hit},
+    ground::{self, DESIGN_FRAME, Outcome, Rules, Skater},
     skater::GROUND_STICK_DISTANCE,
     trig::{Restart, Triggers},
 };
@@ -12,6 +13,17 @@ pub(crate) struct SessionCollision(pub(crate) CollisionWorld);
 
 #[derive(Resource)]
 pub(crate) struct SessionTriggers(pub(crate) Triggers);
+
+#[derive(Resource, Clone, Copy)]
+pub(crate) struct SessionRules(pub(crate) Rules);
+
+#[derive(Component, Debug)]
+pub(crate) struct SkaterMotion {
+    pub(crate) skater: Skater,
+    pub(crate) frames: u32,
+    pub(crate) last_ground: Option<(usize, usize, i32)>,
+    pub(crate) halted: Option<String>,
+}
 
 #[derive(Component, Debug)]
 pub(crate) struct SkaterPlacement {
@@ -65,15 +77,53 @@ pub(crate) fn initialize_spawn(
             .1;
         let triggers = Triggers::parse(bytes)?;
         let collision = CollisionWorld::from_scene(&scene.0)?;
-        let placement = place(triggers.restart_named("Start")?, &collision)?;
-        Ok::<_, String>((triggers, collision, placement))
+        let restart = triggers.restart_named("Start")?;
+        let placement = place(restart, &collision)?;
+        let motion = SkaterMotion {
+            skater: Skater::at_restart(restart.position_fixed, restart.angles),
+            frames: 0,
+            last_ground: None,
+            halted: None,
+        };
+        Ok::<_, String>((triggers, collision, placement, motion))
     })();
     match result {
-        Ok((triggers, collision, placement)) => {
+        Ok((triggers, collision, placement, motion)) => {
             commands.insert_resource(SessionTriggers(triggers));
             commands.insert_resource(SessionCollision(collision));
-            commands.spawn(placement);
+            commands.spawn((placement, motion));
         }
         Err(error) => assets.error = Some(format!("Hangar spawn: {error}")),
+    }
+}
+
+/// One design frame per fixed tick without pad input, stopping at the first unsupported state.
+pub(crate) fn advance_ground(
+    collision: Option<Res<SessionCollision>>,
+    rules: Res<SessionRules>,
+    mut motions: Query<&mut SkaterMotion>,
+) {
+    let Some(collision) = collision else {
+        return;
+    };
+    for mut motion in &mut motions {
+        if motion.halted.is_some() {
+            continue;
+        }
+        let frame = motion.frames + 1;
+        match ground::ground_step(&collision.0, &mut motion.skater, rules.0, DESIGN_FRAME) {
+            Ok(Outcome::Grounded(hit)) => {
+                motion.frames = frame;
+                motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));
+            }
+            Ok(Outcome::LeftGround(hit)) => {
+                motion.frames = frame;
+                motion.halted = Some(format!(
+                    "left ground at frame={frame} probe_hit={:?} air_state=unimplemented",
+                    hit.map(|h| (h.item_index, h.face_index, h.distance_units))
+                ));
+            }
+            Err(error) => motion.halted = Some(format!("frame={frame} {error}")),
+        }
     }
 }

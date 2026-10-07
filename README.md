@@ -9,9 +9,10 @@ Use the `ALL.PKR` from the supplied Windows USA rerelease CD (`SETUP/data`). Kee
 ```bash
 cargo run --offline -p thps2-rs -- --data-root /path/to/SETUP/data
 cargo run --offline -p thps2-rs -- --data-root /path/to/SETUP/data --manifest
+cargo run --offline -p thps2-rs -- --data-root /path/to/SETUP/data --simulate-frames 300
 ```
 
-The first command validates the archive and decodes the Hangar and Tony Hawk resources through Bevy. The second emits tab-separated resource names, sizes and SHA-256 hashes. These commands inspect resources; they do not launch a playable session.
+The first command validates the archive, decodes the Hangar and Tony Hawk resources through Bevy and steps the Start skater through 120 design frames of ground movement without input. The second emits tab-separated resource names, sizes and SHA-256 hashes. The third changes the stepped frame count. The step halts with a reported reason when the skater leaves the ground or meets a contact the simulation does not cover yet. These commands do not launch a playable session.
 
 The supported archive SHA-256 is `7e2ae173577c41598dc644824b52f7eaf9664ea478e177a8703f77c0185207da`. Other archives are rejected by the application. The format library reports unsupported compression explicitly.
 

@@ -9,7 +9,11 @@ use thps2_data::psx::Scene;
 mod renderer;
 mod spawn;
 mod view;
-use spawn::{SessionCollision, SessionTriggers, SkaterPlacement, initialize_spawn};
+use spawn::{
+    SessionCollision, SessionRules, SessionTriggers, SkaterMotion, SkaterPlacement, advance_ground,
+    initialize_spawn,
+};
+use thps2_data::ground::Rules;
 use view::{CapturedView, ProjectedInstance, project_hangar};
 
 #[derive(Resource)]
@@ -153,6 +157,7 @@ fn inspect(
     captured: Option<CapturedView>,
     render: bool,
     capture: Option<PathBuf>,
+    simulate_frames: u32,
 ) -> Result<(), Box<dyn Error>> {
     let path = root.join("ALL.PKR");
     let bytes =
@@ -187,12 +192,21 @@ fn inspect(
     }
     app.add_plugins(MinimalPlugins)
         .insert_resource(OriginalData(archive))
+        .insert_resource(Time::<Fixed>::from_hz(30.0))
+        .insert_resource(SessionRules(Rules {
+            speed_stat: 80,
+            auto_kick: false,
+        }))
         .init_resource::<SessionAssets>()
         .add_systems(
             Startup,
             (load_hangar, project_hangar, initialize_spawn).chain(),
-        );
+        )
+        .add_systems(FixedUpdate, advance_ground);
     app.update();
+    for _ in 0..simulate_frames {
+        app.world_mut().run_schedule(FixedUpdate);
+    }
     let assets = app.world().resource::<SessionAssets>();
     if let Some(error) = &assets.error {
         return Err(error.clone().into());
@@ -291,7 +305,7 @@ fn inspect(
     let mut skaters = app.world_mut().query::<&SkaterPlacement>();
     for skater in skaters.iter(app.world()) {
         println!(
-            "[spawn] selection=explicit_Start node={} restart_q12={:?} standing_q12={:?} source_angles={:?} ground_item={} ground_face={} t_q14={} simulation=false",
+            "[spawn] selection=explicit_Start node={} restart_q12={:?} standing_q12={:?} source_angles={:?} ground_item={} ground_face={} t_q14={} simulation=fixed_update_30hz",
             skater.restart_node,
             skater.restart_position_fixed,
             skater.position_fixed,
@@ -299,6 +313,21 @@ fn inspect(
             skater.ground.item_index,
             skater.ground.face_index,
             skater.ground.t_q14
+        );
+    }
+    let rules = app.world().resource::<SessionRules>().0;
+    let mut motions = app.world_mut().query::<&SkaterMotion>();
+    for motion in motions.iter(app.world()) {
+        println!(
+            "[ground] frames={} requested={simulate_frames} scale=256 speed_stat={} auto_kick={} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} input=none",
+            motion.frames,
+            rules.speed_stat,
+            rules.auto_kick,
+            motion.skater.position,
+            motion.skater.velocity,
+            motion.skater.up,
+            motion.last_ground,
+            motion.halted
         );
     }
     if render {
@@ -320,6 +349,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut captured = None;
     let mut render = false;
     let mut capture = None;
+    let mut simulate_frames = 120;
     while let Some(arg) = args.next() {
         if arg == "--data-root" {
             root = Some(PathBuf::from(
@@ -341,9 +371,14 @@ fn run() -> Result<(), Box<dyn Error>> {
             capture = Some(PathBuf::from(
                 args.next().ok_or("--capture requires an output path")?,
             ));
+        } else if arg == "--simulate-frames" {
+            simulate_frames = args
+                .next()
+                .and_then(|v| v.to_str()?.parse::<u32>().ok())
+                .ok_or("--simulate-frames requires a frame count")?;
         } else if arg == "--help" {
             println!(
-                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]]\nInspect original resources or display a static diagnostic with feature viewer."
+                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]] [--simulate-frames N]\nInspect original resources, step the skater N design frames without input, or display a static diagnostic with feature viewer."
             );
             return Ok(());
         } else {
@@ -365,6 +400,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         captured,
         render,
         capture,
+        simulate_frames,
     )
 }
 

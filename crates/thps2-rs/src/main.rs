@@ -195,6 +195,7 @@ fn inspect(
         .insert_resource(Time::<Fixed>::from_hz(30.0))
         .insert_resource(SessionRules(Rules {
             speed_stat: 80,
+            drop_stat: 70,
             auto_kick: false,
         }))
         .init_resource::<SessionAssets>()
@@ -319,10 +320,12 @@ fn inspect(
     let mut motions = app.world_mut().query::<&SkaterMotion>();
     for motion in motions.iter(app.world()) {
         println!(
-            "[ground] frames={} requested={simulate_frames} scale=256 speed_stat={} auto_kick={} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} input=none",
+            "[ground] frames={} requested={simulate_frames} scale=256 speed_stat={} drop_stat={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} input=none",
             motion.frames,
             rules.speed_stat,
+            rules.drop_stat,
             rules.auto_kick,
+            motion.skater.state,
             motion.skater.position,
             motion.skater.velocity,
             motion.skater.up,

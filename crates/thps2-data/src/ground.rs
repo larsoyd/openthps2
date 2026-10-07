@@ -2,17 +2,28 @@ use crate::collision::{CollisionWorld, Hit};
 use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
 
 pub const GRAVITY: i32 = 0x1964;
+pub const AIR_GRAVITY: i32 = 13000;
 pub const WALL_REACH: i32 = 0x1e;
 pub const BOUNCE_REACH: i32 = 10;
 pub const HEAD_REACH: i32 = 0x3c;
 pub const UNSTICK_SPAN: i32 = 500;
 pub const NORMAL_HOLD_LIMIT: i32 = 0x18000;
 pub const FAKIE_DOT: i32 = 0x5000;
+pub const BIG_DROP_BASE: i32 = 0x3c3;
+pub const WORLD_UP: [i32; 3] = [0, -4096, 0];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rules {
     pub speed_stat: i32,
+    pub drop_stat: i32,
     pub auto_kick: bool,
+}
+
+impl Rules {
+    /// Big drop limit in units from the stat scaled base.
+    pub fn big_drop_limit(self) -> i32 {
+        BIG_DROP_BASE * (self.drop_stat * 0x46 + 10000) / 10000
+    }
 }
 
 /// Frame scale in Q8 with 256 meaning two 60 Hz ticks, plus the normal hold increment.
@@ -41,8 +52,15 @@ impl FrameScale {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum State {
+    Ground,
+    Air,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Skater {
+    pub state: State,
     pub position: [i32; 3],
     pub old_position: [i32; 3],
     pub velocity: [i32; 3],
@@ -56,12 +74,18 @@ pub struct Skater {
     pub fast: bool,
     pub terrain: u32,
     pub switched: bool,
+    /// Downward travel accumulated while airborne, Q12.
+    pub fall: i32,
+    /// Ground distance below the origin minus the standing height at frame start, Q12.
+    pub clearance: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Grounded(Hit),
     LeftGround(Option<Hit>),
+    Airborne,
+    Landed(Hit),
 }
 
 type V3 = [i32; 3];
@@ -95,6 +119,15 @@ pub fn cross_q12(a: V3, b: V3) -> V3 {
 pub fn project_onto_plane(v: V3, normal: V3) -> V3 {
     let d = dot_q12(v, normal);
     std::array::from_fn(|a| v[a] - mul_q12(d, normal[a]))
+}
+
+fn dot_checked(a: V3, b: V3) -> Result<i32, String> {
+    let sum: i128 = (0..3).map(|i| i128::from(a[i]) * i128::from(b[i])).sum();
+    i32::try_from(sum / 4096).map_err(|_| "ground dot product overflow".into())
+}
+
+fn speed_of(v: V3) -> Result<i32, String> {
+    Ok(sqrt_int(dot_checked(v, v)?) * 0x40)
 }
 
 /// Projects onto the plane and rescales to the previous speed, failing on native overflow.
@@ -141,15 +174,6 @@ fn frame_part(v: V3, scale: i32) -> Result<V3, String> {
     Ok(scaled(v, scale)?.map(|c| c >> 8))
 }
 
-fn dot_checked(a: V3, b: V3) -> Result<i32, String> {
-    let sum: i128 = (0..3).map(|i| i128::from(a[i]) * i128::from(b[i])).sum();
-    i32::try_from(sum / 4096).map_err(|_| "ground dot product overflow".into())
-}
-
-fn speed_of(v: V3) -> Result<i32, String> {
-    Ok(sqrt_int(dot_checked(v, v)?) * 0x40)
-}
-
 fn stat_speed(stat: i32, bonus: i32) -> i32 {
     (stat + bonus) * 0x2d000 / 0x118
 }
@@ -188,19 +212,22 @@ impl Skater {
     pub fn at_restart(position_fixed: V3, angles: [i16; 3]) -> Self {
         let angle = (i32::from(angles[1]) - 0x800) & 0xfff;
         Self {
+            state: State::Ground,
             position: position_fixed,
             old_position: position_fixed,
             velocity: [0; 3],
             lateral: rotate_y([-4096, 0, 0], angle),
-            up: [0, -4096, 0],
+            up: WORLD_UP,
             forward: rotate_y([0, 0, -4096], angle),
-            last_normal: [0, -4096, 0],
-            smoothed_up: [0, -4096, 0],
+            last_normal: WORLD_UP,
+            smoothed_up: WORLD_UP,
             same_normal_time: 0,
             stick_slack: 0,
             fast: false,
             terrain: 0,
             switched: false,
+            fall: 0,
+            clearance: 0,
         }
     }
 
@@ -221,6 +248,40 @@ impl Skater {
         self.lateral = short(lateral);
         self.up = short(up);
         self.smoothed_up = up;
+    }
+
+    /// Frame setup shared by both states, probing the ground distance below the origin.
+    fn begin_frame(&mut self, world: &CollisionWorld) -> Result<(), String> {
+        self.stick_slack = (self.stick_slack - 5).max(0);
+        self.old_position = self.position;
+        let below = add(self.position, [0, UNSTICK_SPAN * 4096, 0])?;
+        let Some(hit) = world.query_filtered(self.position, below, false)? else {
+            return Err(
+                "ground unstick fallback unsupported, nothing within 500 units below".into(),
+            );
+        };
+        self.clearance = hit.position_fixed[1] - self.position[1] - STANDING_HEIGHT * 4096;
+        Ok(())
+    }
+
+    fn finish_frame(
+        &mut self,
+        world: &CollisionWorld,
+        accel: V3,
+        rules: Rules,
+        frame: FrameScale,
+    ) -> Result<(), String> {
+        self.position = world.move_retrying(self.old_position, self.position)?;
+        let descent = self.position[1] - self.old_position[1];
+        if self.state == State::Air && descent > 0 {
+            self.fall += descent;
+            self.clearance -= descent;
+        } else {
+            self.fall = 0;
+        }
+        self.velocity = add(self.velocity, frame_part(accel, frame.scale)?)?;
+        self.velocity = clamp_speed(self.velocity, rules, frame)?;
+        Ok(())
     }
 }
 
@@ -244,6 +305,18 @@ fn wall_probe(world: &CollisionWorld, old: V3, new: V3) -> Result<(), String> {
     }
 }
 
+fn head_probe(world: &CollisionWorld, s: &Skater) -> Result<(), String> {
+    if (s.up[0] != 0 || s.up[2] != 0)
+        && let Some(hit) = world.query(s.position, add(s.position, scaled(s.up, HEAD_REACH)?)?)?
+    {
+        return Err(format!(
+            "ground head contact unsupported item={} face={}",
+            hit.item_index, hit.face_index
+        ));
+    }
+    Ok(())
+}
+
 fn post_contact_probes(world: &CollisionWorld, s: &Skater) -> Result<(), String> {
     let shoulder = add(s.position, scaled(s.up, STANDING_HEIGHT)?)?;
     for direction in [-1, 1] {
@@ -260,15 +333,7 @@ fn post_contact_probes(world: &CollisionWorld, s: &Skater) -> Result<(), String>
     if s.up[1] > 1000 {
         return Err("ground upside down bail unsupported".into());
     }
-    if (s.up[0] != 0 || s.up[2] != 0)
-        && let Some(hit) = world.query(s.position, add(s.position, scaled(s.up, HEAD_REACH)?)?)?
-    {
-        return Err(format!(
-            "ground head contact unsupported item={} face={}",
-            hit.item_index, hit.face_index
-        ));
-    }
-    Ok(())
+    head_probe(world, s)
 }
 
 /// One native ground frame without pad input, bail, manual, triggers or moving objects.
@@ -278,13 +343,8 @@ pub fn ground_step(
     rules: Rules,
     frame: FrameScale,
 ) -> Result<Outcome, String> {
-    s.stick_slack = (s.stick_slack - 5).max(0);
+    s.begin_frame(world)?;
     let mut accel = [0; 3];
-    s.old_position = s.position;
-    let below = add(s.position, [0, UNSTICK_SPAN * 4096, 0])?;
-    if world.query_filtered(s.position, below, false)?.is_none() {
-        return Err("ground unstick fallback unsupported, nothing within 500 units below".into());
-    }
     s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
     if dot_q12(s.forward, s.velocity) > FAKIE_DOT {
         s.forward = s.forward.map(|c| -c);
@@ -360,12 +420,101 @@ pub fn ground_step(
     } else {
         accel = add(accel, [0, GRAVITY, 0])?;
     }
-    s.position = world.move_retrying(s.old_position, s.position)?;
-    s.velocity = add(s.velocity, frame_part(accel, frame.scale)?)?;
-    s.velocity = clamp_speed(s.velocity, rules, frame)?;
+    s.state = if grounded { State::Ground } else { State::Air };
+    s.finish_frame(world, accel, rules, frame)?;
     Ok(if grounded {
         Outcome::Grounded(hit.unwrap())
     } else {
         Outcome::LeftGround(hit)
     })
+}
+
+fn land(world: &CollisionWorld, s: &mut Skater, rules: Rules, hit: &Hit) -> Result<(), String> {
+    let normal = hit.normal.map(i32::from);
+    let target = add(hit.position_fixed, scaled(normal, STANDING_HEIGHT)?)?;
+    s.position = world.move_retrying(s.position, target)?;
+    if hit.flags & 0x400000 != 0 {
+        return Err(format!(
+            "air lip landing unsupported item={} face={}",
+            hit.item_index, hit.face_index
+        ));
+    }
+    s.terrain = (hit.flags >> 25) & 0xf;
+    let flat = project_onto_plane(s.velocity, normal);
+    if speed_of(flat)? > 0x1e000 {
+        let heading = normalize(flat);
+        let facing = normalize(project_onto_plane(s.forward, normal));
+        if dot_q12(heading, facing).abs() < 0x666 {
+            return Err("air sideways landing bail unsupported".into());
+        }
+    }
+    let height = (s.clearance + s.fall) >> 12;
+    if height > rules.big_drop_limit() {
+        return Err(format!(
+            "air big drop bail unsupported height={height} limit={}",
+            rules.big_drop_limit()
+        ));
+    }
+    let tilt = dot_q12(s.up, normal);
+    if tilt < 2000 && s.up[1] > -2000 && (s.velocity[1] > 150000 || tilt < 200) {
+        return Err("air landing bail unsupported".into());
+    }
+    s.velocity = flat;
+    s.last_normal = normal;
+    s.smoothed_up = normal;
+    s.same_normal_time = 0;
+    s.smooth_basis();
+    s.state = State::Ground;
+    head_probe(world, s)
+}
+
+/// One native air frame without pad input, stopping at wall bounces, lips, wallrides and bails.
+pub fn air_step(
+    world: &CollisionWorld,
+    s: &mut Skater,
+    rules: Rules,
+    frame: FrameScale,
+) -> Result<Outcome, String> {
+    s.begin_frame(world)?;
+    let mut accel = [0; 3];
+    s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
+    let roll_axis = cross_q12(short(s.forward), WORLD_UP);
+    if dot_q12(s.up, roll_axis).abs() > 0x29 {
+        return Err("air upright roll unsupported".into());
+    }
+    let mut hit = world.query_filtered(s.old_position, s.position, false)?;
+    if let Some(found) = hit
+        && found.flags & 0x400000 != 0
+        && found.face_flags & 0x80 == 0
+    {
+        hit = world.query_filtered(s.old_position, s.position, true)?;
+    }
+    match hit {
+        Some(hit) if hit.flags & 0x1000000 != 0 => {
+            return Err(format!(
+                "air wall contact unsupported item={} face={}",
+                hit.item_index, hit.face_index
+            ));
+        }
+        Some(hit) => land(world, s, rules, &hit)?,
+        None => accel = add(accel, [0, AIR_GRAVITY, 0])?,
+    }
+    s.finish_frame(world, accel, rules, frame)?;
+    Ok(match hit {
+        Some(hit) => Outcome::Landed(hit),
+        None => Outcome::Airborne,
+    })
+}
+
+/// Dispatches one frame by the skater state.
+pub fn step(
+    world: &CollisionWorld,
+    s: &mut Skater,
+    rules: Rules,
+    frame: FrameScale,
+) -> Result<Outcome, String> {
+    match s.state {
+        State::Ground => ground_step(world, s, rules, frame),
+        State::Air => air_step(world, s, rules, frame),
+    }
 }

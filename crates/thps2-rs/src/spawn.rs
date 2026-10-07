@@ -97,7 +97,7 @@ pub(crate) fn initialize_spawn(
     }
 }
 
-/// One design frame per fixed tick without pad input, stopping at the first unsupported state.
+/// One design frame per fixed tick without pad input, stopping at the first unsupported contact.
 pub(crate) fn advance_ground(
     collision: Option<Res<SessionCollision>>,
     rules: Res<SessionRules>,
@@ -111,18 +111,12 @@ pub(crate) fn advance_ground(
             continue;
         }
         let frame = motion.frames + 1;
-        match ground::ground_step(&collision.0, &mut motion.skater, rules.0, DESIGN_FRAME) {
-            Ok(Outcome::Grounded(hit)) => {
+        match ground::step(&collision.0, &mut motion.skater, rules.0, DESIGN_FRAME) {
+            Ok(Outcome::Grounded(hit) | Outcome::Landed(hit)) => {
                 motion.frames = frame;
                 motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));
             }
-            Ok(Outcome::LeftGround(hit)) => {
-                motion.frames = frame;
-                motion.halted = Some(format!(
-                    "left ground at frame={frame} probe_hit={:?} air_state=unimplemented",
-                    hit.map(|h| (h.item_index, h.face_index, h.distance_units))
-                ));
-            }
+            Ok(Outcome::LeftGround(_) | Outcome::Airborne) => motion.frames = frame,
             Err(error) => motion.halted = Some(format!("frame={frame} {error}")),
         }
     }

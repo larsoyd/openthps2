@@ -232,6 +232,7 @@ struct CollisionFace {
     normal: [i16; 3],
     bounds: [[i64; 3]; 2],
     flags: u32,
+    face_flags: u32,
 }
 
 #[derive(Debug)]
@@ -257,7 +258,10 @@ pub struct Hit {
     /// Source Q12 normal, with negative Y pointing upward.
     pub normal: [i16; 3],
     pub distance_units: i32,
+    /// Collision word with the normal index below and the surface bits above 16.
     pub flags: u32,
+    /// Face word 0 as stored in the model.
+    pub face_flags: u32,
 }
 
 impl CollisionWorld {
@@ -341,6 +345,7 @@ impl CollisionWorld {
                     normal,
                     bounds,
                     flags,
+                    face_flags: face.flags,
                 });
             }
             items.push(CollisionItem {
@@ -479,6 +484,7 @@ impl CollisionWorld {
                 normal: face.normal,
                 distance_units: (length * t / 0x4000) as i32,
                 flags: face.flags,
+                face_flags: face.face_flags,
             });
         }
         Ok(())

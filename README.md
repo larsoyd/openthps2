@@ -35,3 +35,18 @@ viewport RIGHT BOTTOM LEFT TOP NEAR FAR UNKNOWN FOCAL CENTER_X CENTER_Y
 ```
 
 Camera coordinates are signed integer source units, matrix entries are signed 16-bit Q12, and viewport fields are unsigned 16-bit values. The original viewport's far distance is multiplied by 1.5. This path supports unrotated source items and normal projection; runtime object changes, reflection, lighting and draw submission remain unimplemented. Invalid captures and unsupported item state fail explicitly.
+
+## Static Hangar diagnostic
+
+With an original camera capture in the format above:
+
+```bash
+cargo run --offline -p thps2-rs --features viewer -- --data-root /path/to/SETUP/data --view /path/to/view.txt --render
+cargo run --offline -p thps2-rs --features viewer -- --data-root /path/to/SETUP/data --view /path/to/view.txt --render --capture /tmp/hangar.png
+```
+
+The optional `viewer` feature opens a fixed-camera Bevy window. Escape closes it; `--capture` saves an image after120 frames and exits. Audio is not enabled. Only centered, zero-origin viewports are currently supported.
+
+This diagnostic renders original static geometry and textures with screen offsets, normal-mode clip rejection and clockwise culling. Unlit colors, nearest-repeat sampling, alpha masking and depth-buffer ordering are provisional; they do not reproduce all original lighting/blending/order settings. Dynamic objects, the skater model, animation and gameplay are absent.
+
+Startup also parses Hangar's trigger/restart records and collision zones, explicitly selects `Start`, and creates a skater placement30 units above its accepted ground hit. Collision queries support segments confined to one zone cell; cross-cell queries fail explicitly. AUTOEXEC/restart scripts, trigger execution, moving-object collision, movement and session rules are not implemented.

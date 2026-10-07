@@ -7,6 +7,15 @@ pub struct ClippedVertex {
     pub clip: u16,
 }
 
+pub fn face_outside_clip_volume(vertices: &[ClippedVertex]) -> Result<bool, String> {
+    if !(3..=4).contains(&vertices.len()) {
+        return Err("face clipping requires three or four corners".into());
+    }
+    let common = vertices.iter().fold(u16::MAX, |flags, v| flags & v.clip);
+    let any = vertices.iter().fold(0, |flags, v| flags | v.clip);
+    Ok(common & 0x10 != 0 || (common & 0x3f != 0 && any & 0x10 == 0))
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct StaticView {
     position: [i32; 3],

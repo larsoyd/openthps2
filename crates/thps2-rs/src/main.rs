@@ -5,7 +5,11 @@ use thps2_data::draw::{DrawFace, FaceOverride, PreparedVertex, prepare_face, pre
 use thps2_data::materials::{Surface1555, Texture, TextureSource, resolve_textures};
 use thps2_data::pkr::Archive;
 use thps2_data::psx::Scene;
+#[cfg(feature = "viewer")]
+mod renderer;
+mod spawn;
 mod view;
+use spawn::{SessionCollision, SessionTriggers, SkaterPlacement, initialize_spawn};
 use view::{CapturedView, ProjectedInstance, project_hangar};
 
 #[derive(Resource)]
@@ -147,6 +151,8 @@ fn inspect(
     root: PathBuf,
     manifest: bool,
     captured: Option<CapturedView>,
+    render: bool,
+    capture: Option<PathBuf>,
 ) -> Result<(), Box<dyn Error>> {
     let path = root.join("ALL.PKR");
     let bytes =
@@ -182,7 +188,10 @@ fn inspect(
     app.add_plugins(MinimalPlugins)
         .insert_resource(OriginalData(archive))
         .init_resource::<SessionAssets>()
-        .add_systems(Startup, (load_hangar, project_hangar).chain());
+        .add_systems(
+            Startup,
+            (load_hangar, project_hangar, initialize_spawn).chain(),
+        );
     app.update();
     let assets = app.world().resource::<SessionAssets>();
     if let Some(error) = &assets.error {
@@ -206,7 +215,7 @@ fn inspect(
         })
         .sum();
     println!(
-        "[scene] items={} models={} placed_faces={} textures={} raw_chunks={} rendering=false simulation=false",
+        "[scene] items={} models={} placed_faces={} textures={} raw_chunks={} render_requested={render} simulation=false",
         scene.items.len(),
         scene.models.len(),
         placed_faces,
@@ -219,7 +228,7 @@ fn inspect(
         .filter(|t| matches!(t.source, TextureSource::Bitmap { .. }))
         .count();
     println!(
-        "[materials] resolved={} bitmap={} indexed={} gpu_upload=false",
+        "[materials] resolved={} bitmap={} indexed={} gpu_upload_requested={render}",
         textures.len(),
         bitmap_count,
         textures.len() - bitmap_count
@@ -231,22 +240,23 @@ fn inspect(
         .filter(|&&pixel| pixel == 0)
         .count();
     println!(
-        "[surfaces] format=ARGB1555 count={} transparent_pixels={transparent} gpu_upload=false",
+        "[surfaces] format=ARGB1555 count={} transparent_pixels={transparent} gpu_upload_requested={render}",
         surfaces.len()
     );
     let vertices = &app.world().resource::<HangarVertices>().0;
     println!(
-        "[vertices] records={} screen_offsets={} camera_projection=false",
+        "[vertices] records={} screen_offsets={} camera_projection={}",
         vertices.iter().map(Vec::len).sum::<usize>(),
         vertices
             .iter()
             .flatten()
             .filter(|v| matches!(v, PreparedVertex::ScreenOffset { .. }))
-            .count()
+            .count(),
+        app.world().contains_resource::<CapturedView>()
     );
     let draws = &app.world().resource::<HangarDraws>().0;
     println!(
-        "[draws] models={} records={} overrides=identity textured_quad_split=true gpu_submission=false",
+        "[draws] models={} records={} overrides=identity textured_quad_split=true gpu_submission_requested={render}",
         draws.len(),
         draws.iter().map(Vec::len).sum::<usize>()
     );
@@ -270,6 +280,36 @@ fn inspect(
                 .count()
         );
     }
+    let triggers = &app.world().resource::<SessionTriggers>().0;
+    let collision = &app.world().resource::<SessionCollision>().0;
+    println!(
+        "[collision] cells={:?} triggers={} restarts={} traversal=single_cell trigger_execution=false",
+        collision.zone.dimensions,
+        triggers.nodes.len(),
+        triggers.restarts.len()
+    );
+    let mut skaters = app.world_mut().query::<&SkaterPlacement>();
+    for skater in skaters.iter(app.world()) {
+        println!(
+            "[spawn] selection=explicit_Start node={} restart_q12={:?} standing_q12={:?} source_angles={:?} ground_item={} ground_face={} t_q14={} simulation=false",
+            skater.restart_node,
+            skater.restart_position_fixed,
+            skater.position_fixed,
+            skater.source_angles,
+            skater.ground.item_index,
+            skater.ground.face_index,
+            skater.ground.t_q14
+        );
+    }
+    if render {
+        #[cfg(feature = "viewer")]
+        renderer::run(app.world_mut(), capture)?;
+        #[cfg(not(feature = "viewer"))]
+        {
+            let _ = capture;
+            return Err("--render requires cargo feature viewer".into());
+        }
+    }
     Ok(())
 }
 
@@ -278,6 +318,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut root = None;
     let mut manifest = false;
     let mut captured = None;
+    let mut render = false;
+    let mut capture = None;
     while let Some(arg) = args.next() {
         if arg == "--data-root" {
             root = Some(PathBuf::from(
@@ -293,9 +335,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                 CapturedView::parse(&text)
                     .map_err(|error| format!("view={} {error}", path.display()))?,
             );
+        } else if arg == "--render" {
+            render = true;
+        } else if arg == "--capture" {
+            capture = Some(PathBuf::from(
+                args.next().ok_or("--capture requires an output path")?,
+            ));
         } else if arg == "--help" {
             println!(
-                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE]\nInspect original resources and optionally project Hangar from a captured view."
+                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]]\nInspect original resources or display a static diagnostic with feature viewer."
             );
             return Ok(());
         } else {
@@ -305,10 +353,18 @@ fn run() -> Result<(), Box<dyn Error>> {
     if manifest && captured.is_some() {
         return Err("--manifest and --view are mutually exclusive".into());
     }
+    if render && captured.is_none() {
+        return Err("--render requires --view FILE".into());
+    }
+    if capture.is_some() && !render {
+        return Err("--capture requires --render".into());
+    }
     inspect(
         root.ok_or("--data-root is required (directory containing ALL.PKR)")?,
         manifest,
         captured,
+        render,
+        capture,
     )
 }
 

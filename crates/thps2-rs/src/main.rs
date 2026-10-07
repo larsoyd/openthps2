@@ -10,10 +10,10 @@ mod renderer;
 mod spawn;
 mod view;
 use spawn::{
-    SessionCollision, SessionRules, SessionTriggers, SkaterMotion, SkaterPlacement, advance_ground,
-    initialize_spawn,
+    SessionCollision, SessionPad, SessionRules, SessionTriggers, SkaterMotion, SkaterPlacement,
+    advance_ground, initialize_spawn,
 };
-use thps2_data::ground::Rules;
+use thps2_data::ground::{Pad, Rules};
 use view::{CapturedView, ProjectedInstance, project_hangar};
 
 #[derive(Resource)]
@@ -158,6 +158,7 @@ fn inspect(
     render: bool,
     capture: Option<PathBuf>,
     simulate_frames: u32,
+    pad: Pad,
 ) -> Result<(), Box<dyn Error>> {
     let path = root.join("ALL.PKR");
     let bytes =
@@ -198,6 +199,7 @@ fn inspect(
             drop_stat: 70,
             auto_kick: false,
         }))
+        .insert_resource(SessionPad(pad))
         .init_resource::<SessionAssets>()
         .add_systems(
             Startup,
@@ -320,7 +322,7 @@ fn inspect(
     let mut motions = app.world_mut().query::<&SkaterMotion>();
     for motion in motions.iter(app.world()) {
         println!(
-            "[ground] frames={} requested={simulate_frames} scale=256 speed_stat={} drop_stat={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} input=none",
+            "[ground] frames={} requested={simulate_frames} scale=256 speed_stat={} drop_stat={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} pad={:?} turn={} anim={}:{}",
             motion.frames,
             rules.speed_stat,
             rules.drop_stat,
@@ -330,7 +332,11 @@ fn inspect(
             motion.skater.velocity,
             motion.skater.up,
             motion.last_ground,
-            motion.halted
+            motion.halted,
+            pad,
+            motion.skater.turn,
+            motion.skater.anim,
+            motion.skater.anim_frame
         );
     }
     if render {
@@ -353,6 +359,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut render = false;
     let mut capture = None;
     let mut simulate_frames = 120;
+    let mut pad = Pad::default();
     while let Some(arg) = args.next() {
         if arg == "--data-root" {
             root = Some(PathBuf::from(
@@ -379,9 +386,21 @@ fn run() -> Result<(), Box<dyn Error>> {
                 .next()
                 .and_then(|v| v.to_str()?.parse::<u32>().ok())
                 .ok_or("--simulate-frames requires a frame count")?;
+        } else if arg == "--hold" {
+            let keys = args
+                .next()
+                .ok_or("--hold requires a comma separated key list")?;
+            for key in keys.to_string_lossy().split(',') {
+                match key {
+                    "left" => pad.left = true,
+                    "right" => pad.right = true,
+                    "down" => pad.down = true,
+                    other => return Err(format!("--hold unknown key={other}").into()),
+                }
+            }
         } else if arg == "--help" {
             println!(
-                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]] [--simulate-frames N]\nInspect original resources, step the skater N design frames without input, or display a static diagnostic with feature viewer."
+                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]] [--simulate-frames N] [--hold left,right,down]\nInspect original resources, step the skater N design frames with an optional held pad, or display a static diagnostic with feature viewer."
             );
             return Ok(());
         } else {
@@ -404,6 +423,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         render,
         capture,
         simulate_frames,
+        pad,
     )
 }
 

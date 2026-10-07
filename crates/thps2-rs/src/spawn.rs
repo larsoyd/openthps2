@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use thps2_data::{
     collision::{CollisionWorld, Hit},
-    ground::{self, DESIGN_FRAME, Outcome, Rules, Skater},
+    ground::{self, DESIGN_FRAME, Outcome, Pad, Rules, Skater},
     skater::GROUND_STICK_DISTANCE,
     trig::{Restart, Triggers},
 };
@@ -16,6 +16,10 @@ pub(crate) struct SessionTriggers(pub(crate) Triggers);
 
 #[derive(Resource, Clone, Copy)]
 pub(crate) struct SessionRules(pub(crate) Rules);
+
+/// Pad held for every stepped frame.
+#[derive(Resource, Clone, Copy, Default)]
+pub(crate) struct SessionPad(pub(crate) Pad);
 
 #[derive(Component, Debug)]
 pub(crate) struct SkaterMotion {
@@ -101,6 +105,7 @@ pub(crate) fn initialize_spawn(
 pub(crate) fn advance_ground(
     collision: Option<Res<SessionCollision>>,
     rules: Res<SessionRules>,
+    pad: Res<SessionPad>,
     mut motions: Query<&mut SkaterMotion>,
 ) {
     let Some(collision) = collision else {
@@ -111,7 +116,13 @@ pub(crate) fn advance_ground(
             continue;
         }
         let frame = motion.frames + 1;
-        match ground::step(&collision.0, &mut motion.skater, rules.0, DESIGN_FRAME) {
+        match ground::step(
+            &collision.0,
+            &mut motion.skater,
+            rules.0,
+            DESIGN_FRAME,
+            pad.0,
+        ) {
             Ok(Outcome::Grounded(hit) | Outcome::Landed(hit)) => {
                 motion.frames = frame;
                 motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));

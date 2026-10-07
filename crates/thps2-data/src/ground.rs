@@ -11,6 +11,20 @@ pub const NORMAL_HOLD_LIMIT: i32 = 0x18000;
 pub const FAKIE_DOT: i32 = 0x5000;
 pub const BIG_DROP_BASE: i32 = 0x3c3;
 pub const WORLD_UP: [i32; 3] = [0, -4096, 0];
+pub const TURN_ACCEL: i32 = 0x3c;
+pub const TURN_MAX: i32 = 0x2d000;
+pub const TURN_MAX_CROUCH: i32 = 0x5a000;
+pub const LEAN_FRAMES: i32 = 0x16;
+pub const LEAN_PROBE_HEIGHT: i32 = 100;
+pub const LEAN_PROBE_REACH: i32 = 0x5a;
+
+/// Digital pad state for one frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Pad {
+    pub left: bool,
+    pub right: bool,
+    pub down: bool,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rules {
@@ -78,6 +92,14 @@ pub struct Skater {
     pub fall: i32,
     /// Ground distance below the origin minus the standing height at frame start, Q12.
     pub clearance: i32,
+    /// Turn rate in Q12 angle units per frame times 4096.
+    pub turn: i32,
+    pub lean: i32,
+    pub anim: u16,
+    pub anim_frame: i32,
+    /// Accumulated turn angle in 4096 units per revolution.
+    pub spin: i32,
+    pub crouch_lean: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,6 +175,49 @@ pub fn reproject(v: V3, normal: V3) -> Result<V3, String> {
 
 fn short(v: V3) -> V3 {
     v.map(|c| i32::from(c as i16))
+}
+
+/// Native 3x3 short matrix times vector with arithmetic shifts.
+fn mat_vec(m: [i32; 9], v: V3) -> V3 {
+    [
+        (m[0] * v[0] + m[1] * v[1] + m[2] * v[2]) >> 12,
+        (m[3] * v[0] + m[4] * v[1] + m[5] * v[2]) >> 12,
+        (m[6] * v[0] + m[7] * v[1] + m[8] * v[2]) >> 12,
+    ]
+}
+
+fn mat_mul_cols(a: [i32; 9], b: [i32; 9]) -> [i32; 9] {
+    let mut out = [0; 9];
+    for j in 0..3 {
+        let r = short(mat_vec(a, [b[j], b[3 + j], b[6 + j]]));
+        out[j] = r[0];
+        out[3 + j] = r[1];
+        out[6 + j] = r[2];
+    }
+    out
+}
+
+fn transpose(m: [i32; 9]) -> [i32; 9] {
+    [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]
+}
+
+/// Identity right multiplied by the native Y rotation builder.
+pub fn rot_y_matrix(angle: i32) -> [i32; 9] {
+    let (c, s) = trig_q12(angle);
+    let identity = [0x1000, 0, 0, 0, 0x1000, 0, 0, 0, 0x1000];
+    mat_mul_cols(identity, [c, 0, s, 0, 0x1000, 0, -s, 0, c])
+}
+
+/// Lean frame approach in steps of one, three or five frames.
+pub fn lerp_frame(current: i32, target: i32) -> i32 {
+    let diff = target - current;
+    let step = match diff.abs() {
+        0 => return target,
+        d if d > 12 => 5,
+        d if d > 3 => 3,
+        _ => 1,
+    };
+    current + diff.signum() * step
 }
 
 fn add(a: V3, b: V3) -> Result<V3, String> {
@@ -231,7 +296,124 @@ impl Skater {
             switched: false,
             fall: 0,
             clearance: 0,
+            turn: 0,
+            lean: 0,
+            anim: 0,
+            anim_frame: 0,
+            spin: 0,
+            crouch_lean: false,
         }
+    }
+
+    fn basis_matrix(&self) -> [i32; 9] {
+        let (l, u, f) = (short(self.lateral), short(self.up), short(self.forward));
+        [l[0], u[0], f[0], l[1], u[1], f[1], l[2], u[2], f[2]]
+    }
+
+    fn set_basis(&mut self, m: [i32; 9]) {
+        self.lateral = [m[0], m[3], m[6]];
+        self.up = [m[1], m[4], m[7]];
+        self.forward = [m[2], m[5], m[8]];
+    }
+
+    /// Right multiplies the basis by a Y rotation and turns the velocity through the old basis.
+    fn rotate(&mut self, old_matrix: [i32; 9], angle: i32) -> Result<(), String> {
+        if angle == 0 {
+            return Ok(());
+        }
+        let rotation = rot_y_matrix(angle);
+        self.set_basis(mat_mul_cols(self.basis_matrix(), rotation));
+        let v = self.velocity;
+        let speed = speed_of(v)?;
+        let turned = mat_mul_cols(transpose(old_matrix), rotation);
+        let p = mat_mul_cols(old_matrix, turned);
+        let mut v = [
+            dot_q12([p[0], p[1], p[2]], v),
+            dot_q12([p[3], p[4], p[5]], v),
+            dot_q12([p[6], p[7], p[8]], v),
+        ];
+        let new_speed = (sqrt_int(dot_q12(v, v)) << 6) >> 8;
+        if new_speed > 0 {
+            for c in &mut v {
+                *c = c.checked_mul(speed >> 8).ok_or("ground turn overflow")? / new_speed;
+            }
+        }
+        self.velocity = v;
+        Ok(())
+    }
+
+    /// Turn rate ramp from the pad and the lean animation it drives.
+    fn turn_input(&mut self, pad: Pad, frame: FrameScale) {
+        let mut accel = (TURN_ACCEL * 0x100 * frame.scale) >> 8;
+        let mut limit = TURN_MAX;
+        self.crouch_lean = pad.down;
+        if self.crouch_lean {
+            accel <<= 1;
+            limit = TURN_MAX_CROUCH;
+        }
+        let mut turn = self.turn;
+        if pad.left {
+            turn = (turn - accel).max(-limit);
+        } else if pad.right {
+            turn = (turn + accel).min(limit);
+        } else {
+            turn -= turn >> if self.crouch_lean { 1 } else { 2 };
+            if (turn + 0x800) & !0xfff == 0 {
+                turn = 0;
+            }
+        }
+        self.turn = turn;
+        self.lean = turn;
+        self.lean_anim(pad);
+    }
+
+    fn lean_anim(&mut self, pad: Pad) {
+        let limit = if pad.down { TURN_MAX_CROUCH } else { TURN_MAX };
+        let lean = self.lean;
+        let anim = self.anim;
+        if lean != 0 && (anim == 0 || (6..=10).contains(&anim)) {
+            let target = (lean.abs() * LEAN_FRAMES / limit).min(LEAN_FRAMES);
+            let (id, bump) = match (self.switched, lean >= 0) {
+                (false, true) | (true, false) => (7, false),
+                (false, false) => (6, false),
+                (true, true) => (6, true),
+            };
+            if anim != id {
+                self.anim_frame = 0;
+            }
+            if bump && self.anim_frame < target {
+                self.anim_frame += 1;
+            }
+            self.anim_frame = lerp_frame(self.anim_frame, target);
+            self.anim = id;
+        }
+        if lean == 0 && (self.anim == 6 || self.anim == 7) {
+            self.anim = 0;
+            self.anim_frame = 0;
+        }
+    }
+
+    /// Lean wall probe from a hundred units above the origin along the lean side.
+    fn lean_probe(&mut self, world: &CollisionWorld) -> Result<(), String> {
+        if self.lean == 0 || !(self.anim == 6 || self.anim == 7) {
+            return Ok(());
+        }
+        let span = if self.lean >= 0 {
+            LEAN_FRAMES
+        } else {
+            -LEAN_FRAMES
+        };
+        let reach = self.anim_frame * LEAN_PROBE_REACH / span;
+        let start = add(self.position, scaled(self.up, LEAN_PROBE_HEIGHT)?)?;
+        let end = add(start, scaled(self.lateral, -reach)?)?;
+        let Some(hit) = world.query(start, end)? else {
+            return Ok(());
+        };
+        self.anim_frame = (hit.distance_units * span / LEAN_PROBE_REACH).abs();
+        if hit.distance_units < 0x3c {
+            self.position = add(self.position, scaled(hit.normal.map(i32::from), 2)?)?;
+        }
+        Ok(())
     }
 
     fn smooth_basis(&mut self) {
@@ -339,13 +521,19 @@ fn post_contact_probes(world: &CollisionWorld, s: &Skater) -> Result<(), String>
     head_probe(world, s)
 }
 
-/// One native ground frame without pad input, bail, manual, triggers or moving objects.
+/// One native ground frame with digital steering, without bail, manual, triggers or moving objects.
 pub fn ground_step(
     world: &CollisionWorld,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
+    pad: Pad,
 ) -> Result<Outcome, String> {
+    s.turn_input(pad, frame);
+    if pad.down && !pad.left && !pad.right {
+        return Err("ground brake unsupported".into());
+    }
+    let old_matrix = s.basis_matrix();
     s.begin_frame(world)?;
     let mut accel = [0; 3];
     s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
@@ -354,6 +542,9 @@ pub fn ground_step(
         s.lateral = s.lateral.map(|c| -c);
         s.switched = !s.switched;
     }
+    let angle = (frame.scale * (s.turn >> 12)) >> 8;
+    s.rotate(old_matrix, angle)?;
+    s.spin += angle;
     wall_probe(world, s.old_position, s.position)?;
     s.fast = speed_of(s.velocity)? > stat_speed(rules.speed_stat, 0x186);
     let ignore_lips = s.velocity[1] > 0 || s.forward[1] < 1;
@@ -420,6 +611,7 @@ pub fn ground_step(
         }
         s.velocity = v;
         post_contact_probes(world, s)?;
+        s.lean_probe(world)?;
     } else {
         accel = add(accel, [0, GRAVITY, 0])?;
     }
@@ -477,7 +669,11 @@ pub fn air_step(
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
+    pad: Pad,
 ) -> Result<Outcome, String> {
+    if pad != Pad::default() {
+        return Err("air input unsupported".into());
+    }
     s.begin_frame(world)?;
     let mut accel = [0; 3];
     s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
@@ -515,9 +711,10 @@ pub fn step(
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
+    pad: Pad,
 ) -> Result<Outcome, String> {
     match s.state {
-        State::Ground => ground_step(world, s, rules, frame),
-        State::Air => air_step(world, s, rules, frame),
+        State::Ground => ground_step(world, s, rules, frame, pad),
+        State::Air => air_step(world, s, rules, frame, pad),
     }
 }

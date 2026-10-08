@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use thps2_data::{
+    anim::AnimationTable,
     collision::{CollisionWorld, Hit},
     ground::{self, DESIGN_FRAME, Outcome, Pad, Rules, Skater},
+    psx::Scene,
     skater::GROUND_STICK_DISTANCE,
     trig::{Restart, Triggers},
 };
@@ -14,12 +16,28 @@ pub(crate) struct SessionCollision(pub(crate) CollisionWorld);
 #[derive(Resource)]
 pub(crate) struct SessionTriggers(pub(crate) Triggers);
 
+/// Skater bank animation table from SK2ANIM.PSX.
+#[derive(Resource)]
+pub(crate) struct SessionAnimations(pub(crate) AnimationTable);
+
 #[derive(Resource, Clone, Copy)]
 pub(crate) struct SessionRules(pub(crate) Rules);
 
-/// Pad held for every stepped frame.
+/// Pad held for every stepped frame, released after an optional frame count.
 #[derive(Resource, Clone, Copy, Default)]
-pub(crate) struct SessionPad(pub(crate) Pad);
+pub(crate) struct SessionPad {
+    pub(crate) held: Pad,
+    pub(crate) release_after: Option<u32>,
+}
+
+impl SessionPad {
+    fn at(&self, frame: u32) -> Pad {
+        match self.release_after {
+            Some(limit) if frame > limit => Pad::default(),
+            _ => self.held,
+        }
+    }
+}
 
 #[derive(Component, Debug)]
 pub(crate) struct SkaterMotion {
@@ -80,6 +98,13 @@ pub(crate) fn initialize_spawn(
             .ok_or("spawn missing Hangar triggers")?
             .1;
         let triggers = Triggers::parse(bytes)?;
+        let bank = &assets
+            .files
+            .iter()
+            .find(|(name, _)| *name == "data/SK2ANIM.PSX")
+            .ok_or("spawn missing skater animation bank")?
+            .1;
+        let table = AnimationTable::from_scene(&Scene::parse(bank)?)?;
         let collision = CollisionWorld::from_scene(&scene.0)?;
         let restart = triggers.restart_named("Start")?;
         let placement = place(restart, &collision)?;
@@ -89,11 +114,12 @@ pub(crate) fn initialize_spawn(
             last_ground: None,
             halted: None,
         };
-        Ok::<_, String>((triggers, collision, placement, motion))
+        Ok::<_, String>((triggers, table, collision, placement, motion))
     })();
     match result {
-        Ok((triggers, collision, placement, motion)) => {
+        Ok((triggers, table, collision, placement, motion)) => {
             commands.insert_resource(SessionTriggers(triggers));
+            commands.insert_resource(SessionAnimations(table));
             commands.insert_resource(SessionCollision(collision));
             commands.spawn((placement, motion));
         }
@@ -101,14 +127,15 @@ pub(crate) fn initialize_spawn(
     }
 }
 
-/// One design frame per fixed tick without pad input, stopping at the first unsupported contact.
+/// One design frame per fixed tick with the held pad, stopping at the first unsupported contact.
 pub(crate) fn advance_ground(
     collision: Option<Res<SessionCollision>>,
+    animations: Option<Res<SessionAnimations>>,
     rules: Res<SessionRules>,
     pad: Res<SessionPad>,
     mut motions: Query<&mut SkaterMotion>,
 ) {
-    let Some(collision) = collision else {
+    let (Some(collision), Some(animations)) = (collision, animations) else {
         return;
     };
     for mut motion in &mut motions {
@@ -118,10 +145,11 @@ pub(crate) fn advance_ground(
         let frame = motion.frames + 1;
         match ground::step(
             &collision.0,
+            &animations.0,
             &mut motion.skater,
             rules.0,
             DESIGN_FRAME,
-            pad.0,
+            pad.at(frame),
         ) {
             Ok(Outcome::Grounded(hit) | Outcome::Landed(hit)) => {
                 motion.frames = frame;

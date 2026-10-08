@@ -1,3 +1,4 @@
+use crate::anim::{AnimState, AnimationTable};
 use crate::collision::{CollisionWorld, Hit};
 use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
 
@@ -20,6 +21,34 @@ pub const LEAN_PROBE_REACH: i32 = 0x5a;
 pub const WALL_TURN: i32 = 0x19;
 pub const WALL_PUSH: i32 = 0xcd;
 pub const HEAD_ON_DOT: i32 = 0xb50;
+pub const LATE_OLLIE_FRAMES: i32 = 0x14;
+pub const LANDING_TIMER: i32 = 0xf;
+pub const CROUCH_LEAN_LEFT_FRAMES: i32 = 0xf;
+pub const CROUCH_LEAN_RIGHT_FRAMES: i32 = 0xc;
+pub const ALIGN_EXTRA: i32 = 0x28;
+pub const VERT_FACE: u32 = 0x200000;
+
+pub const STAT_AIR: usize = 0;
+pub const STAT_OLLIE: usize = 2;
+pub const STAT_SPEED: usize = 3;
+pub const STAT_LANDING: usize = 5;
+pub const STAT_SWITCH: usize = 6;
+pub const TONY_HAWK_STATS: [i32; 11] = [7, 5, 2, 6, 8, 5, 3, 3, 6, 5, 0];
+const SWITCH_WEIGHT: [i32; 11] = [50, 50, 100, 20, 50, 100, 100, 80, 100, 100, 30];
+const STAT_CAP: [i32; 11] = [100, 100, 130, 110, 100, 130, 100, 130, 130, 130, 100];
+
+pub const ANIM_IDLE: u16 = 0;
+pub const ANIM_OLLIE: u16 = 4;
+pub const ANIM_LAND: u16 = 5;
+pub const ANIM_CROUCH: u16 = 8;
+pub const ANIM_WALL_HIT: u16 = 0xc;
+pub const ANIM_AIR: u16 = 0xe;
+pub const ANIM_CROUCH_LAND: u16 = 0x19;
+pub const ANIM_CROUCH_FALL: u16 = 0x1a;
+pub const ANIM_FALL: u16 = 0x1b;
+pub const ANIM_NOLLIE: u16 = 0xaf;
+const CROUCH_END: i32 = 0x1a;
+const CROUCH_PINGPONG: i32 = 0x13;
 
 /// Digital pad state for one frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -27,20 +56,53 @@ pub struct Pad {
     pub left: bool,
     pub right: bool,
     pub down: bool,
+    pub jump: bool,
 }
 
+/// Skater stat bytes in native order: air, hangtime, ollie, speed, spin, landing, switch, rail, lip, manual.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rules {
-    pub speed_stat: i32,
-    pub drop_stat: i32,
+    pub stats: [i32; 11],
+    pub bonus: i32,
     pub auto_kick: bool,
 }
 
 impl Rules {
-    /// Big drop limit in units from the stat scaled base.
-    pub fn big_drop_limit(self) -> i32 {
-        BIG_DROP_BASE * (self.drop_stat * 0x46 + 10000) / 10000
+    /// Stat as (byte + 2 + bonus) * 10 floored at 30 and capped, scaled by the switch stat while riding switch.
+    pub fn stat(self, index: usize, switched: bool) -> i32 {
+        let mut value = ((self.stats[index] + 2 + self.bonus) * 10)
+            .max(0x1e)
+            .min(STAT_CAP[index]);
+        if index == STAT_SWITCH {
+            return value.min(100);
+        }
+        if switched {
+            let switch = self.stat(STAT_SWITCH, switched);
+            value += SWITCH_WEIGHT[index] * ((switch + 100) * value * 0x32 / 10000 - value) / 100;
+        }
+        value
     }
+
+    /// Big drop limit in units from the landing stat scaled base.
+    pub fn big_drop_limit(self, switched: bool) -> i32 {
+        BIG_DROP_BASE * (self.stat(STAT_LANDING, switched) * 0x46 + 10000) / 10000
+    }
+
+    /// Frames an ollie can charge, from the ollie and air stats.
+    pub fn max_charge(self, switched: bool) -> i32 {
+        0xf - (self.stat(STAT_OLLIE, switched) + self.stat(STAT_AIR, switched)) / 0x14
+    }
+}
+
+/// Vertical ollie impulse in Q12 for a flat takeoff, negative meaning up.
+pub fn ollie_impulse(ollie_stat: i32, air_stat: i32, charge: i32) -> i32 {
+    let max_charge = 0xf - (ollie_stat + air_stat) / 0x14;
+    let base = (-0x21c - ollie_stat) * 5000 / 10000 * 0x400 / 10;
+    let held = ((ollie_stat + 0x21c) * 5000 / 10000 - (ollie_stat * 0xce4 + 0x166e30) / 10000)
+        * charge
+        * 0x400
+        / 10;
+    (base - held / max_charge) * 3
 }
 
 /// Frame scale in Q8 with 256 meaning two 60 Hz ticks, plus the normal hold increment.
@@ -98,11 +160,29 @@ pub struct Skater {
     /// Turn rate in Q12 angle units per frame times 4096.
     pub turn: i32,
     pub lean: i32,
-    pub anim: u16,
-    pub anim_frame: i32,
+    pub anim: AnimState,
     /// Accumulated turn angle in 4096 units per revolution.
     pub spin: i32,
     pub crouch_lean: bool,
+    pub crouching: bool,
+    pub charge: i32,
+    pub armed: bool,
+    pub jumped: bool,
+    /// Frame counter value when the current air time began, zero on the ground.
+    pub air_since: i32,
+    pub vert: bool,
+    pub vert_jump: bool,
+    pub landing_timer: i32,
+    pub previous_state: State,
+    pub now: i32,
+    pub ollies: i32,
+    pub short_ollies: i32,
+    pub airs: i32,
+    /// Gravity projected onto the last ground plane, kept through the air.
+    pub slope_gravity: [i32; 3],
+    pub ground_normal: [i32; 3],
+    pub align_dir: i32,
+    pub align_time: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -249,9 +329,15 @@ fn stat_speed(stat: i32, bonus: i32) -> i32 {
     (stat + bonus) * 0x2d000 / 0x118
 }
 
-pub fn clamp_speed(mut v: V3, rules: Rules, frame: FrameScale) -> Result<V3, String> {
+pub fn clamp_speed(
+    mut v: V3,
+    rules: Rules,
+    switched: bool,
+    frame: FrameScale,
+) -> Result<V3, String> {
     let mut speed = speed_of(v)?;
-    let cap = stat_speed(rules.speed_stat, 500);
+    let speed_stat = rules.stat(STAT_SPEED, switched);
+    let cap = stat_speed(speed_stat, 500);
     if speed > cap && speed & !0xfff != 0 {
         let shifted = speed >> 12;
         for c in &mut v {
@@ -259,7 +345,7 @@ pub fn clamp_speed(mut v: V3, rules: Rules, frame: FrameScale) -> Result<V3, Str
         }
         speed = sqrt_int(dot_q12(v, v)) << 6;
     }
-    if speed > stat_speed(rules.speed_stat, 0x186) {
+    if speed > stat_speed(speed_stat, 0x186) {
         for c in &mut v {
             *c -= frame_part([mul_q12(100, *c), 0, 0], frame.scale)?[0];
         }
@@ -301,11 +387,206 @@ impl Skater {
             clearance: 0,
             turn: 0,
             lean: 0,
-            anim: 0,
-            anim_frame: 0,
+            anim: AnimState::default(),
             spin: 0,
             crouch_lean: false,
+            crouching: false,
+            charge: 0,
+            armed: false,
+            jumped: false,
+            air_since: 0,
+            vert: false,
+            vert_jump: false,
+            landing_timer: 0,
+            previous_state: State::Ground,
+            now: 0,
+            ollies: 0,
+            short_ollies: 0,
+            airs: 0,
+            slope_gravity: [0; 3],
+            ground_normal: WORLD_UP,
+            align_dir: 0,
+            align_time: 0,
         }
+    }
+
+    fn set_state(&mut self, state: State) {
+        if state == State::Air && self.state == State::Ground {
+            self.airs += 1;
+        }
+        self.previous_state = self.state;
+        self.state = state;
+    }
+
+    fn run_anim(
+        &mut self,
+        table: &AnimationTable,
+        id: u16,
+        start: i32,
+        end: i32,
+        pingpong: i32,
+    ) -> Result<(), String> {
+        self.anim.run(table, id, start, end, pingpong as i8)
+    }
+
+    fn set_anim(&mut self, table: &AnimationTable, id: u16) -> Result<(), String> {
+        self.run_anim(table, id, 0, -1, -1)
+    }
+
+    /// Leaving a ground state enters the air with the fall animation and arms the landing timer.
+    fn leave_ground(&mut self, table: &AnimationTable) -> Result<(), String> {
+        self.set_state(State::Air);
+        self.landing_timer = LANDING_TIMER;
+        self.spin = 0;
+        self.jumped = true;
+        let id = if self.crouching {
+            ANIM_CROUCH_FALL
+        } else {
+            ANIM_FALL
+        };
+        self.set_anim(table, id)
+    }
+
+    /// Ollie button handling: crouch while held, jump on release, and the landing animation bookkeeping.
+    pub fn jump_input(
+        &mut self,
+        table: &AnimationTable,
+        rules: Rules,
+        held: bool,
+    ) -> Result<(), String> {
+        let anim = self.anim;
+        if !self.crouching {
+            if anim.id == ANIM_CROUCH {
+                if anim.pingpong == -1 {
+                    if anim.frame == 0 {
+                        self.set_anim(table, ANIM_IDLE)?;
+                    }
+                } else {
+                    self.run_anim(table, ANIM_CROUCH, CROUCH_PINGPONG, 0, -1)?;
+                }
+            }
+        } else if anim.id == ANIM_IDLE {
+            self.run_anim(table, ANIM_CROUCH, 0, CROUCH_END, CROUCH_PINGPONG)?;
+        }
+        if anim.finished {
+            self.finish_anim(table, anim)?;
+        }
+        if self.jumped && self.previous_state != State::Ground && self.state == State::Ground {
+            self.jumped = false;
+            self.vert_jump = false;
+            if self.crouching {
+                self.run_anim(table, ANIM_CROUCH_LAND, 3, -1, -1)?;
+            } else {
+                self.set_anim(table, ANIM_LAND)?;
+            }
+            self.spin = 0;
+        }
+        if !held {
+            self.crouching = false;
+            if self.air_since > 0 && self.now - self.air_since > LATE_OLLIE_FRAMES {
+                self.armed = false;
+            }
+            if self.armed {
+                self.ollie(table, rules)?;
+            }
+            self.charge = 0;
+            return Ok(());
+        }
+        self.charge = (self.charge + 1).min(rules.max_charge(self.switched));
+        if self.state == State::Ground {
+            self.armed = true;
+            if !self.crouching && self.turn.abs() < 0xa000 {
+                self.turn = 0;
+                self.run_anim(table, ANIM_CROUCH, 0, CROUCH_END, CROUCH_PINGPONG)?;
+            }
+        }
+        self.crouching = true;
+        Ok(())
+    }
+
+    /// Follow up of a finished animation by id, with the trick and stance ids left unsupported.
+    fn finish_anim(&mut self, table: &AnimationTable, anim: AnimState) -> Result<(), String> {
+        match anim.id {
+            ANIM_OLLIE | ANIM_NOLLIE => {
+                if !self.crouching {
+                    self.set_anim(table, ANIM_AIR)?;
+                }
+            }
+            ANIM_LAND | ANIM_CROUCH_LAND | ANIM_IDLE => {
+                if !self.crouching {
+                    self.set_anim(table, ANIM_IDLE)?;
+                } else {
+                    self.run_anim(
+                        table,
+                        ANIM_CROUCH,
+                        CROUCH_PINGPONG,
+                        CROUCH_END,
+                        CROUCH_PINGPONG,
+                    )?;
+                }
+            }
+            ANIM_CROUCH => {
+                if anim.frame == 0 {
+                    self.set_anim(table, ANIM_IDLE)?;
+                } else {
+                    self.run_anim(
+                        table,
+                        ANIM_CROUCH,
+                        CROUCH_PINGPONG,
+                        CROUCH_END,
+                        CROUCH_PINGPONG,
+                    )?;
+                }
+            }
+            ANIM_AIR => self.set_anim(table, ANIM_AIR)?,
+            0x22
+            | 0x30
+            | 0x7b..=0x7e
+            | 0x93..=0x95
+            | 0x97
+            | 0x98
+            | 0xa8
+            | 0xb5
+            | 0x82
+            | 0xa2
+            | 0xa3 => {
+                return Err(format!("finished animation id={} unsupported", anim.id));
+            }
+            _ => {
+                if self.state == State::Air {
+                    self.set_anim(table, ANIM_AIR)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn ollie(&mut self, table: &AnimationTable, rules: Rules) -> Result<(), String> {
+        self.armed = false;
+        self.jumped = true;
+        self.vert_jump = self.vert;
+        if self.up[1].abs() < 0x9c4 {
+            return Err("vert ollie impulse unsupported".into());
+        }
+        let impulse = ollie_impulse(
+            rules.stat(STAT_OLLIE, self.switched),
+            rules.stat(STAT_AIR, self.switched),
+            self.charge,
+        );
+        self.velocity[1] = self.velocity[1]
+            .checked_add(impulse)
+            .ok_or("ollie impulse overflow")?;
+        self.ollies += 1;
+        if self.charge < rules.max_charge(self.switched) {
+            self.short_ollies += 1;
+        }
+        self.spin = 0;
+        if self.vert_jump && self.state == State::Ground {
+            return Err("vert air state unsupported".into());
+        }
+        self.set_state(State::Air);
+        self.landing_timer = LANDING_TIMER;
+        self.set_anim(table, ANIM_OLLIE)
     }
 
     fn basis_matrix(&self) -> [i32; 9] {
@@ -346,7 +627,12 @@ impl Skater {
     }
 
     /// Turn rate ramp from the pad and the lean animation it drives.
-    fn turn_input(&mut self, pad: Pad, frame: FrameScale) {
+    fn turn_input(
+        &mut self,
+        table: &AnimationTable,
+        pad: Pad,
+        frame: FrameScale,
+    ) -> Result<(), String> {
         let mut accel = (TURN_ACCEL * 0x100 * frame.scale) >> 8;
         let mut limit = TURN_MAX;
         self.crouch_lean = pad.down;
@@ -367,14 +653,27 @@ impl Skater {
         }
         self.turn = turn;
         self.lean = turn;
-        self.lean_anim(pad);
+        self.lean_anim(table, pad)
     }
 
-    fn lean_anim(&mut self, pad: Pad) {
+    /// Air frames without direction input drop the turn and lean before the lean animation update.
+    fn air_turn(&mut self, table: &AnimationTable, pad: Pad) -> Result<(), String> {
+        if pad.left || pad.right || pad.down {
+            return Err("air input unsupported".into());
+        }
+        self.turn = 0;
+        self.lean = 0;
+        self.lean_anim(table, pad)
+    }
+
+    /// Standing leans 6 and 7, crouch leans 9 and 10, and the return to idle or crouch when the lean ends.
+    fn lean_anim(&mut self, table: &AnimationTable, pad: Pad) -> Result<(), String> {
         let limit = if pad.down { TURN_MAX_CROUCH } else { TURN_MAX };
         let lean = self.lean;
-        let anim = self.anim;
-        if lean != 0 && (anim == 0 || (6..=10).contains(&anim)) {
+        let lean_id = |id: u16| id == 0 || (6..=10).contains(&id);
+        let mut anim = self.anim.id;
+        let mut frame = i32::from(self.anim.frame);
+        if lean != 0 && !self.crouching && lean_id(anim) {
             let target = (lean.abs() * LEAN_FRAMES / limit).min(LEAN_FRAMES);
             let (id, bump) = match (self.switched, lean >= 0) {
                 (false, true) | (true, false) => (7, false),
@@ -382,18 +681,86 @@ impl Skater {
                 (true, true) => (6, true),
             };
             if anim != id {
-                self.anim_frame = 0;
+                frame = 0;
             }
-            if bump && self.anim_frame < target {
-                self.anim_frame += 1;
+            if bump && frame < target {
+                frame += 1;
             }
-            self.anim_frame = lerp_frame(self.anim_frame, target);
-            self.anim = id;
+            frame = lerp_frame(frame, target);
+            self.run_anim(table, id, frame, frame, -1)?;
+            anim = id;
         }
-        if lean == 0 && (self.anim == 6 || self.anim == 7) {
-            self.anim = 0;
-            self.anim_frame = 0;
+        if lean != 0 && self.crouching && lean_id(anim) {
+            let left = lean < 0;
+            let (id, from, frames) = if left != self.switched {
+                (9, 6, CROUCH_LEAN_LEFT_FRAMES)
+            } else {
+                (10, 7, CROUCH_LEAN_RIGHT_FRAMES)
+            };
+            let target = (lean.abs() * frames / limit).min(frames);
+            if anim == from {
+                anim = id;
+                frame = target;
+            }
+            if anim != id {
+                frame = 0;
+            }
+            frame = lerp_frame(frame, target);
+            self.run_anim(table, id, frame, frame, -1)?;
         }
+        if lean == 0 {
+            match self.anim.id {
+                6 | 7 => self.set_anim(table, ANIM_IDLE)?,
+                9 | 10 => self.run_anim(
+                    table,
+                    ANIM_CROUCH,
+                    CROUCH_PINGPONG,
+                    CROUCH_END,
+                    CROUCH_PINGPONG,
+                )?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Fall line alignment strength from the stored slope gravity and the speed below the stat limit.
+    fn alignment_strength(&self, rules: Rules, extra: i32) -> Result<i32, String> {
+        let g = self.slope_gravity;
+        let magnitude = sqrt_int(dot_q12(g, g));
+        let limit = stat_speed(rules.stat(STAT_SPEED, self.switched), 0x186);
+        let speed = speed_of(self.velocity)?.min(limit);
+        let pull = magnitude * 0xc80 / 13000 * magnitude * 0x40 / 13000;
+        Ok((limit + extra * 0x1000 - speed) * pull / limit)
+    }
+
+    /// Turn units toward the fall line of the last ground plane, latched per side for ten frames.
+    fn fall_line_alignment(&mut self, rules: Rules, extra: i32) -> Result<i32, String> {
+        let strength = self.alignment_strength(rules, extra)?;
+        if strength == 0 {
+            return Ok(0);
+        }
+        if self.align_time + 10 < self.now {
+            self.align_dir = 0;
+        }
+        self.align_time = self.now;
+        let down = normalize(self.slope_gravity);
+        let across = cross_q12(short(self.ground_normal), short(down));
+        let lean = dot_q12(self.forward, across);
+        if lean < 0x2a {
+            if lean < -0x29 {
+                if self.align_dir != 1 {
+                    self.align_dir = 2;
+                    return Ok(strength);
+                }
+            } else {
+                self.align_dir = 0;
+            }
+        } else if self.align_dir != 2 {
+            self.align_dir = 1;
+            return Ok(-strength);
+        }
+        Ok(0)
     }
 
     /// Removes the into wall velocity, pushes off and snaps the heading almost parallel to the wall.
@@ -432,7 +799,7 @@ impl Skater {
 
     /// Head on contacts enter the wall hit animation, which is not reproduced yet.
     fn head_on(&self, normal: V3, needs_speed: bool) -> Result<bool, String> {
-        if self.anim == 0xc {
+        if self.anim.id == ANIM_WALL_HIT {
             return Ok(false);
         }
         if needs_speed {
@@ -540,21 +907,22 @@ impl Skater {
 
     /// Lean wall probe from a hundred units above the origin along the lean side.
     fn lean_probe(&mut self, world: &CollisionWorld) -> Result<(), String> {
-        if self.lean == 0 || !(self.anim == 6 || self.anim == 7) {
+        let frames = match self.anim.id {
+            6 | 7 => LEAN_FRAMES,
+            9 | 10 => CROUCH_LEAN_RIGHT_FRAMES,
+            _ => return Ok(()),
+        };
+        if self.lean == 0 {
             return Ok(());
         }
-        let span = if self.lean >= 0 {
-            LEAN_FRAMES
-        } else {
-            -LEAN_FRAMES
-        };
-        let reach = self.anim_frame * LEAN_PROBE_REACH / span;
+        let span = if self.lean >= 0 { frames } else { -frames };
+        let reach = i32::from(self.anim.frame) * LEAN_PROBE_REACH / span;
         let start = add(self.position, scaled(self.up, LEAN_PROBE_HEIGHT)?)?;
         let end = add(start, scaled(self.lateral, -reach)?)?;
         let Some(hit) = world.query(start, end)? else {
             return Ok(());
         };
-        self.anim_frame = (hit.distance_units * span / LEAN_PROBE_REACH).abs();
+        self.anim.frame = (hit.distance_units * span / LEAN_PROBE_REACH).unsigned_abs() as i16;
         if hit.distance_units < 0x3c {
             self.position = add(self.position, scaled(hit.normal.map(i32::from), 2)?)?;
         }
@@ -613,7 +981,7 @@ impl Skater {
             self.fall = 0;
         }
         self.velocity = add(self.velocity, frame_part(accel, frame.scale)?)?;
-        self.velocity = clamp_speed(self.velocity, rules, frame)?;
+        self.velocity = clamp_speed(self.velocity, rules, self.switched, frame)?;
         Ok(())
     }
 }
@@ -672,18 +1040,14 @@ fn post_contact_probes(world: &CollisionWorld, s: &mut Skater) -> Result<bool, S
     Ok(bounced)
 }
 
-/// One native ground frame with digital steering, without bail, manual, triggers or moving objects.
+/// The ground handler after the input phase, without bail, manual, triggers or moving objects.
 pub fn ground_step(
     world: &CollisionWorld,
+    table: &AnimationTable,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
-    pad: Pad,
 ) -> Result<Outcome, String> {
-    s.turn_input(pad, frame);
-    if pad.down && !pad.left && !pad.right {
-        return Err("ground brake unsupported".into());
-    }
     let old_matrix = s.basis_matrix();
     s.begin_frame(world)?;
     let mut accel = [0; 3];
@@ -693,14 +1057,22 @@ pub fn ground_step(
         s.lateral = s.lateral.map(|c| -c);
         s.switched = !s.switched;
     }
-    let angle = (frame.scale * (s.turn >> 12)) >> 8;
+    let mut turn_units = s.turn >> 12;
+    if s.landing_timer != 0 {
+        if turn_units == 0 {
+            turn_units = s.fall_line_alignment(rules, ALIGN_EXTRA)?;
+        } else {
+            s.landing_timer = (s.landing_timer - 3).max(0);
+        }
+    }
+    let angle = (frame.scale * turn_units) >> 8;
     s.rotate(old_matrix, angle)?;
     s.spin += angle;
     let (contact, length) = wall_probe(world, s.old_position, s.position)?;
     if let Some(contact) = contact {
         s.wall_branch(world, &contact, length, frame)?;
     }
-    s.fast = speed_of(s.velocity)? > stat_speed(rules.speed_stat, 0x186);
+    s.fast = speed_of(s.velocity)? > stat_speed(rules.stat(STAT_SPEED, s.switched), 0x186);
     let ignore_lips = s.velocity[1] > 0 || s.forward[1] < 1;
     let start = add(s.position, scaled(s.up, 0x46)?)?;
     let end = add(start, scaled(s.up, -0x100)?)?;
@@ -715,6 +1087,9 @@ pub fn ground_step(
             flags & 0x1000000 != 0,
         );
         s.terrain = (flags >> 25) & 0xf;
+        if !(bit23 && bit24 && !lip) {
+            s.vert = flags & VERT_FACE != 0;
+        }
         if !(bit23 && bit24 && !lip) && hit.distance_units <= s.stick_slack + 0x74 {
             s.position = world.stand(s.position, s.up, &hit)?;
             if lip {
@@ -742,7 +1117,9 @@ pub fn ground_step(
     if grounded {
         let hit = hit.unwrap();
         let normal = hit.normal.map(i32::from);
-        accel = add(accel, project_onto_plane([0, GRAVITY, 0], normal))?;
+        s.slope_gravity = project_onto_plane([0, GRAVITY, 0], normal);
+        s.ground_normal = normal;
+        accel = add(accel, s.slope_gravity)?;
         let mut v = reproject(s.velocity, normal)?;
         let sideways = dot_q12(v, s.lateral);
         v = std::array::from_fn(|a| v[a] - mul_q12(sideways, s.lateral[a]));
@@ -770,7 +1147,9 @@ pub fn ground_step(
     } else {
         accel = add(accel, [0, GRAVITY, 0])?;
     }
-    s.state = if grounded { State::Ground } else { State::Air };
+    if !grounded {
+        s.leave_ground(table)?;
+    }
     s.finish_frame(world, accel, rules, frame, free_move)?;
     Ok(if grounded {
         Outcome::Grounded(hit.unwrap())
@@ -790,6 +1169,8 @@ fn land(world: &CollisionWorld, s: &mut Skater, rules: Rules, hit: &Hit) -> Resu
         ));
     }
     s.terrain = (hit.flags >> 25) & 0xf;
+    s.turn = 0;
+    s.set_state(State::Ground);
     let flat = project_onto_plane(s.velocity, normal);
     if speed_of(flat)? > 0x1e000 {
         let heading = normalize(flat);
@@ -799,12 +1180,16 @@ fn land(world: &CollisionWorld, s: &mut Skater, rules: Rules, hit: &Hit) -> Resu
         }
     }
     let height = (s.clearance + s.fall) >> 12;
-    if height > rules.big_drop_limit() {
+    let mut limit = rules.big_drop_limit(s.switched);
+    if s.charge != 0 {
+        limit += (0xb - s.charge) * 0x3c;
+    }
+    if height > limit {
         return Err(format!(
-            "air big drop bail unsupported height={height} limit={}",
-            rules.big_drop_limit()
+            "air big drop bail unsupported height={height} limit={limit}"
         ));
     }
+    s.vert = hit.flags & VERT_FACE != 0;
     let tilt = dot_q12(s.up, normal);
     if tilt < 2000 && s.up[1] > -2000 && (s.velocity[1] > 150000 || tilt < 200) {
         return Err("air landing bail unsupported".into());
@@ -814,21 +1199,16 @@ fn land(world: &CollisionWorld, s: &mut Skater, rules: Rules, hit: &Hit) -> Resu
     s.smoothed_up = normal;
     s.same_normal_time = 0;
     s.smooth_basis();
-    s.state = State::Ground;
     head_probe(world, s)
 }
 
-/// One native air frame without pad input, stopping at wall bounces, lips, wallrides and bails.
+/// The air handler after the input phase, stopping at wall bounces, lips, wallrides and bails.
 pub fn air_step(
     world: &CollisionWorld,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
-    pad: Pad,
 ) -> Result<Outcome, String> {
-    if pad != Pad::default() {
-        return Err("air input unsupported".into());
-    }
     s.begin_frame(world)?;
     let mut accel = [0; 3];
     s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
@@ -860,16 +1240,35 @@ pub fn air_step(
     })
 }
 
-/// Dispatches one frame by the skater state.
+/// One frame: animation tick, pad input, ollie handling, the state handler and the airborne timer.
 pub fn step(
     world: &CollisionWorld,
+    table: &AnimationTable,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
+    s.now += 1;
+    s.anim.tick(frame.scale)?;
     match s.state {
-        State::Ground => ground_step(world, s, rules, frame, pad),
-        State::Air => air_step(world, s, rules, frame, pad),
+        State::Ground => {
+            s.turn_input(table, pad, frame)?;
+            if pad.down && !pad.left && !pad.right {
+                return Err("ground brake unsupported".into());
+            }
+        }
+        State::Air => s.air_turn(table, pad)?,
     }
+    s.jump_input(table, rules, pad.jump)?;
+    let outcome = match s.state {
+        State::Ground => ground_step(world, table, s, rules, frame),
+        State::Air => air_step(world, s, rules, frame),
+    }?;
+    if s.state == State::Ground {
+        s.air_since = 0;
+    } else if s.air_since == 0 {
+        s.air_since = s.now;
+    }
+    Ok(outcome)
 }

@@ -13,7 +13,7 @@ use spawn::{
     SessionCollision, SessionPad, SessionRules, SessionTriggers, SkaterMotion, SkaterPlacement,
     advance_ground, initialize_spawn,
 };
-use thps2_data::ground::{Pad, Rules};
+use thps2_data::ground::{Pad, Rules, TONY_HAWK_STATS};
 use view::{CapturedView, ProjectedInstance, project_hangar};
 
 #[derive(Resource)]
@@ -48,12 +48,13 @@ struct SessionAssets {
     error: Option<String>,
 }
 
-const HANGAR_FILES: [&str; 5] = [
+const HANGAR_FILES: [&str; 6] = [
     "data/SKHAN.PSX",
     "data/SKHAN_T.TRG",
     "data/HAWK.PSX",
     "data/HAWK.PSH",
     "data/SKHAN_L.PSX",
+    "data/SK2ANIM.PSX",
 ];
 
 fn load_hangar(mut commands: Commands, data: Res<OriginalData>, mut assets: ResMut<SessionAssets>) {
@@ -158,7 +159,7 @@ fn inspect(
     render: bool,
     capture: Option<PathBuf>,
     simulate_frames: u32,
-    pad: Pad,
+    pad: SessionPad,
 ) -> Result<(), Box<dyn Error>> {
     let path = root.join("ALL.PKR");
     let bytes =
@@ -195,11 +196,11 @@ fn inspect(
         .insert_resource(OriginalData(archive))
         .insert_resource(Time::<Fixed>::from_hz(30.0))
         .insert_resource(SessionRules(Rules {
-            speed_stat: 80,
-            drop_stat: 70,
+            stats: TONY_HAWK_STATS,
+            bonus: 0,
             auto_kick: false,
         }))
-        .insert_resource(SessionPad(pad))
+        .insert_resource(pad)
         .init_resource::<SessionAssets>()
         .add_systems(
             Startup,
@@ -322,10 +323,10 @@ fn inspect(
     let mut motions = app.world_mut().query::<&SkaterMotion>();
     for motion in motions.iter(app.world()) {
         println!(
-            "[ground] frames={} requested={simulate_frames} scale=256 speed_stat={} drop_stat={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} pad={:?} turn={} anim={}:{}",
+            "[ground] frames={} requested={simulate_frames} scale=256 stats={:?} bonus={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} pad={:?} turn={} anim={}:{} charge={} ollies={}",
             motion.frames,
-            rules.speed_stat,
-            rules.drop_stat,
+            rules.stats,
+            rules.bonus,
             rules.auto_kick,
             motion.skater.state,
             motion.skater.position,
@@ -333,10 +334,12 @@ fn inspect(
             motion.skater.up,
             motion.last_ground,
             motion.halted,
-            pad,
+            pad.held,
             motion.skater.turn,
-            motion.skater.anim,
-            motion.skater.anim_frame
+            motion.skater.anim.id,
+            motion.skater.anim.frame,
+            motion.skater.charge,
+            motion.skater.ollies
         );
     }
     if render {
@@ -360,6 +363,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut capture = None;
     let mut simulate_frames = 120;
     let mut pad = Pad::default();
+    let mut release_after = None;
     while let Some(arg) = args.next() {
         if arg == "--data-root" {
             root = Some(PathBuf::from(
@@ -395,12 +399,19 @@ fn run() -> Result<(), Box<dyn Error>> {
                     "left" => pad.left = true,
                     "right" => pad.right = true,
                     "down" => pad.down = true,
+                    "jump" => pad.jump = true,
                     other => return Err(format!("--hold unknown key={other}").into()),
                 }
             }
+        } else if arg == "--release-after" {
+            release_after = Some(
+                args.next()
+                    .and_then(|v| v.to_str()?.parse::<u32>().ok())
+                    .ok_or("--release-after requires a frame count")?,
+            );
         } else if arg == "--help" {
             println!(
-                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]] [--simulate-frames N] [--hold left,right,down]\nInspect original resources, step the skater N design frames with an optional held pad, or display a static diagnostic with feature viewer."
+                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]] [--simulate-frames N] [--hold left,right,down,jump [--release-after N]]\nInspect original resources, step the skater N design frames with an optional held pad released after N frames, or display a static diagnostic with feature viewer."
             );
             return Ok(());
         } else {
@@ -416,6 +427,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     if capture.is_some() && !render {
         return Err("--capture requires --render".into());
     }
+    if release_after.is_some() && pad == Pad::default() {
+        return Err("--release-after requires --hold".into());
+    }
     inspect(
         root.ok_or("--data-root is required (directory containing ALL.PKR)")?,
         manifest,
@@ -423,7 +437,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         render,
         capture,
         simulate_frames,
-        pad,
+        SessionPad {
+            held: pad,
+            release_after,
+        },
     )
 }
 

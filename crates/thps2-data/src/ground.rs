@@ -27,6 +27,11 @@ pub const CROUCH_LEAN_LEFT_FRAMES: i32 = 0xf;
 pub const CROUCH_LEAN_RIGHT_FRAMES: i32 = 0xc;
 pub const ALIGN_EXTRA: i32 = 0x28;
 pub const VERT_FACE: u32 = 0x200000;
+pub const WALL_HIT_TURN: i32 = 200;
+pub const PUSH_COOLDOWN: i32 = 0x14;
+pub const PUSH_TARGET_INIT: i32 = 0x2e9b6;
+pub const PUSH_SPEED: i32 = 0x14000;
+pub const BRAKE_STOP: i32 = 0xa000;
 
 pub const STAT_AIR: usize = 0;
 pub const STAT_OLLIE: usize = 2;
@@ -38,6 +43,12 @@ const SWITCH_WEIGHT: [i32; 11] = [50, 50, 100, 20, 50, 100, 100, 80, 100, 100, 3
 const STAT_CAP: [i32; 11] = [100, 100, 130, 110, 100, 130, 100, 130, 130, 130, 100];
 
 pub const ANIM_IDLE: u16 = 0;
+pub const ANIM_PUSH_START: u16 = 1;
+pub const ANIM_PUSH_ALT: u16 = 2;
+pub const ANIM_PUSH: u16 = 3;
+pub const ANIM_PUSH_SPECIAL: u16 = 0x5e;
+pub const ANIM_BRAKE: u16 = 0x31;
+pub const ANIM_BRAKE_FAST: u16 = 0x83;
 pub const ANIM_OLLIE: u16 = 4;
 pub const ANIM_LAND: u16 = 5;
 pub const ANIM_CROUCH: u16 = 8;
@@ -57,6 +68,7 @@ pub struct Pad {
     pub right: bool,
     pub down: bool,
     pub jump: bool,
+    pub kick: bool,
 }
 
 /// Skater stat bytes in native order: air, hangtime, ollie, speed, spin, landing, switch, rail, lip, manual.
@@ -135,6 +147,8 @@ impl FrameScale {
 pub enum State {
     Ground,
     Air,
+    /// Braked to a halt, the ground handler runs but the position is restored each frame.
+    Stopped,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,6 +197,13 @@ pub struct Skater {
     pub ground_normal: [i32; 3],
     pub align_dir: i32,
     pub align_time: i32,
+    pub turning: bool,
+    /// Push acceleration for the current frame, consumed by the ground handler.
+    pub accel: [i32; 3],
+    pub push_cooldown: i32,
+    /// Speed in Q12 units per frame that pushes stop accelerating toward.
+    pub push_target: i32,
+    pub brake_mode: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -407,11 +428,20 @@ impl Skater {
             ground_normal: WORLD_UP,
             align_dir: 0,
             align_time: 0,
+            turning: false,
+            accel: [0; 3],
+            push_cooldown: 0,
+            push_target: PUSH_TARGET_INIT,
+            brake_mode: 0,
         }
     }
 
+    fn on_ground(&self) -> bool {
+        matches!(self.state, State::Ground | State::Stopped)
+    }
+
     fn set_state(&mut self, state: State) {
-        if state == State::Air && self.state == State::Ground {
+        if state == State::Air {
             self.airs += 1;
         }
         self.previous_state = self.state;
@@ -471,7 +501,7 @@ impl Skater {
         if anim.finished {
             self.finish_anim(table, anim)?;
         }
-        if self.jumped && self.previous_state != State::Ground && self.state == State::Ground {
+        if self.jumped && self.previous_state != State::Ground && self.on_ground() {
             self.jumped = false;
             self.vert_jump = false;
             if self.crouching {
@@ -493,7 +523,7 @@ impl Skater {
             return Ok(());
         }
         self.charge = (self.charge + 1).min(rules.max_charge(self.switched));
-        if self.state == State::Ground {
+        if self.on_ground() {
             self.armed = true;
             if !self.crouching && self.turn.abs() < 0xa000 {
                 self.turn = 0;
@@ -581,7 +611,7 @@ impl Skater {
             self.short_ollies += 1;
         }
         self.spin = 0;
-        if self.vert_jump && self.state == State::Ground {
+        if self.vert_jump && self.on_ground() {
             return Err("vert air state unsupported".into());
         }
         self.set_state(State::Air);
@@ -636,6 +666,7 @@ impl Skater {
         let mut accel = (TURN_ACCEL * 0x100 * frame.scale) >> 8;
         let mut limit = TURN_MAX;
         self.crouch_lean = pad.down;
+        self.turning = pad.left || pad.right;
         if self.crouch_lean {
             accel <<= 1;
             limit = TURN_MAX_CROUCH;
@@ -663,7 +694,208 @@ impl Skater {
         }
         self.turn = 0;
         self.lean = 0;
+        self.crouch_lean = false;
+        self.turning = false;
         self.lean_anim(table, pad)
+    }
+
+    fn pushable(&self) -> bool {
+        !self.crouching && (self.anim.id == ANIM_IDLE || (5..=7).contains(&self.anim.id))
+    }
+
+    fn start_push(
+        &mut self,
+        table: &AnimationTable,
+        rules: Rules,
+        bonus: i32,
+    ) -> Result<(), String> {
+        self.push_cooldown = PUSH_COOLDOWN;
+        self.push_target = stat_speed(rules.stat(STAT_SPEED, self.switched), bonus);
+        self.run_anim(table, ANIM_PUSH_START, 0, -1, -1)?;
+        self.anim.speed = PUSH_SPEED;
+        Ok(())
+    }
+
+    /// Push animations accelerate along the heading on frames 11 to 15, doubled while the kick is held.
+    fn push_burst(&mut self, speed: i32, kick: bool) -> Result<bool, String> {
+        match self.anim.id {
+            ANIM_PUSH | ANIM_PUSH_ALT => {
+                if (11..=15).contains(&self.anim.frame) && speed < self.push_target {
+                    self.accel = self.forward.map(|c| -c * if kick { 8 } else { 4 });
+                }
+                Ok(true)
+            }
+            ANIM_PUSH_SPECIAL => Err("push animation 0x5e unsupported".into()),
+            _ => Ok(false),
+        }
+    }
+
+    /// Kick button and auto kick: the push animation chain, the glide toward the target and the bursts.
+    fn push(&mut self, table: &AnimationTable, rules: Rules, pad: Pad) -> Result<(), String> {
+        if self.brake_mode != 0 {
+            return Ok(());
+        }
+        if self.anim.finished {
+            match self.anim.id {
+                ANIM_PUSH_START => {
+                    self.set_anim(table, ANIM_PUSH)?;
+                    self.anim.speed = PUSH_SPEED;
+                }
+                ANIM_PUSH | ANIM_PUSH_SPECIAL => self.set_anim(table, ANIM_IDLE)?,
+                _ => {}
+            }
+        }
+        if self.state != State::Ground {
+            return Ok(());
+        }
+        if self.push_cooldown > 0 {
+            self.push_cooldown -= 1;
+        }
+        let speed = speed_of(self.velocity)?;
+        let uphill = dot_q12(
+            self.slope_gravity,
+            project_onto_plane(self.velocity, self.ground_normal),
+        );
+        if pad.kick || rules.auto_kick {
+            if !(self.crouch_lean && self.turning) {
+                if self.push_cooldown == 0 {
+                    let slow = uphill < -0x4cc || speed <= self.push_target / 2;
+                    if slow && !self.crouching && self.anim.id != ANIM_PUSH_SPECIAL {
+                        if self.pushable() {
+                            self.start_push(table, rules, 0xaa)?;
+                        }
+                    } else {
+                        self.push_cooldown = PUSH_COOLDOWN;
+                    }
+                }
+                if !self.push_burst(speed, pad.kick)?
+                    && (speed > 20000 || self.forward[1] < 500)
+                    && speed < self.push_target
+                {
+                    self.accel = self.forward.map(|c| -c);
+                }
+            }
+            if rules.auto_kick {
+                return Ok(());
+            }
+        }
+        if pad.kick && uphill > -0x4cd && self.pushable() {
+            self.start_push(table, rules, 0xdc)?;
+        }
+        if matches!(self.anim.id, ANIM_PUSH | ANIM_PUSH_ALT) {
+            self.push_burst(speed, pad.kick)?;
+        }
+        Ok(())
+    }
+
+    /// Down alone brakes: a sixteenth of the velocity per frame, then a stop under the threshold.
+    fn brake(&mut self, table: &AnimationTable, pad: Pad, frame: FrameScale) -> Result<(), String> {
+        if !self.on_ground() {
+            self.brake_mode = 0;
+            return Ok(());
+        }
+        let braking = pad.down && !pad.left && !pad.right;
+        if self.state == State::Stopped && !braking {
+            self.set_state(State::Ground);
+        }
+        let threshold = brake_threshold(self.ground_normal);
+        let speed = speed_of(self.velocity)?;
+        if self.state == State::Ground && braking {
+            if threshold < speed {
+                self.velocity = self.velocity.map(|c| c - (((c >> 4) * frame.scale) >> 8));
+            } else if threshold <= BRAKE_STOP {
+                self.set_state(State::Stopped);
+                self.velocity = [0; 3];
+            }
+        }
+        let anim = self.anim;
+        let brake_anim = !matches!(anim.id, 0x5d | 0x5f);
+        match self.brake_mode {
+            0 => {
+                if braking {
+                    if speed <= threshold {
+                        self.brake_mode = 0;
+                    } else if !self.crouching && speed < 0x30000 {
+                        if brake_anim {
+                            self.set_anim(table, ANIM_BRAKE)?;
+                        }
+                        self.brake_mode = 5;
+                    } else {
+                        if brake_anim {
+                            self.set_anim(table, ANIM_BRAKE_FAST)?;
+                        }
+                        self.brake_mode = 1;
+                    }
+                    self.push_cooldown = 2;
+                }
+            }
+            1 | 5 => {
+                if !braking || speed < (i32::from(anim.frame) << 12) + threshold {
+                    self.anim.reverse();
+                    self.brake_mode = if self.brake_mode == 1 { 3 } else { 6 };
+                }
+                self.push_cooldown = 2;
+            }
+            3 => {
+                if anim.finished {
+                    if self.crouching {
+                        self.run_anim(
+                            table,
+                            ANIM_CROUCH,
+                            CROUCH_PINGPONG,
+                            CROUCH_END,
+                            CROUCH_PINGPONG,
+                        )?;
+                    } else {
+                        self.run_anim(table, ANIM_CROUCH, CROUCH_PINGPONG, 0, -1)?;
+                    }
+                    self.brake_mode = 4;
+                }
+                self.push_cooldown = 2;
+            }
+            6 => {
+                if anim.finished {
+                    self.set_anim(table, ANIM_IDLE)?;
+                    self.brake_mode = 4;
+                }
+                self.push_cooldown = 2;
+            }
+            4 => {
+                if !braking {
+                    self.brake_mode = 0;
+                }
+            }
+            mode => return Err(format!("brake mode={mode} unsupported")),
+        }
+        Ok(())
+    }
+
+    /// Finished wall hit animations return to idle or the crouch.
+    fn wall_hit_recovery(&mut self, table: &AnimationTable) -> Result<(), String> {
+        if !(self.anim.finished && matches!(self.anim.id, 0xb | ANIM_WALL_HIT)) {
+            return Ok(());
+        }
+        if self.crouching {
+            self.run_anim(
+                table,
+                ANIM_CROUCH,
+                CROUCH_PINGPONG,
+                CROUCH_END,
+                CROUCH_PINGPONG,
+            )
+        } else {
+            self.set_anim(table, ANIM_IDLE)
+        }
+    }
+
+    /// The push target decays by one per frame and resets to the kick target while crouching.
+    fn decay_push_target(&mut self, rules: Rules) {
+        let stat = rules.stat(STAT_SPEED, self.switched);
+        if self.crouching {
+            self.push_target = stat_speed(stat, 0xdc);
+        } else if stat_speed(stat, 0xaa) < self.push_target {
+            self.push_target -= 1;
+        }
     }
 
     /// Standing leans 6 and 7, crouch leans 9 and 10, and the return to idle or crouch when the lean ends.
@@ -763,8 +995,22 @@ impl Skater {
         Ok(0)
     }
 
+    /// Head on hits run the wall hit animation and respond with the larger turn.
+    fn wall_contact(
+        &mut self,
+        table: &AnimationTable,
+        normal: V3,
+        needs_speed: bool,
+    ) -> Result<(), String> {
+        if self.head_on(normal, needs_speed)? {
+            self.set_anim(table, ANIM_WALL_HIT)?;
+            return self.wall_response(normal, WALL_HIT_TURN);
+        }
+        self.wall_response(normal, WALL_TURN)
+    }
+
     /// Removes the into wall velocity, pushes off and snaps the heading almost parallel to the wall.
-    fn wall_response(&mut self, normal: V3) -> Result<(), String> {
+    fn wall_response(&mut self, normal: V3, turn: i32) -> Result<(), String> {
         let d = dot_q12(self.velocity, normal);
         if d < 0 {
             self.velocity = std::array::from_fn(|a| {
@@ -781,11 +1027,7 @@ impl Skater {
         let signed = if side > 0 { -sine } else { sine };
         let snap = [f, 0, -signed, 0, 0x1000, 0, signed, 0, f].map(|c| i32::from(c as i16));
         let mut m = mat_mul_cols(self.basis_matrix(), snap);
-        let angle = if side > 0 {
-            WALL_TURN - 0x400
-        } else {
-            0x400 - WALL_TURN
-        };
+        let angle = if side > 0 { turn - 0x400 } else { 0x400 - turn };
         m = mat_mul_cols(m, rot_y_matrix(angle));
         self.set_basis(m);
         let forward = normalize(self.forward);
@@ -797,7 +1039,7 @@ impl Skater {
         Ok(())
     }
 
-    /// Head on contacts enter the wall hit animation, which is not reproduced yet.
+    /// Heading within 45 degrees of the wall normal, with a speed condition on some paths.
     fn head_on(&self, normal: V3, needs_speed: bool) -> Result<bool, String> {
         if self.anim.id == ANIM_WALL_HIT {
             return Ok(false);
@@ -836,6 +1078,7 @@ impl Skater {
     fn wall_branch(
         &mut self,
         world: &CollisionWorld,
+        table: &AnimationTable,
         hit: &Hit,
         length: i32,
         frame: FrameScale,
@@ -848,26 +1091,14 @@ impl Skater {
         }
         if wall_face && !lip {
             self.position = self.old_position;
-            if self.head_on(normal, false)? {
-                return Err(format!(
-                    "ground head on wall unsupported item={} face={}",
-                    hit.item_index, hit.face_index
-                ));
-            }
-            return self.wall_response(normal);
+            return self.wall_contact(table, normal, false);
         }
         let d = dot_q12(normal, self.last_normal);
         if (-0x7ff..=0x7ff).contains(&d) {
             let [nx, ny, nz] = normal;
             if -nx.abs() == ny || -ny < nx.abs() || -ny <= nz.abs() {
                 self.position = self.old_position;
-                if self.head_on(normal, true)? {
-                    return Err(format!(
-                        "ground head on wall unsupported item={} face={}",
-                        hit.item_index, hit.face_index
-                    ));
-                }
-                return self.wall_response(normal);
+                return self.wall_contact(table, normal, true);
             }
             return self.settle_on(world, hit, normal, false, frame);
         }
@@ -878,7 +1109,12 @@ impl Skater {
     }
 
     /// Lateral shoulder probe that pushes the skater off a near vertical face.
-    fn bounce(&mut self, world: &CollisionWorld, direction: i32) -> Result<bool, String> {
+    fn bounce(
+        &mut self,
+        world: &CollisionWorld,
+        table: &AnimationTable,
+        direction: i32,
+    ) -> Result<bool, String> {
         let shoulder = add(self.position, scaled(self.up, STANDING_HEIGHT)?)?;
         let end = add(shoulder, scaled(self.lateral, direction * BOUNCE_REACH)?)?;
         let Some(hit) = world.query_filtered(shoulder, end, false)? else {
@@ -889,13 +1125,7 @@ impl Skater {
             return Ok(false);
         }
         self.position = self.old_position;
-        if self.head_on(normal, true)? {
-            return Err(format!(
-                "ground head on wall unsupported item={} face={}",
-                hit.item_index, hit.face_index
-            ));
-        }
-        self.wall_response(normal)?;
+        self.wall_contact(table, normal, true)?;
         let away_start = add(self.position, normal)?;
         let away_end = add(self.position, scaled(normal, BOUNCE_REACH)?)?;
         if world.query_filtered(away_start, away_end, false)?.is_none() {
@@ -1014,30 +1244,45 @@ fn head_probe(world: &CollisionWorld, s: &Skater) -> Result<(), String> {
 }
 
 /// Both shoulder bounces, restoring the entry position when both sides push back.
-fn bounce_probes(world: &CollisionWorld, s: &mut Skater) -> Result<bool, String> {
+fn bounce_probes(
+    world: &CollisionWorld,
+    table: &AnimationTable,
+    s: &mut Skater,
+) -> Result<bool, String> {
     let entry = s.position;
-    if s.bounce(world, -1)? {
-        if s.bounce(world, 1)? {
+    if s.bounce(world, table, -1)? {
+        if s.bounce(world, table, 1)? {
             s.position = entry;
         }
         return Ok(true);
     }
-    if !s.bounce(world, 1)? {
+    if !s.bounce(world, table, 1)? {
         return Ok(false);
     }
-    if s.bounce(world, -1)? {
+    if s.bounce(world, table, -1)? {
         s.position = entry;
     }
     Ok(true)
 }
 
-fn post_contact_probes(world: &CollisionWorld, s: &mut Skater) -> Result<bool, String> {
-    let bounced = bounce_probes(world, s)?;
-    if s.up[1] > 1000 {
+/// Shoulder bounces, the upside down check of the rolling state and the head probe.
+fn post_contact_probes(
+    world: &CollisionWorld,
+    table: &AnimationTable,
+    s: &mut Skater,
+) -> Result<bool, String> {
+    let bounced = bounce_probes(world, table, s)?;
+    if s.state == State::Ground && s.up[1] > 1000 {
         return Err("ground upside down bail unsupported".into());
     }
     head_probe(world, s)?;
     Ok(bounced)
+}
+
+/// Speed under which braking stops the skater, raised on steep ground from the stored ground normal.
+pub fn brake_threshold(ground_normal: V3) -> i32 {
+    let steep = (-ground_normal[1]).max(0x300);
+    ((0x1000 - steep) * 0x1800 / 0xd0).max(BRAKE_STOP)
 }
 
 /// The ground handler after the input phase, without bail, manual, triggers or moving objects.
@@ -1048,9 +1293,10 @@ pub fn ground_step(
     rules: Rules,
     frame: FrameScale,
 ) -> Result<Outcome, String> {
+    let stopped = s.state == State::Stopped;
     let old_matrix = s.basis_matrix();
     s.begin_frame(world)?;
-    let mut accel = [0; 3];
+    let mut accel = s.accel;
     s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
     if dot_q12(s.forward, s.velocity) > FAKIE_DOT {
         s.forward = s.forward.map(|c| -c);
@@ -1070,10 +1316,10 @@ pub fn ground_step(
     s.spin += angle;
     let (contact, length) = wall_probe(world, s.old_position, s.position)?;
     if let Some(contact) = contact {
-        s.wall_branch(world, &contact, length, frame)?;
+        s.wall_branch(world, table, &contact, length, frame)?;
     }
     s.fast = speed_of(s.velocity)? > stat_speed(rules.stat(STAT_SPEED, s.switched), 0x186);
-    let ignore_lips = s.velocity[1] > 0 || s.forward[1] < 1;
+    let ignore_lips = !stopped && (s.velocity[1] > 0 || s.forward[1] < 1);
     let start = add(s.position, scaled(s.up, 0x46)?)?;
     let end = add(start, scaled(s.up, -0x100)?)?;
     let hit = world.query_filtered(start, end, ignore_lips)?;
@@ -1102,7 +1348,10 @@ pub fn ground_step(
             let convex_edge = dot_q12(s.forward, normal) < 0
                 && s.velocity[1] <= 0
                 && (1..3000).contains(&dot_q12(s.last_normal, normal));
-            grounded = !bit24 && !convex_edge;
+            if stopped && !bit24 {
+                s.velocity = [0; 3];
+            }
+            grounded = !bit24 && (stopped || !convex_edge);
             if grounded {
                 if normal == s.last_normal {
                     s.same_normal_time += frame.hold_delta;
@@ -1121,28 +1370,32 @@ pub fn ground_step(
         s.ground_normal = normal;
         accel = add(accel, s.slope_gravity)?;
         let mut v = reproject(s.velocity, normal)?;
-        let sideways = dot_q12(v, s.lateral);
-        v = std::array::from_fn(|a| v[a] - mul_q12(sideways, s.lateral[a]));
-        let along = dot_q12(v, s.forward);
-        let rolling: V3 = std::array::from_fn(|a| mul_q12(along, s.forward[a]));
-        let mut frictions = Vec::new();
-        if s.fast {
-            frictions.push(0);
-        } else if rules.auto_kick {
-            frictions.push(8);
-        }
-        if s.terrain == 5 || s.terrain == 6 {
-            frictions.push(0x78);
-        }
-        if s.terrain == 3 {
-            frictions.push(0xb4);
-        }
-        for k in frictions {
-            let drag = frame_part(rolling.map(|c| mul_q12(k, c)), frame.scale)?;
-            accel = std::array::from_fn(|a| accel[a] - drag[a]);
+        if stopped {
+            s.position = s.old_position;
+        } else {
+            let sideways = dot_q12(v, s.lateral);
+            v = std::array::from_fn(|a| v[a] - mul_q12(sideways, s.lateral[a]));
+            let along = dot_q12(v, s.forward);
+            let rolling: V3 = std::array::from_fn(|a| mul_q12(along, s.forward[a]));
+            let mut frictions = Vec::new();
+            if s.fast {
+                frictions.push(0);
+            } else if rules.auto_kick {
+                frictions.push(8);
+            }
+            if s.terrain == 5 || s.terrain == 6 {
+                frictions.push(0x78);
+            }
+            if s.terrain == 3 {
+                frictions.push(0xb4);
+            }
+            for k in frictions {
+                let drag = frame_part(rolling.map(|c| mul_q12(k, c)), frame.scale)?;
+                accel = std::array::from_fn(|a| accel[a] - drag[a]);
+            }
         }
         s.velocity = v;
-        free_move = post_contact_probes(world, s)?;
+        free_move = post_contact_probes(world, table, s)?;
         s.lean_probe(world)?;
     } else {
         accel = add(accel, [0, GRAVITY, 0])?;
@@ -1251,21 +1504,22 @@ pub fn step(
 ) -> Result<Outcome, String> {
     s.now += 1;
     s.anim.tick(frame.scale)?;
-    match s.state {
-        State::Ground => {
-            s.turn_input(table, pad, frame)?;
-            if pad.down && !pad.left && !pad.right {
-                return Err("ground brake unsupported".into());
-            }
-        }
-        State::Air => s.air_turn(table, pad)?,
+    if s.on_ground() {
+        s.turn_input(table, pad, frame)?;
+    } else {
+        s.air_turn(table, pad)?;
     }
+    s.accel = [0; 3];
+    s.push(table, rules, pad)?;
     s.jump_input(table, rules, pad.jump)?;
+    s.brake(table, pad, frame)?;
+    s.wall_hit_recovery(table)?;
+    s.decay_push_target(rules);
     let outcome = match s.state {
-        State::Ground => ground_step(world, table, s, rules, frame),
+        State::Ground | State::Stopped => ground_step(world, table, s, rules, frame),
         State::Air => air_step(world, s, rules, frame),
     }?;
-    if s.state == State::Ground {
+    if s.on_ground() {
         s.air_since = 0;
     } else if s.air_since == 0 {
         s.air_since = s.now;

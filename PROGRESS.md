@@ -8,18 +8,18 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 89 (1.9%) | 65,298 (6.8%) |
-| Recovered | 92 (1.9%) | 45,154 (4.7%) |
+| Implemented | 92 (1.9%) | 67,938 (7.1%) |
+| Recovered | 89 (1.9%) | 42,514 (4.4%) |
 | Open | 4539 | 849,287 |
 
-`█░░░░░░░░░░░░░░░░░░░` 6.8% implemented by bytes
+`█░░░░░░░░░░░░░░░░░░░` 7.1% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
 | unattributed | 2977 | 354,046 | 34 | 35 | `░░░░░░░░░░` 4% |
-| physics.cpp | 110 | 64,313 | 29 | 44 | `█████░░░░░` 51% |
+| physics.cpp | 110 | 64,313 | 32 | 41 | `█████░░░░░` 55% |
 | mmu.cpp | 70 | 31,238 | 0 | 0 | `░░░░░░░░░░` 0% |
 | front.cpp | 42 | 29,072 | 0 | 0 | `░░░░░░░░░░` 0% |
 | bit.cpp | 123 | 25,393 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -177,14 +177,17 @@ Implemented routines and the Rust module that holds them.
 | 00497960 | 306 | physics.cpp | ground.rs |
 | 00497f40 | 5285 | physics.cpp | ground.rs |
 | 0049a280 | 3240 | physics.cpp | ground.rs |
+| 0049b010 | 1224 | physics.cpp | ground.rs |
 | 0049b500 | 1477 | physics.cpp | ground.rs |
 | 0049bad0 | 1421 | physics.cpp | ground.rs |
 | 0049c060 | 716 | physics.cpp | ground.rs |
 | 0049c330 | 1172 | physics.cpp | ground.rs |
+| 0049c7d0 | 120 | physics.cpp | ground.rs |
 | 0049d080 | 612 | physics.cpp | ground.rs |
 | 0049d480 | 690 | physics.cpp | ground.rs |
 | 0049d9c0 | 271 | physics.cpp | ground.rs |
 | 0049db80 | 826 | physics.cpp | ground.rs |
+| 0049df00 | 1296 | physics.cpp | ground.rs |
 | 0049e680 | 2983 | physics.cpp | ground.rs |
 | 004b20f0 | 33 | spool.cpp | psx.rs |
 | 004b2450 | 1578 | spool.cpp | anim.rs |
@@ -286,13 +289,10 @@ Implemented routines and the Rust module that holds them.
 | 00499710 | 2710 | physics.cpp |
 | 0049a1b0 | 41 | physics.cpp |
 | 0049a1e0 | 98 | physics.cpp |
-| 0049b010 | 1224 | physics.cpp |
-| 0049c7d0 | 120 | physics.cpp |
 | 0049c850 | 127 | physics.cpp |
 | 0049d740 | 329 | physics.cpp |
 | 0049d8a0 | 283 | physics.cpp |
 | 0049dad0 | 168 | physics.cpp |
-| 0049df00 | 1296 | physics.cpp |
 | 0049e570 | 268 | physics.cpp |
 | 004a12d0 | 354 | unattributed |
 | 004aaf70 | 2622 | unattributed |

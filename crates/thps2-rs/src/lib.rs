@@ -327,7 +327,7 @@ pub fn inspect(
     let mut motions = app.world_mut().query::<&SkaterMotion>();
     for motion in motions.iter(app.world()) {
         println!(
-            "[ground] frames={} requested={simulate_frames} scale=256 stats={:?} bonus={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} pad={:?} turn={} anim={}:{} charge={} ollies={}",
+            "[ground] frames={} requested={simulate_frames} scale=256 stats={:?} bonus={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} pad={:?} turn={} anim={}:{} charge={} ollies={} push_cooldown={} push_target={} brake_mode={}",
             motion.frames,
             rules.stats,
             rules.bonus,
@@ -343,7 +343,10 @@ pub fn inspect(
             motion.skater.anim.id,
             motion.skater.anim.frame,
             motion.skater.charge,
-            motion.skater.ollies
+            motion.skater.ollies,
+            motion.skater.push_cooldown,
+            motion.skater.push_target,
+            motion.skater.brake_mode
         );
     }
     if render {
@@ -404,6 +407,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     "right" => pad.right = true,
                     "down" => pad.down = true,
                     "jump" => pad.jump = true,
+                    "kick" => pad.kick = true,
                     other => return Err(format!("--hold unknown key={other}").into()),
                 }
             }
@@ -415,7 +419,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             );
         } else if arg == "--help" {
             println!(
-                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]] [--simulate-frames N] [--hold left,right,down,jump [--release-after N]]\nInspect original resources, step the skater N design frames with an optional held pad released after N frames, or display a static diagnostic with feature viewer."
+                "Usage: thps2-rs --data-root DIRECTORY [--manifest | --view FILE [--render [--capture PNG]]] [--simulate-frames N] [--hold left,right,down,jump,kick [--release-after N]]\nInspect original resources, step the skater N design frames with an optional held pad released after N frames, or display a static diagnostic with feature viewer."
             );
             return Ok(());
         } else {

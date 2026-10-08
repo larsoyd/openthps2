@@ -156,6 +156,13 @@ impl AnimState {
         Ok(())
     }
 
+    /// Plays the animation back from the current frame to its start frame.
+    pub fn reverse(&mut self) {
+        self.finished = false;
+        self.direction = -1;
+        (self.end, self.start) = (self.start as i8, i16::from(self.end));
+    }
+
     fn at_end(&self) -> bool {
         (self.direction == 1 && self.frame >= i16::from(self.end))
             || (self.direction == -1 && self.frame <= i16::from(self.end))

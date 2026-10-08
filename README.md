@@ -7,7 +7,7 @@ copy of the game, with the freedom to fix bugs and to add widescreen and native 
 **Status: not playable yet.** The Hangar level, Tony Hawk's model and animation bank, the collision world and the
 skater's ground, air, steering and ollie physics are reconstructed from the executable and checked frame by frame
 against models of the recovered routines. Rendering is a static diagnostic. Tricks, scoring, the session timer, menus,
-audio and the other levels are open. <!-- progress --> 6.8% of the executable implemented by bytes (89 of 4720 functions), 4.7% more recovered. <!-- /progress --> The full map is in [PROGRESS.md](PROGRESS.md).
+audio and the other levels are open. <!-- progress --> 7.1% of the executable implemented by bytes (92 of 4720 functions), 4.4% more recovered. <!-- /progress --> The full map is in [PROGRESS.md](PROGRESS.md).
 
 ## Requirements
 
@@ -33,7 +33,7 @@ frame count, position, velocity, animation and the reason it stopped early, if a
 |---|---|
 | `--manifest` | Print every resource in the archive with its size and SHA-256 and exit. |
 | `--simulate-frames N` | Step N frames at the original 30 Hz design rate instead of 120. |
-| `--hold KEYS` | Hold pad keys for every frame: `left`, `right`, `down`, `jump`, comma separated. |
+| `--hold KEYS` | Hold pad keys for every frame: `left`, `right`, `down`, `jump`, `kick`, comma separated. Down alone brakes. |
 | `--release-after N` | Release the held keys after frame N, for example `--hold jump --release-after 9` for a charged ollie. |
 | `--view FILE` | Project the Hangar through a captured original camera (format below). |
 | `--render` | With `--view` and the `viewer` feature, open a fixed-camera window of the static Hangar. |

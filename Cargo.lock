@@ -3337,9 +3337,6 @@ dependencies = [
 [[package]]
 name = "thps2-data"
 version = "0.1.0"
-dependencies = [
- "sha2",
-]
 
 [[package]]
 name = "thps2-rs"

@@ -4,13 +4,13 @@ use thps2_data::projection::{ClippedVertex, Projection, StaticView};
 use crate::{HangarVertices, OriginalScene, SceneInstance, SessionAssets};
 
 #[derive(Resource)]
-pub(crate) struct CapturedView {
-    pub(crate) view: StaticView,
-    pub(crate) viewport: [u16; 10],
+pub struct CapturedView {
+    pub view: StaticView,
+    pub viewport: [u16; 10],
 }
 
 impl CapturedView {
-    pub(crate) fn parse(text: &str) -> Result<Self, String> {
+    pub fn parse(text: &str) -> Result<Self, String> {
         let mut tokens = text.split_whitespace();
         fn record<T: std::str::FromStr, const N: usize>(
             tokens: &mut std::str::SplitWhitespace<'_>,
@@ -49,7 +49,7 @@ impl CapturedView {
         Ok(captured)
     }
 
-    pub(crate) fn projection(&self, extended_far: bool) -> Result<Projection, String> {
+    pub fn projection(&self, extended_far: bool) -> Result<Projection, String> {
         let v = self.viewport.map(f32::from);
         Projection::new(
             [v[2], v[3], v[0], v[1]],
@@ -61,9 +61,9 @@ impl CapturedView {
 }
 
 #[derive(Component)]
-pub(crate) struct ProjectedInstance(pub(crate) Vec<ClippedVertex>);
+pub struct ProjectedInstance(pub Vec<ClippedVertex>);
 
-pub(crate) fn project_hangar(
+pub fn project_hangar(
     mut commands: Commands,
     captured: Option<Res<CapturedView>>,
     scene: Option<Res<OriginalScene>>,

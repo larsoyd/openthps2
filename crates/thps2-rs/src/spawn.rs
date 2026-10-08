@@ -11,23 +11,23 @@ use thps2_data::{
 use crate::{OriginalScene, SessionAssets};
 
 #[derive(Resource)]
-pub(crate) struct SessionCollision(pub(crate) CollisionWorld);
+pub struct SessionCollision(pub CollisionWorld);
 
 #[derive(Resource)]
-pub(crate) struct SessionTriggers(pub(crate) Triggers);
+pub struct SessionTriggers(pub Triggers);
 
 /// Skater bank animation table from SK2ANIM.PSX.
 #[derive(Resource)]
-pub(crate) struct SessionAnimations(pub(crate) AnimationTable);
+pub struct SessionAnimations(pub AnimationTable);
 
 #[derive(Resource, Clone, Copy)]
-pub(crate) struct SessionRules(pub(crate) Rules);
+pub struct SessionRules(pub Rules);
 
 /// Pad held for every stepped frame, released after an optional frame count.
 #[derive(Resource, Clone, Copy, Default)]
-pub(crate) struct SessionPad {
-    pub(crate) held: Pad,
-    pub(crate) release_after: Option<u32>,
+pub struct SessionPad {
+    pub held: Pad,
+    pub release_after: Option<u32>,
 }
 
 impl SessionPad {
@@ -40,26 +40,26 @@ impl SessionPad {
 }
 
 #[derive(Component, Debug)]
-pub(crate) struct SkaterMotion {
-    pub(crate) skater: Skater,
-    pub(crate) frames: u32,
-    pub(crate) last_ground: Option<(usize, usize, i32)>,
-    pub(crate) halted: Option<String>,
+pub struct SkaterMotion {
+    pub skater: Skater,
+    pub frames: u32,
+    pub last_ground: Option<(usize, usize, i32)>,
+    pub halted: Option<String>,
 }
 
 #[derive(Component, Debug)]
-pub(crate) struct SkaterPlacement {
-    pub(crate) restart_node: usize,
-    pub(crate) restart_position_fixed: [i32; 3],
-    pub(crate) position_fixed: [i32; 3],
-    pub(crate) source_angles: [i16; 3],
-    pub(crate) ground: Hit,
+pub struct SkaterPlacement {
+    pub restart_node: usize,
+    pub restart_position_fixed: [i32; 3],
+    pub position_fixed: [i32; 3],
+    pub source_angles: [i16; 3],
+    pub ground: Hit,
 }
 
 /// Native up vector for an unrotated restart, with source Y pointing down.
 const RESTART_UP: [i32; 3] = [0, -4096, 0];
 
-fn place(restart: &Restart, collision: &CollisionWorld) -> Result<SkaterPlacement, String> {
+pub fn place(restart: &Restart, collision: &CollisionWorld) -> Result<SkaterPlacement, String> {
     let ground = collision
         .ground_probe(restart.position_fixed, RESTART_UP)?
         .ok_or("spawn has no supporting ground")?;
@@ -79,7 +79,7 @@ fn place(restart: &Restart, collision: &CollisionWorld) -> Result<SkaterPlacemen
     })
 }
 
-pub(crate) fn initialize_spawn(
+pub fn initialize_spawn(
     mut commands: Commands,
     scene: Option<Res<OriginalScene>>,
     mut assets: ResMut<SessionAssets>,
@@ -128,7 +128,7 @@ pub(crate) fn initialize_spawn(
 }
 
 /// One design frame per fixed tick with the held pad, stopping at the first unsupported contact.
-pub(crate) fn advance_ground(
+pub fn advance_ground(
     collision: Option<Res<SessionCollision>>,
     animations: Option<Res<SessionAnimations>>,
     rules: Res<SessionRules>,

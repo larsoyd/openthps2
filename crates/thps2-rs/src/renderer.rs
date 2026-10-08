@@ -31,7 +31,7 @@ struct Capture {
     frames: u32,
 }
 
-pub(crate) fn run(world: &mut World, capture: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+pub fn run(world: &mut World, capture: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     let viewport = world.resource::<CapturedView>().viewport;
     if viewport[2] != 0
         || viewport[3] != 0

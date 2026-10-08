@@ -68,3 +68,7 @@ clockwise culling. Lighting, blending and draw order are provisional. Dynamic ob
 
 Units, coordinates and timing are documented at the boundaries in the source. Positions are 20.12 fixed point in the
 original's coordinate system with Y pointing down, angles are 4096 per turn, and one design frame is two 60 Hz ticks.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The game, its data and its name belong to their rights holders; nothing from the game is distributed here.

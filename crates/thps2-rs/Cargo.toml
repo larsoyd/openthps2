@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [features]
 viewer = ["bevy/bevy_asset", "bevy/bevy_core_pipeline", "bevy/bevy_pbr", "bevy/bevy_render", "bevy/bevy_log", "bevy/bevy_winit", "bevy/png", "bevy/x11"]

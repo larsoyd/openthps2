@@ -6,6 +6,7 @@ resolver = "3"
 edition = "2024"
 rust-version = "1.89"
 publish = false
+license = "MIT"
 
 [workspace.dependencies]
 sha2 = "=0.10.9"

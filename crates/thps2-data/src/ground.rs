@@ -14,6 +14,7 @@ pub const BIG_DROP_BASE: i32 = 0x3c3;
 pub const WORLD_UP: [i32; 3] = [0, -4096, 0];
 pub const TURN_MAX: i32 = 0x2d000;
 pub const TURN_MAX_CROUCH: i32 = 0x5a000;
+pub const AIR_TURN_MAX: i32 = 0xa0000;
 pub const LEAN_FRAMES: i32 = 0x16;
 pub const LEAN_PROBE_HEIGHT: i32 = 100;
 pub const LEAN_PROBE_REACH: i32 = 0x5a;
@@ -35,6 +36,7 @@ pub const BRAKE_STOP: i32 = 0xa000;
 pub const STAT_AIR: usize = 0;
 pub const STAT_OLLIE: usize = 2;
 pub const STAT_SPEED: usize = 3;
+pub const STAT_SPIN: usize = 4;
 pub const STAT_LANDING: usize = 5;
 pub const STAT_SWITCH: usize = 6;
 pub const TONY_HAWK_STATS: [i32; 11] = [7, 5, 2, 6, 8, 5, 3, 3, 6, 5, 0];
@@ -65,9 +67,13 @@ const CROUCH_PINGPONG: i32 = 0x13;
 pub struct Pad {
     pub left: bool,
     pub right: bool,
+    pub up: bool,
     pub down: bool,
     pub jump: bool,
     pub kick: bool,
+    pub grab: bool,
+    pub spin_left: bool,
+    pub spin_right: bool,
 }
 
 /// Skater stat bytes in native order: air, hangtime, ollie, speed, spin, landing, switch, rail, lip, manual.
@@ -128,25 +134,16 @@ pub struct FrameScale {
     pub scale: i32,
     pub scale_squared: i32,
     pub hold_delta: i32,
+    /// Run time in design frame halves, two per frame at 30 Hz.
+    pub time: i32,
 }
 
 pub const DESIGN_FRAME: FrameScale = FrameScale {
     scale: 256,
     scale_squared: 256,
     hold_delta: 0x1000,
+    time: 0,
 };
-
-impl FrameScale {
-    /// Sum of the last three tick deltas capped at 15, the newest delta drives the hold timer.
-    pub fn from_ticks(deltas: [i32; 3]) -> Self {
-        let scale = (deltas.iter().sum::<i32>().min(15) << 8) / 6;
-        Self {
-            scale,
-            scale_squared: (scale * scale) >> 8,
-            hold_delta: deltas[2] * 0x800,
-        }
-    }
-}
 
 /// Ring of the last three VB tick deltas that sets the frame scale at the end of each frame.
 #[derive(Clone, Copy, Debug)]
@@ -154,6 +151,7 @@ pub struct FrameClock {
     ring: [i32; 3],
     index: usize,
     last: i32,
+    time_acc: i32,
     current: FrameScale,
 }
 
@@ -163,6 +161,7 @@ impl Default for FrameClock {
             ring: [2; 3],
             index: 0,
             last: 0,
+            time_acc: 0,
             current: DESIGN_FRAME,
         }
     }
@@ -177,6 +176,8 @@ impl FrameClock {
     pub fn reset(&mut self, vb: i32) {
         self.ring = [2; 3];
         self.last = vb - 2;
+        self.time_acc = 0;
+        self.current.time = 0;
     }
 
     pub fn end_frame(&mut self, vb: i32) {
@@ -186,10 +187,12 @@ impl FrameClock {
         self.last = vb;
         let sum = self.ring.iter().sum::<i32>();
         let scale = (if sum == 0 { 1 } else { sum.min(15) } << 8) / 6;
+        self.time_acc += scale * 2;
         self.current = FrameScale {
             scale,
             scale_squared: (scale * scale) >> 8,
             hold_delta: delta * 0x800,
+            time: self.time_acc >> 8,
         };
     }
 }
@@ -255,6 +258,13 @@ pub struct Skater {
     /// Speed in Q12 units per frame that pushes stop accelerating toward.
     pub push_target: i32,
     pub brake_mode: i32,
+    /// Air pitch per frame from up or down, 4096 units per turn.
+    pub pitch: i32,
+    /// Frame time of the last air frame without a direction, held input waits eight units after it.
+    pub quiet_since: i32,
+    /// Air spin within the current half turn, and the half turns completed.
+    pub spin_angle: i32,
+    pub spins: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -354,6 +364,13 @@ fn mat_mul_cols(a: [i32; 9], b: [i32; 9]) -> [i32; 9] {
 
 fn transpose(m: [i32; 9]) -> [i32; 9] {
     [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]
+}
+
+/// Identity right multiplied by the native X rotation builder.
+pub fn rot_x_matrix(angle: i32) -> [i32; 9] {
+    let (c, s) = trig_q12(angle);
+    let identity = [0x1000, 0, 0, 0, 0x1000, 0, 0, 0, 0x1000];
+    mat_mul_cols(identity, [0x1000, 0, 0, 0, c, -s, 0, s, c])
 }
 
 /// Identity right multiplied by the native Y rotation builder.
@@ -484,6 +501,10 @@ impl Skater {
             push_cooldown: 0,
             push_target: PUSH_TARGET_INIT,
             brake_mode: 0,
+            pitch: 0,
+            quiet_since: 0,
+            spin_angle: 0,
+            spins: 0,
         }
     }
 
@@ -744,16 +765,101 @@ impl Skater {
         self.lean_anim(table, pad)
     }
 
-    /// Air frames without direction input drop the turn and lean before the lean animation update.
-    fn air_turn(&mut self, table: &AnimationTable, pad: Pad) -> Result<(), String> {
-        if pad.left || pad.right || pad.down {
-            return Err("air input unsupported".into());
+    /// Air turn from a direction held past a short delay or from the spin buttons at once, then the
+    /// pitch from up or down while neither flip nor grab is held.
+    fn air_turn(
+        &mut self,
+        table: &AnimationTable,
+        pad: Pad,
+        frame: FrameScale,
+    ) -> Result<(), String> {
+        let rate = if pad.spin_left || pad.spin_right {
+            0x64000
+        } else {
+            0xa000
+        };
+        let accel = (frame.scale * rate) >> 8;
+        let (mut left, mut right) = (pad.left || pad.spin_left, pad.right || pad.spin_right);
+        if !left && !right {
+            self.quiet_since = frame.time;
+        } else if self.quiet_since > 0 && frame.time - self.quiet_since < 8 {
+            (left, right) = (false, false);
         }
-        self.turn = 0;
-        self.lean = 0;
+        left |= pad.spin_left;
+        right |= pad.spin_right;
         self.crouch_lean = false;
-        self.turning = false;
-        self.lean_anim(table, pad)
+        self.turning = left || right;
+        self.turn = if left {
+            (self.turn - accel).max(-AIR_TURN_MAX)
+        } else if right {
+            (self.turn + accel).min(AIR_TURN_MAX)
+        } else {
+            0
+        };
+        self.lean = self.turn;
+        self.lean_anim(table, pad)?;
+        self.pitch = 0;
+        if self.state == State::Air && !pad.kick && !pad.grab {
+            let step = (frame.scale * 20) >> 8;
+            if pad.up {
+                self.pitch = -step;
+            }
+            if pad.down {
+                self.pitch = step;
+            }
+            if self.facing_from_camera() {
+                self.pitch = -self.pitch;
+            }
+        }
+        Ok(())
+    }
+
+    /// The original flips the pitch when the forward axis points away from the camera. Until the
+    /// camera is ported it is taken to trail the skater along the level velocity.
+    fn facing_from_camera(&self) -> bool {
+        let [x, _, z] = self.velocity;
+        dot_q12(self.forward, [x, 0, z]) > 0
+    }
+
+    /// Pitch about the lateral axis keeping the point 70 units up the old up axis in place, skipped
+    /// when it would turn the up axis below level.
+    fn air_pitch(&mut self) {
+        if self.pitch == 0 {
+            return;
+        }
+        let m = self.basis_matrix();
+        let turned = mat_mul_cols(m, rot_x_matrix(self.pitch));
+        if turned[4] >= 1 {
+            return;
+        }
+        let pivot = |m: [i32; 9]| [m[1] * 70, m[4] * 70, m[7] * 70];
+        let (before, after) = (pivot(m), pivot(turned));
+        self.set_basis(turned);
+        self.position = std::array::from_fn(|a| self.position[a] + before[a] - after[a]);
+    }
+
+    /// Air spin from the turn rate, scaled by the spin stat and cut nine percent per half turn done.
+    fn air_spin(&mut self, rules: Rules, frame: FrameScale) -> Result<(), String> {
+        if self.vert_jump {
+            return Err("vert air spin unsupported".into());
+        }
+        let stat = rules.stat(STAT_SPIN, self.switched);
+        let amount = (stat + 300) * (self.turn >> 12) * 25 / 10000 * (100 - 9 * self.spins) / 100;
+        if amount == 0 {
+            return Ok(());
+        }
+        let angle = (amount * frame.scale) >> 8;
+        self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(angle)));
+        self.spin_angle += angle;
+        if self.spin_angle > 0x7ff {
+            self.spin_angle -= 0x800;
+            self.spins += 1;
+        }
+        if self.spin_angle < -0x7ff {
+            self.spin_angle += 0x800;
+            self.spins += 1;
+        }
+        Ok(())
     }
 
     fn pushable(&self) -> bool {
@@ -1523,7 +1629,11 @@ pub fn air_step(
 ) -> Result<Outcome, String> {
     s.begin_frame(world)?;
     let mut accel = [0; 3];
-    s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
+    let half_push = frame_part(s.accel, frame.scale_squared)?.map(|c| c / 2);
+    let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
+    s.position = add(s.position, travel)?;
+    s.air_pitch();
+    s.air_spin(rules, frame)?;
     let roll_axis = cross_q12(short(s.forward), WORLD_UP);
     if dot_q12(s.up, roll_axis).abs() > 0x29 {
         return Err("air upright roll unsupported".into());
@@ -1552,7 +1662,6 @@ pub fn air_step(
     })
 }
 
-/// One frame: animation tick, pad input, ollie handling, the state handler and the airborne timer.
 /// One single session run: the skater, the frame clock and the unpaused VB counter.
 #[derive(Clone, Debug)]
 pub struct Run {
@@ -1600,6 +1709,7 @@ impl Run {
     }
 }
 
+/// One frame: animation tick, pad input, ollie handling, the state handler and the airborne timer.
 pub fn step(
     world: &CollisionWorld,
     table: &AnimationTable,
@@ -1613,7 +1723,7 @@ pub fn step(
     if s.on_ground() {
         s.turn_input(table, rules, pad, frame)?;
     } else {
-        s.air_turn(table, pad)?;
+        s.air_turn(table, pad, frame)?;
     }
     s.accel = [0; 3];
     s.push(table, rules, pad)?;

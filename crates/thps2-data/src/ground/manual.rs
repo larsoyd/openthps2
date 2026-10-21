@@ -71,7 +71,7 @@ impl Skater {
         let newest = self.presses.newest();
         for entry in &level.keys.entries {
             let ground = entry.flags & GROUND_MOVE != 0;
-            if !ground && !matches!(self.state, State::Air | State::Vert)
+            if !ground && !matches!(self.state, State::Air | State::Vert | State::VertPop)
                 || entry.flags & NEEDS_SPECIAL != 0 && !self.special.full()
             {
                 continue;
@@ -181,7 +181,7 @@ impl Skater {
         if self.trick_running || self.bailing || self.air_queue.is_empty() {
             return;
         }
-        if !matches!(self.state, State::Air | State::Vert) {
+        if !matches!(self.state, State::Air | State::Vert | State::VertPop) {
             self.air_queue.clear();
             return;
         }

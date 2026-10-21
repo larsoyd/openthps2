@@ -38,6 +38,10 @@ pub const CROUCH_LEAN_LEFT_FRAMES: i32 = 0xf;
 pub const CROUCH_LEAN_RIGHT_FRAMES: i32 = 0xc;
 pub const ALIGN_EXTRA: i32 = 0x28;
 pub const VERT_FACE: u32 = 0x200000;
+const LIP_FACE: u32 = 0x400000;
+/// Time after a vert pop during which faces catch the skater instead of landing it.
+const POP_CATCH: i32 = 0x1e;
+const POP_AIR: i32 = 0x19;
 pub const WALL_HIT_TURN: i32 = 200;
 pub const PUSH_COOLDOWN: i32 = 0x14;
 pub const PUSH_TARGET_INIT: i32 = 0x2e9b6;
@@ -227,12 +231,20 @@ impl Rules {
 
 /// Vertical ollie impulse in Q12 for a flat takeoff, negative meaning up.
 pub fn ollie_impulse(ollie_stat: i32, air_stat: i32, charge: i32) -> i32 {
-    let max_charge = 0xf - (ollie_stat + air_stat) / 0x14;
-    let base = (-0x21c - ollie_stat) * 5000 / 10000 * 0x400 / 10;
-    let held = ((ollie_stat + 0x21c) * 5000 / 10000 - (ollie_stat * 0xce4 + 0x166e30) / 10000)
-        * charge
-        * 0x400
-        / 10;
+    impulse(ollie_stat, 0x21c, 5000, ollie_stat + air_stat, charge)
+}
+
+/// Pop off a face steeper than about 52 degrees, from the air stat alone.
+pub fn steep_ollie_impulse(ollie_stat: i32, air_stat: i32, charge: i32) -> i32 {
+    impulse(air_stat, 900, 3000, ollie_stat + air_stat, charge)
+}
+
+fn impulse(stat: i32, offset: i32, weight: i32, both: i32, charge: i32) -> i32 {
+    let max_charge = 0xf - both / 0x14;
+    let base = (-offset - stat) * weight / 10000 * 0x400 / 10;
+    let held =
+        ((stat + offset) * weight / 10000 - (stat * 0xce4 + 0x166e30) / 10000) * charge * 0x400
+            / 10;
     (base - held / max_charge) * 3
 }
 
@@ -313,6 +325,8 @@ pub enum State {
     Stopped,
     /// Riding up or down a lip face past the coping, the ground handler keeps the skater on its plane.
     Vert,
+    /// Just popped off a vert face: airborne, but the face can still catch the skater.
+    VertPop,
     /// Sliding along a rail chain.
     Grind,
 }
@@ -403,6 +417,14 @@ pub struct Skater {
     /// Frames of landing push left, each one about a unit along the velocity.
     pub boost: i32,
     pub special: Special,
+    /// Pop time, its state 3 entry time and speed, and the heights the steep pop bonus compares.
+    pub pop_time: i32,
+    pub pop_entered: i32,
+    pub pop_speed: i32,
+    pub upright_y: i32,
+    pub ground_y: i32,
+    /// Set by a frame on a lip, the air then turns with the spin stat and skips the upright roll.
+    pub lip_spin: bool,
     /// A trick or gap went on the stack since the last landing, so the landing feeds the meter.
     pub trick_landed: bool,
     /// Trigger checksums the last sweep touched, they fire again only after a sweep without them.
@@ -763,6 +785,12 @@ impl Skater {
             unjudged: false,
             boost: 0,
             special: Special::default(),
+            pop_time: 0,
+            pop_entered: 0,
+            pop_speed: 0,
+            upright_y: 0,
+            ground_y: 0,
+            lip_spin: false,
             trick_landed: false,
             touching: Vec::new(),
             pulses: Vec::new(),
@@ -1003,14 +1031,16 @@ impl Skater {
         self.armed = false;
         self.jumped = true;
         self.vert_jump = self.vert;
-        if self.up[1].abs() < 0x9c4 {
-            return Err("vert ollie impulse unsupported".into());
-        }
-        let impulse = ollie_impulse(
+        self.pop_speed = speed_of(self.velocity)?;
+        let (ollie, air) = (
             rules.stat(STAT_OLLIE, self.stance()),
             rules.stat(STAT_AIR, self.stance()),
-            self.charge,
         );
+        let impulse = if self.up[1].abs() < 0x9c4 {
+            self.climb_bonus(steep_ollie_impulse(ollie, air, self.charge))
+        } else {
+            ollie_impulse(ollie, air, self.charge)
+        };
         self.velocity[1] = self.velocity[1]
             .checked_add(impulse)
             .ok_or("ollie impulse overflow")?;
@@ -1019,10 +1049,15 @@ impl Skater {
             self.short_ollies += 1;
         }
         self.spin_angle = 0;
-        if self.vert_jump && self.on_ground() {
-            return Err("vert air state unsupported".into());
+        match self.state {
+            State::Vert => {}
+            State::Ground if self.vert_jump => {
+                self.set_state(State::VertPop);
+                self.pop_entered = self.frame_time;
+            }
+            _ => self.set_state(State::Air),
         }
-        self.set_state(State::Air);
+        self.pop_time = self.frame_time;
         if self.script.is_some() {
             return Ok(());
         }
@@ -1050,6 +1085,15 @@ impl Skater {
                 Ok(())
             }
         }
+    }
+
+    /// A fast pop high up a steep face goes up to 2.4 times as far.
+    fn climb_bonus(&self, impulse: i32) -> i32 {
+        let climb = (self.upright_y - self.ground_y) >> 12;
+        if self.pop_speed < 0x28000 || climb <= 500 {
+            return impulse;
+        }
+        (climb.min(700) - 300) * impulse / 200 * 120 / 100
     }
 
     /// Up presses just before the pop, the newest within 20 time units and one more within 35.
@@ -1408,10 +1452,11 @@ impl Skater {
             0xffff
         } else {
             match self.state {
+                State::Ground if self.manual != 0 => 0x10,
                 State::Ground => 1,
                 State::Air | State::Vert => 0x20,
                 State::Grind => 2,
-                State::Stopped => 0,
+                State::Stopped | State::VertPop => 0,
             }
         };
         let mut kept = Vec::with_capacity(self.gaps.len());
@@ -1558,15 +1603,45 @@ impl Skater {
     }
 
     fn air_spin(&mut self, rules: Rules, frame: FrameScale) -> Result<(), String> {
-        if self.vert_jump {
-            return Err("vert air spin unsupported".into());
-        }
         let amount = self.spin_amount(rules);
         if amount == 0 {
             return Ok(());
         }
         let angle = (amount * frame.scale) >> 8;
         self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(angle)));
+        self.count_spin(angle);
+        Ok(())
+    }
+
+    /// Turn on the ground, on a lip and in the air after a lip ride: the lip modes take the spin
+    /// stat and leave the velocity alone, the others turn the travel with the board.
+    fn vert_turn(
+        &mut self,
+        rules: Rules,
+        pad: Pad,
+        frame: FrameScale,
+        old_matrix: [i32; 9],
+    ) -> Result<(), String> {
+        let spin_mode = self.state == State::Vert || (self.state == State::Air && self.lip_spin);
+        let mut turn_units = if spin_mode {
+            self.spin_amount(rules)
+        } else {
+            self.turn >> 12
+        };
+        if self.landing_timer != 0 {
+            if turn_units == 0 {
+                turn_units = self.fall_line_alignment(rules, ALIGN_EXTRA)?;
+            } else {
+                let step = if pad.kick || pad.grab { 1 } else { 3 };
+                self.landing_timer = (self.landing_timer - step).max(0);
+            }
+        }
+        let angle = (frame.scale * turn_units) >> 8;
+        if spin_mode {
+            self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(angle)));
+        } else {
+            self.rotate(old_matrix, angle)?;
+        }
         self.count_spin(angle);
         Ok(())
     }
@@ -2504,7 +2579,7 @@ impl Skater {
             self.position = world.move_retrying(self.old_position, self.position)?;
         }
         let descent = self.position[1] - self.old_position[1];
-        if self.state == State::Air && descent > 0 {
+        if self.state == State::Air && !self.lip_spin && descent > 0 {
             self.fall += descent;
             self.clearance -= descent;
         } else {
@@ -2620,25 +2695,7 @@ pub fn ground_step(
     {
         s.manual_fakie(table)?;
     }
-    let mut turn_units = if vert {
-        s.spin_amount(rules)
-    } else {
-        s.turn >> 12
-    };
-    if s.landing_timer != 0 {
-        if turn_units == 0 {
-            turn_units = s.fall_line_alignment(rules, ALIGN_EXTRA)?;
-        } else {
-            s.landing_timer = (s.landing_timer - 3).max(0);
-        }
-    }
-    let angle = (frame.scale * turn_units) >> 8;
-    if vert {
-        s.set_basis(mat_mul_cols(s.basis_matrix(), rot_y_matrix(angle)));
-    } else {
-        s.rotate(old_matrix, angle)?;
-    }
-    s.count_spin(angle);
+    s.vert_turn(rules, pad, frame, old_matrix)?;
     let (contact, length) = wall_probe(world, s.old_position, s.position)?;
     if let Some(contact) = contact {
         s.wall_branch(world, table, &contact, length, frame)?;
@@ -2688,6 +2745,8 @@ pub fn ground_step(
             } else if vert {
                 landing_bails(level, s, rules, normal)?;
                 s.set_state(State::Ground);
+                (s.manual_pending, s.landed_at) = (None, s.frame_time);
+                s.presses.clear();
                 grounded = true;
             } else {
                 let convex_edge = dot_q12(s.forward, normal) < 0
@@ -2849,22 +2908,29 @@ pub fn air_step(
     let (world, table) = (level.world, level.table);
     s.begin_frame(world)?;
     let (start_up, start_forward) = (s.up, s.forward);
-    let mut accel = [0; 3];
+    let mut accel = s.accel;
     let half_push = frame_part(s.accel, frame.scale_squared)?.map(|c| c / 2);
     let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
     s.position = add(s.position, travel)?;
     s.air_pitch();
-    s.air_spin(rules, frame)?;
-    s.upright_roll(start_up, start_forward);
+    if s.lip_spin {
+        s.vert_turn(rules, pad, frame, s.basis_matrix())?;
+    } else {
+        s.air_spin(rules, frame)?;
+        s.upright_roll(start_up, start_forward);
+    }
+    let popped = s.state == State::VertPop;
     let mut hit = world.query_filtered(s.old_position, s.position, false)?;
     if let Some(found) = hit
-        && found.flags & 0x400000 != 0
+        && found.flags & LIP_FACE != 0
         && found.face_flags & 0x80 == 0
+        && !popped
     {
         hit = world.query_filtered(s.old_position, s.position, true)?;
     }
+    let skims = popped && s.frame_time - s.pop_time <= POP_CATCH;
     match hit {
-        Some(hit) if hit.flags & 0x1000000 != 0 => {
+        Some(hit) if hit.flags & 0x1000000 != 0 && !(popped && hit.flags & LIP_FACE != 0) => {
             let low = hit.flags & 0x800000 == 0;
             let reach = pad.grind || s.grind_up <= GRIND_UP_FRAMES;
             if low && !s.bailing && reach && s.frame_time - s.wall_time >= WALLRIDE_GAP {
@@ -2875,15 +2941,39 @@ pub fn air_step(
             }
             s.air_bounce(world, &hit)?;
         }
-        Some(hit) if hit.flags & 0x400000 != 0 => land_on_lip(world, table, s, pad, &hit)?,
+        Some(hit) if hit.flags & LIP_FACE != 0 => land_on_lip(world, table, s, pad, &hit)?,
+        Some(hit) if skims => skim_face(world, s, &hit)?,
         Some(hit) => land(level, s, rules, pad, &hit)?,
         None => accel = add(accel, [0, s.gravity, 0])?,
     }
+    if popped && s.state == State::VertPop && s.velocity[1] < 0 && skims && !s.bailing {
+        let end = add(s.position, scaled(s.up, -0x80)?)?;
+        if let Some(face) = world.query_filtered(s.position, end, false)?
+            && face.flags & LIP_FACE != 0
+        {
+            lip_contact(table, s, pad, &face)?;
+        }
+    }
     s.finish_frame(world, accel, false)?;
     Ok(match hit {
-        Some(hit) if s.state != State::Air => Outcome::Landed(hit),
+        Some(hit) if !matches!(s.state, State::Air | State::VertPop) => Outcome::Landed(hit),
         _ => Outcome::Airborne,
     })
+}
+
+/// Touching a plain face just after a vert pop slides along it without landing.
+fn skim_face(world: &CollisionWorld, s: &mut Skater, hit: &Hit) -> Result<(), String> {
+    let normal = hit.normal.map(i32::from);
+    let target = add(hit.position_fixed, scaled(normal, STANDING_HEIGHT)?)?;
+    s.position = world.move_retrying(s.position, target)?;
+    s.turn = 0;
+    s.vert = hit.flags & VERT_FACE != 0;
+    s.velocity = project_onto_plane(s.velocity, normal);
+    s.last_normal = normal;
+    s.smoothed_up = normal;
+    s.same_normal_time = 0;
+    s.smooth_basis();
+    Ok(())
 }
 
 /// A lip hit from the air goes back onto the lip after a jump from a vert face, otherwise the skater
@@ -2898,14 +2988,29 @@ fn land_on_lip(
     let normal = hit.normal.map(i32::from);
     let target = add(hit.position_fixed, scaled(normal, STANDING_HEIGHT)?)?;
     s.position = world.move_retrying(s.position, target)?;
-    if s.vert_jump {
-        s.set_state(State::Vert);
+    if lip_contact(table, s, pad, hit)? {
         s.velocity = project_onto_plane(s.velocity, normal);
         s.last_normal = normal;
         s.same_normal_time = 0;
         s.smooth_basis();
-        return Ok(());
     }
+    Ok(())
+}
+
+/// After a jump from a vert face the lip takes the skater back unless up has been held alone
+/// for a while, otherwise the skater stays airborne against it.
+fn lip_contact(
+    table: &AnimationTable,
+    s: &mut Skater,
+    pad: Pad,
+    hit: &Hit,
+) -> Result<bool, String> {
+    let held = s.up_since != 0 && s.frame_time - s.up_since > 4;
+    if s.vert_jump && (!held || hit.face_flags & 0x80 != 0) {
+        s.set_state(State::Vert);
+        return Ok(true);
+    }
+    s.set_state(State::Air);
     if pad.up {
         return Err(format!(
             "lip pop unsupported item={} face={}",
@@ -2916,7 +3021,7 @@ fn land_on_lip(
     s.landing_timer = LANDING_TIMER;
     s.set_anim(table, ANIM_AIR)?;
     s.jumped = true;
-    Ok(())
+    Ok(false)
 }
 
 /// The game's state number.
@@ -2925,6 +3030,7 @@ pub fn native_state(state: State) -> u8 {
         State::Ground => 0,
         State::Air => 1,
         State::Vert => 2,
+        State::VertPop => 3,
         State::Grind => 4,
         State::Stopped => 7,
     }
@@ -3010,9 +3116,21 @@ pub fn step(
     if dispatched == State::Ground && frame.time - s.landed_at > (20 * frame.scale) >> 8 {
         s.start_manual(level, rules, true)?;
     }
+    match s.state {
+        State::Ground | State::Grind => s.lip_spin = false,
+        State::Vert => s.lip_spin = true,
+        _ => {}
+    }
     let outcome = match s.state {
         State::Ground | State::Stopped | State::Vert => ground_step(level, s, rules, frame, pad),
         State::Air => air_step(level, s, rules, frame, pad),
+        State::VertPop => {
+            let outcome = air_step(level, s, rules, frame, pad)?;
+            if s.state == State::VertPop && s.frame_time - s.pop_entered > POP_AIR {
+                s.set_state(State::Air);
+            }
+            Ok(outcome)
+        }
         State::Grind => {
             s.old_position = s.position;
             s.grind.heat += frame.hold_delta;
@@ -3030,10 +3148,16 @@ pub fn step(
     s.try_grind(level, rules, pad)?;
     s.sweep_triggers(level)?;
     s.integrate(rules, frame)?;
-    if s.on_ground() {
+    if !matches!(s.state, State::Air | State::Vert | State::VertPop) {
         s.air_since = 0;
     } else if s.air_since == 0 {
         s.air_since = s.now;
+    }
+    if s.up[1] < -3800 {
+        s.upright_y = s.position[1];
+    }
+    if s.state == State::Ground {
+        s.ground_y = s.position[1];
     }
     Ok(outcome)
 }

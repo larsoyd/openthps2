@@ -264,6 +264,11 @@ pub struct Hit {
     pub face_flags: u32,
 }
 
+/// The level loader flips face word bit 0x80 unless bit 0x40 is set.
+fn loaded_face_word(word: u32) -> u32 {
+    if word & 0x40 == 0 { word ^ 0x80 } else { word }
+}
+
 impl CollisionWorld {
     pub fn from_scene(scene: &Scene) -> Result<Self, String> {
         let mut zones = scene.chunks.iter().filter(|c| c.kind == 10);
@@ -345,7 +350,7 @@ impl CollisionWorld {
                     normal,
                     bounds,
                     flags,
-                    face_flags: face.flags,
+                    face_flags: loaded_face_word(face.flags),
                 });
             }
             items.push(CollisionItem {

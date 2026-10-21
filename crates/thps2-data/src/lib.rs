@@ -7,5 +7,6 @@ pub mod materials;
 pub mod pkr;
 pub mod projection;
 pub mod psx;
+pub mod rec;
 pub mod skater;
 pub mod trig;

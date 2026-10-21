@@ -430,7 +430,7 @@ pub struct Skater {
     pub gaps: Vec<PendingGap>,
     /// An ended gap that only counts once the skater grinds.
     pub grind_gap: Option<i16>,
-    /// The last landing's alignment, and whether a spin button or a wall bonk excused it.
+    /// The last landing's alignment, and whether a wall bonk excused it.
     pub style: Style,
     pub unjudged: bool,
     /// Frames of landing push left, each one about a unit along the velocity.
@@ -1318,7 +1318,6 @@ impl Skater {
         }
         left |= pad.spin_left;
         right |= pad.spin_right;
-        self.unjudged |= pad.spin_left || pad.spin_right;
         self.crouch_lean = false;
         self.turning = left || right;
         self.turn = if left {

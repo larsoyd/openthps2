@@ -2194,8 +2194,7 @@ impl Skater {
     fn ride_lip(&mut self, normal: V3) {
         let n = normalize(normal);
         let v = normalize(self.velocity);
-        let cosine = f64::from(dot_q12(v, n)) * (1.0 / 4096.0);
-        let angle = (cosine.acos() * 4096.0 * (1.0 / std::f64::consts::TAU)) as i32 - 0x3ff;
+        let angle = crate::camera::racos(dot_q12(v, n)) - 0x3ff;
         if angle.abs() < 3 || (angle >= 0) == (self.lip_angle >= 0) {
             self.lip_angle += angle;
         } else {

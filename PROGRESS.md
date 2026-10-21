@@ -8,8 +8,8 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 191 (4.0%) | 132,393 (13.8%) |
-| Recovered | 225 (4.8%) | 88,197 (9.2%) |
+| Implemented | 193 (4.1%) | 132,477 (13.8%) |
+| Recovered | 223 (4.7%) | 88,113 (9.2%) |
 | Open | 4304 | 739,149 |
 
 `███░░░░░░░░░░░░░░░░░` 13.8% implemented by bytes
@@ -18,7 +18,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 61 | 104 | `█░░░░░░░░░` 6% |
+| unattributed | 2977 | 354,046 | 63 | 102 | `█░░░░░░░░░` 6% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -325,6 +325,8 @@ Implemented routines and the Rust module that holds them.
 | 004e8770 | 3 | unattributed | bitmap.rs |
 | 004e9780 | 421 | unattributed | pkr.rs |
 | 004e9940 | 568 | unattributed | pkr.rs |
+| 004f3980 | 42 | unattributed | ground.rs |
+| 004f39b0 | 42 | unattributed | ground.rs |
 | 004f4940 | 445 | unattributed | collision.rs |
 | 004f53b0 | 44 | unattributed | skater.rs |
 | 004f5f90 | 39 | unattributed | skater.rs |
@@ -544,8 +546,6 @@ Implemented routines and the Rust module that holds them.
 | 004ed2c0 | 180 | unattributed |
 | 004ed380 | 49 | unattributed |
 | 004ed7d0 | 84 | unattributed |
-| 004f3980 | 42 | unattributed |
-| 004f39b0 | 42 | unattributed |
 | 004f5f10 | 17 | unattributed |
 | 004f5ff0 | 115 | unattributed |
 | 004f6510 | 52 | unattributed |

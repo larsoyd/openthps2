@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 179 (3.8%) | 123,549 (12.9%) |
+| Implemented | 186 (3.9%) | 127,192 (13.3%) |
 | Recovered | 225 (4.8%) | 88,197 (9.2%) |
-| Open | 4316 | 747,993 |
+| Open | 4309 | 744,350 |
 
-`███░░░░░░░░░░░░░░░░░` 12.9% implemented by bytes
+`███░░░░░░░░░░░░░░░░░` 13.3% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 58 | 104 | `█░░░░░░░░░` 6% |
+| unattributed | 2977 | 354,046 | 60 | 104 | `█░░░░░░░░░` 6% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 0 | 4 | `░░░░░░░░░░` 0% |
@@ -57,10 +57,10 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | create_stitch.cpp | 15 | 4,319 | 0 | 0 | `░░░░░░░░░░` 0% |
 | ob.cpp | 29 | 4,297 | 3 | 3 | `███░░░░░░░` 25% |
 | soundlib.cpp | 14 | 4,264 | 0 | 0 | `░░░░░░░░░░` 0% |
-| Image.cpp | 32 | 4,213 | 0 | 0 | `░░░░░░░░░░` 0% |
+| Image.cpp | 32 | 4,213 | 1 | 0 | `█░░░░░░░░░` 15% |
 | powerup.cpp | 14 | 4,208 | 0 | 0 | `░░░░░░░░░░` 0% |
 | statwin.cpp | 13 | 4,153 | 0 | 0 | `░░░░░░░░░░` 0% |
-| FontTools.cpp | 20 | 4,086 | 0 | 1 | `░░░░░░░░░░` 0% |
+| FontTools.cpp | 20 | 4,086 | 4 | 1 | `█████░░░░░` 49% |
 | dust.cpp | 7 | 3,770 | 0 | 0 | `░░░░░░░░░░` 0% |
 | commonfe.cpp | 26 | 3,710 | 0 | 0 | `░░░░░░░░░░` 0% |
 | rail.cpp | 14 | 3,610 | 5 | 2 | `███████░░░` 73% |
@@ -144,6 +144,12 @@ Implemented routines and the Rust module that holds them.
 | 00403000 | 171 | unattributed | objects.rs |
 | 00403410 | 511 | unattributed | objects.rs |
 | 00448860 | 289 | exp.cpp | collision.rs |
+| 00449cd0 | 906 | unattributed | font.rs |
+| 0044a070 | 1100 | FontTools.cpp | text.rs |
+| 0044a620 | 574 | FontTools.cpp | text.rs |
+| 0044a860 | 119 | FontTools.cpp | text.rs |
+| 0044aaa0 | 199 | FontTools.cpp | text.rs |
+| 00457160 | 628 | Image.cpp | text.rs |
 | 0045f530 | 4024 | unattributed | projection.rs |
 | 004604f0 | 1429 | m3d.cpp | draw.rs |
 | 00460ca0 | 1092 | m3d.cpp | draw.rs |
@@ -175,7 +181,7 @@ Implemented routines and the Rust module that holds them.
 | 00480950 | 709 | ob.cpp | anim.rs |
 | 0048a7e0 | 749 | pal.cpp | materials.rs |
 | 0048bef0 | 447 | panel.cpp | ground.rs |
-| 0048c520 | 562 | panel.cpp | session.rs |
+| 0048c520 | 562 | panel.cpp | hud.rs |
 | 0048cb60 | 94 | panel.cpp | score.rs |
 | 0048cbc0 | 374 | panel.cpp | score.rs |
 | 0048cd40 | 59 | panel.cpp | score.rs |
@@ -293,6 +299,7 @@ Implemented routines and the Rust module that holds them.
 | 004d1d40 | 936 | unattributed | draw.rs |
 | 004d20f0 | 530 | unattributed | draw.rs |
 | 004d29e0 | 959 | unattributed | draw.rs |
+| 004d4120 | 117 | unattributed | text.rs |
 | 004d8cd0 | 285 | d3dtex.cpp | bitmap.rs |
 | 004d8df0 | 273 | d3dtex.cpp | materials.rs |
 | 004d8f10 | 1010 | d3dtex.cpp | bitmap.rs |
@@ -547,3 +554,5 @@ Implemented routines and the Rust module that holds them.
 | 00502ccb | 67 | unattributed |
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
+
+Status entries outside the function inventory: 004d4bf0

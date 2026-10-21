@@ -73,6 +73,7 @@ pub struct Pad {
     pub jump: bool,
     pub kick: bool,
     pub grab: bool,
+    pub grind: bool,
     pub spin_left: bool,
     pub spin_right: bool,
 }

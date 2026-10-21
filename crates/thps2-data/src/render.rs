@@ -709,3 +709,25 @@ impl View {
             .collect()
     }
 }
+
+/// Hangar's viewport and level settings as the original sets them up, read from it at runtime.
+pub const HANGAR_VIEWPORT: Viewport = Viewport {
+    width: 640,
+    height: 480,
+    near: 10,
+    far: 6524,
+    fov: 3413,
+    fog_start: 5500,
+    fog_scale: 1.5,
+};
+
+/// Hangar's per model depth bias, set by code in the original.
+pub fn hangar_bias(model: usize) -> i32 {
+    match model {
+        420..=422 => 4096,
+        33 | 38 | 135 => 128,
+        62 | 136 | 137 | 378 => 32,
+        400 | 401 => -16,
+        _ => 0,
+    }
+}

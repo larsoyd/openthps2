@@ -5,6 +5,7 @@ pub mod collision;
 pub mod draw;
 pub mod font;
 pub mod ground;
+pub mod hangar;
 pub mod hud;
 pub mod input;
 pub mod materials;

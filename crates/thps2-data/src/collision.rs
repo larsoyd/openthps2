@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::psx::Scene;
 
 #[derive(Debug)]
@@ -235,6 +237,9 @@ struct CollisionFace {
     face_flags: u32,
 }
 
+/// Glass faces stay solid until a kill shatters their item.
+const BREAKABLE: u32 = 0x80000;
+
 #[derive(Debug)]
 struct CollisionItem {
     position: [i32; 3],
@@ -242,12 +247,17 @@ struct CollisionItem {
     faces: Vec<CollisionFace>,
     triggers: Vec<CollisionFace>,
     checksum: u32,
+    shatters: bool,
+    face_count: usize,
 }
 
-#[derive(Debug)]
+/// The level geometry shared by every run, and the items this run has shattered or hidden.
+#[derive(Clone, Debug)]
 pub struct CollisionWorld {
-    pub zone: ZoneGrid,
-    items: Vec<CollisionItem>,
+    pub zone: Arc<ZoneGrid>,
+    items: Arc<[CollisionItem]>,
+    shattered: Vec<usize>,
+    hidden: Vec<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -366,9 +376,63 @@ impl CollisionWorld {
                 faces,
                 triggers,
                 checksum: model.checksum,
+                shatters: u16::from_le_bytes([model.header[0], model.header[1]]) & 2 != 0,
+                face_count: model.faces.len(),
             });
         }
-        Ok(Self { zone, items })
+        Ok(Self {
+            zone: Arc::new(zone),
+            hidden: vec![false; items.len()],
+            items: items.into(),
+            shattered: Vec::new(),
+        })
+    }
+
+    /// Hides or shows the items whose origin is inside the box, or outside it on every axis.
+    pub fn show_items(&mut self, [min, max]: [[i32; 3]; 2], inside: bool, show: bool) {
+        for (item, hidden) in self.items.iter().zip(&mut self.hidden) {
+            let p = item.position;
+            let mut within = (0..3).map(|a| (min[a]..=max[a]).contains(&p[a]));
+            let hit = if inside {
+                within.all(|w| w)
+            } else {
+                within.all(|w| !w)
+            };
+            if hit {
+                *hidden = !show;
+            }
+        }
+    }
+
+    /// Items the region scripts have hidden, in item order.
+    pub fn hidden(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.hidden.len()).filter(|&i| self.hidden[i])
+    }
+
+    /// Breaks the glass of the item with this model checksum, returning the faces the shatter
+    /// walks, or nothing when no item has it or its model cannot shatter.
+    pub fn shatter(&mut self, checksum: u32) -> Option<usize> {
+        let index = self.item_named(checksum)?;
+        let item = &self.items[index];
+        if !item.shatters {
+            return None;
+        }
+        if !self.shattered.contains(&index) {
+            self.shattered.push(index);
+        }
+        Some(item.face_count)
+    }
+
+    /// Shows or hides the first item with this model checksum.
+    pub fn show_item(&mut self, checksum: u32, show: bool) {
+        if let Some(index) = self.item_named(checksum) {
+            self.hidden[index] = !show;
+        }
+    }
+
+    /// Scripts name items by model checksum and the level loader keeps the scene's item order.
+    fn item_named(&self, checksum: u32) -> Option<usize> {
+        self.items.iter().position(|item| item.checksum == checksum)
     }
 
     /// Model checksums of the items whose trigger faces the segment crosses, in walk order.
@@ -380,7 +444,7 @@ impl CollisionWorld {
         let mut stamped = vec![false; self.items.len()];
         for cell in self.zone.walk([start[0], start[2]], [end[0], end[2]]) {
             for &item_index in &self.zone.cell(cell).unwrap().items {
-                if std::mem::replace(&mut stamped[item_index], true) {
+                if std::mem::replace(&mut stamped[item_index], true) || self.hidden[item_index] {
                     continue;
                 }
                 let item = &self.items[item_index];
@@ -436,7 +500,7 @@ impl CollisionWorld {
         let mut stamped = vec![false; self.items.len()];
         for cell in self.zone.walk([start[0], start[2]], [end[0], end[2]]) {
             for &item_index in &self.zone.cell(cell).unwrap().items {
-                if !std::mem::replace(&mut stamped[item_index], true) {
+                if !std::mem::replace(&mut stamped[item_index], true) && !self.hidden[item_index] {
                     self.test_item(item_index, &query, &mut best)?;
                 }
             }
@@ -459,8 +523,11 @@ impl CollisionWorld {
         } = *query;
         let item = &self.items[item_index];
         let (s, e) = (item.local(start), item.local(end));
+        let broken = self.shattered.contains(&item_index);
         for face in &item.faces {
-            if ignore_lips && face.flags & 0x400000 != 0 {
+            if (ignore_lips && face.flags & 0x400000 != 0)
+                || (broken && face.flags & BREAKABLE != 0)
+            {
                 continue;
             }
             let Some((d0, d1)) = crossing(face, start, end, s, e)? else {

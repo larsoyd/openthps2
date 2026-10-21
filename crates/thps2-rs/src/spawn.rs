@@ -133,7 +133,17 @@ pub fn initialize_spawn(
         let rails = Rails::from_triggers(&triggers, 1)?;
         let placement = place(restart, &collision)?;
         let motion = SkaterMotion {
-            run: Run::start(&table, restart.position_fixed, restart.angles)?,
+            run: Run::start(
+                &Level {
+                    world: &collision,
+                    table: &table,
+                    tricks: &scripts,
+                    triggers: &triggers,
+                    rails: &rails,
+                    keys: &keys,
+                },
+                restart,
+            )?,
             frames: 0,
             last_ground: None,
             halted: None,

@@ -29,7 +29,15 @@ fn bytes<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], String> 
         .ok_or_else(|| format!("trigger offset={offset} truncated record"))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Env items whose origin lies in (or outside on every axis of) a box get shown or hidden.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Regions {
+    pub show: bool,
+    pub inside: bool,
+    pub boxes: Vec<[[i32; 3]; 2]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Gap {
         end: u32,
@@ -37,12 +45,13 @@ pub enum Command {
     },
     InitialPulses(u16),
     SendPulse,
-    /// Shows or hides the geometry in a list of boxes, which collision never reads.
-    Regions,
+    Regions(Regions),
     /// Kills the objects, skaters or rails the node links to.
     Kill,
     /// Signals the moving objects the node links to.
     Signal,
+    /// Shows or hides the env items the node links to.
+    Visible(bool),
 }
 
 const COMMAND_POINT: i16 = 6;
@@ -112,13 +121,33 @@ impl Triggers {
                 0x03 => commands.push(Command::SendPulse),
                 0x0c => commands.push(Command::Kill),
                 0x0a => commands.push(Command::Signal),
+                0x0d => {
+                    commands.push(Command::Visible(half(at)? != 0));
+                    at += 2;
+                }
                 0x8d => {
+                    let (mode, inside) = (half(at)?, half(at + 2)? != 0);
                     at += 4;
+                    let mut boxes = Vec::new();
                     while half(at)? != 0xff {
-                        at = ((n.offset + at + 3) & !3) - n.offset + 24;
+                        at = ((n.offset + at + 3) & !3) - n.offset;
+                        let word = |k: usize| -> Result<i32, String> {
+                            let lo = u32::from(half(at + k * 4)?);
+                            Ok((lo | u32::from(half(at + k * 4 + 2)?) << 16) as i32)
+                        };
+                        let corner = |k: usize| -> Result<[i32; 3], String> {
+                            Ok([word(k)? << 12, word(k + 1)? << 12, word(k + 2)? << 12])
+                        };
+                        boxes.push([corner(0)?, corner(3)?]);
+                        at += 24;
                     }
                     at += 2;
-                    commands.push(Command::Regions);
+                    let show = if mode <= 1 { mode != 0 } else { mode != 2 };
+                    commands.push(Command::Regions(Regions {
+                        show,
+                        inside,
+                        boxes,
+                    }));
                 }
                 _ => {
                     return Err(format!(

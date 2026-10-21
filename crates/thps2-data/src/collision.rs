@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::psx::Scene;
+use crate::rng::Rng;
 
 #[derive(Debug)]
 pub struct ZoneCell {
@@ -248,7 +249,79 @@ struct CollisionItem {
     triggers: Vec<CollisionFace>,
     checksum: u32,
     shatters: bool,
-    face_count: usize,
+    panes: Vec<Pane>,
+}
+
+/// One face of a glass model as a shatter sees it, in model face order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pane {
+    breakable: bool,
+    textured: bool,
+    triangle: bool,
+}
+
+/// Faces past the sixth textured one break without shards.
+const SHARD_LIMIT: u32 = 6;
+const LEAF_DRAWS: [i32; 15] = [
+    100, 100, 100, 96, 2, 160, 30, 48, 45, 175, 20, 2, 4096, 4096, 4096,
+];
+const CENTRED_LEAF: usize = 7;
+const PARTICLE_DRAWS: [i32; 14] = [
+    4096, 4096, 40, 40, 201, 201, 201, 201, 201, 201, 201, 201, 201, 30,
+];
+
+struct Counted<'a> {
+    rng: &'a mut Rng,
+    draws: u32,
+}
+
+impl Counted<'_> {
+    fn next(&mut self, n: i32) -> i32 {
+        self.draws += 1;
+        self.rng.next(n)
+    }
+
+    /// A textured shard splits while depth lasts, a leaf on the face's own centre skips one draw.
+    fn shard(&mut self, depth: u32, centred: bool) {
+        if depth > 0 {
+            self.next(9);
+            self.shard(depth - 1, false);
+            self.shard(depth - 1, false);
+            return;
+        }
+        for (k, &n) in LEAF_DRAWS.iter().enumerate() {
+            if !(centred && k == CENTRED_LEAF) {
+                self.next(n);
+            }
+        }
+    }
+}
+
+/// Draws the random numbers a shatter takes for its shards and particles, returning the count.
+pub fn shatter_draws(panes: &[Pane], rng: &mut Rng) -> u32 {
+    let mut c = Counted { rng, draws: 0 };
+    let mut shards = 0;
+    for pane in panes {
+        let split = u32::from(c.next(5) == 0);
+        if !pane.breakable {
+            continue;
+        }
+        if shards >= SHARD_LIMIT {
+            shards += 1;
+        } else if pane.textured {
+            for _ in 0..if pane.triangle { 1 } else { 2 } {
+                c.shard(split, pane.triangle && split == 0);
+            }
+            shards += 1;
+        } else {
+            for _ in 0..if pane.triangle { 15 } else { 30 } {
+                for n in PARTICLE_DRAWS {
+                    c.next(n);
+                }
+            }
+        }
+    }
+    c.draws
 }
 
 /// The level geometry shared by every run, and the items this run has shattered or hidden.
@@ -377,7 +450,20 @@ impl CollisionWorld {
                 triggers,
                 checksum: model.checksum,
                 shatters: u16::from_le_bytes([model.header[0], model.header[1]]) & 2 != 0,
-                face_count: model.faces.len(),
+                panes: model
+                    .faces
+                    .iter()
+                    .map(|face| {
+                        let word = loaded_face_word(face.flags);
+                        Pane {
+                            breakable: face.raw.get(12..16).is_some_and(|w| {
+                                u32::from_le_bytes(w.try_into().unwrap()) & BREAKABLE != 0
+                            }),
+                            textured: word & 0x40 == 0 && word & 1 != 0,
+                            triangle: face.flags & 0x10 != 0,
+                        }
+                    })
+                    .collect(),
             });
         }
         Ok(Self {
@@ -404,23 +490,37 @@ impl CollisionWorld {
         }
     }
 
+    /// Items a kill has shattered, in shatter order.
+    pub fn shattered(&self) -> &[usize] {
+        &self.shattered
+    }
+
     /// Items the region scripts have hidden, in item order.
     pub fn hidden(&self) -> impl Iterator<Item = usize> + '_ {
         (0..self.hidden.len()).filter(|&i| self.hidden[i])
     }
 
-    /// Breaks the glass of the item with this model checksum, returning the faces the shatter
-    /// walks, or nothing when no item has it or its model cannot shatter.
-    pub fn shatter(&mut self, checksum: u32) -> Option<usize> {
+    /// Breaks the glass of the item with this model checksum and returns its faces, or nothing
+    /// when no item has it or its model cannot shatter. Faces already broken stay unbreakable.
+    pub fn shatter(&mut self, checksum: u32) -> Option<Vec<Pane>> {
         let index = self.item_named(checksum)?;
         let item = &self.items[index];
         if !item.shatters {
             return None;
         }
-        if !self.shattered.contains(&index) {
+        let broken = self.shattered.contains(&index);
+        let panes = item
+            .panes
+            .iter()
+            .map(|p| Pane {
+                breakable: p.breakable && !broken,
+                ..*p
+            })
+            .collect();
+        if !broken {
             self.shattered.push(index);
         }
-        Some(item.face_count)
+        Some(panes)
     }
 
     /// Shows or hides the first item with this model checksum.

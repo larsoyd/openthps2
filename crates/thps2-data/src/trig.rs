@@ -56,6 +56,15 @@ pub enum Command {
 
 const COMMAND_POINT: i16 = 6;
 
+/// An object node keeps its type at +2 and its link count at +6, then flag bytes up to 0xff, an
+/// aligned origin, three angles and the script.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObjectNode {
+    pub object_type: u16,
+    pub flags: Vec<u8>,
+    pub script: Vec<u16>,
+}
+
 impl Node {
     fn links(&self) -> usize {
         self.raw
@@ -156,6 +165,39 @@ impl Triggers {
                 }
             }
         }
+    }
+
+    pub fn object(&self, node: usize) -> Result<ObjectNode, String> {
+        let n = &self.nodes[node];
+        let half = |at: usize| {
+            n.raw
+                .get(at..at + 2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .ok_or_else(|| format!("object node={node} truncated at={at}"))
+        };
+        let mut at = 8 + usize::from(half(6)?) * 2;
+        let mut flags = Vec::new();
+        loop {
+            let flag = *n
+                .raw
+                .get(at)
+                .ok_or_else(|| format!("object node={node} flags unterminated"))?;
+            at += 1;
+            if flag == 0xff {
+                break;
+            }
+            flags.push(flag);
+        }
+        at = ((n.offset + at + 3) & !3) - n.offset + 18;
+        let script = (at..n.raw.len() - 1)
+            .step_by(2)
+            .map(half)
+            .collect::<Result<_, _>>()?;
+        Ok(ObjectNode {
+            object_type: half(2)?,
+            flags,
+            script,
+        })
     }
 
     pub fn links(&self, node: usize) -> Vec<usize> {

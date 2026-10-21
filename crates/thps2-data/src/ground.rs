@@ -1,5 +1,5 @@
 use crate::anim::{AnimState, AnimationTable};
-use crate::collision::{CollisionWorld, Hit};
+use crate::collision::{CollisionWorld, Hit, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
 use crate::rng::Rng;
@@ -10,9 +10,13 @@ use crate::trig::{Command, Regions, Restart, Triggers};
 
 mod grind;
 mod manual;
+mod objects;
+mod session;
 mod wall;
 
 pub use manual::{Balance, QueuedTrick};
+pub use objects::ScriptObject;
+pub use session::{SESSION_TICKS, Session};
 
 pub const GRAVITY: i32 = 0x1964;
 pub const AIR_GRAVITY: i32 = 13000;
@@ -117,8 +121,6 @@ const SIGNALLED_OBJECT: i16 = 7;
 const ENV_ITEMS: [i16; 2] = [2, 9];
 /// Env items and trick objects, the nodes a visibility script names by checksum.
 const VISIBLE_ITEMS: [i16; 4] = [2, 9, 12, 14];
-/// Every pane face draws a one in five chance for its shards.
-const SHARD_ODDS: i32 = 5;
 
 /// Digital pad state for one frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -433,6 +435,7 @@ pub struct Skater {
     /// Frames of landing push left, each one about a unit along the velocity.
     pub boost: i32,
     pub special: Special,
+    pub session: Session,
     /// Pop time, its state 3 entry time and speed, and the heights the steep pop bonus compares.
     pub pop_time: i32,
     pub pop_entered: i32,
@@ -548,6 +551,8 @@ pub enum Outcome {
     LeftGround(Option<Hit>),
     Airborne,
     Landed(Hit),
+    /// The run has ended and the world stands still.
+    Ended,
 }
 
 type V3 = [i32; 3];
@@ -803,6 +808,7 @@ impl Skater {
             unjudged: false,
             boost: 0,
             special: Special::default(),
+            session: Session::default(),
             pop_time: 0,
             pop_entered: 0,
             pop_speed: 0,
@@ -968,7 +974,13 @@ impl Skater {
             if self.air_since > 0 && self.now - self.air_since > LATE_OLLIE_FRAMES {
                 self.armed = false;
             }
-            if self.armed {
+            let held_off = self.session.time_up
+                && !matches!(self.state, State::Grind | State::Wall)
+                && self.manual == 0;
+            if self.armed && held_off {
+                self.armed = false;
+                self.set_anim(table, ANIM_IDLE)?;
+            } else if self.armed {
                 self.ollie(table, rules)?;
             }
             self.charge = 0;
@@ -1548,7 +1560,7 @@ impl Skater {
     }
 
     /// Runs a command point script, pulses run the scripts of the command points it links to.
-    fn run_command_point(
+    pub(super) fn run_command_point(
         &mut self,
         triggers: &Triggers,
         node: usize,
@@ -1587,6 +1599,9 @@ impl Skater {
                                 })?;
                                 self.world_events.push(WorldEvent::Kill(checksum));
                             }
+                            MOVING_OBJECT | SIGNALLED_OBJECT => {
+                                self.world_events.push(WorldEvent::Touch(link))
+                            }
                             kind @ (10 | 11 | 500 | 501) => {
                                 return Err(format!(
                                     "command point node={node} kills node={link} kind={kind}"
@@ -1597,6 +1612,11 @@ impl Skater {
                     }
                 }
                 Command::Signal => {
+                    for link in triggers.links(node) {
+                        if triggers.kind(link) == MOVING_OBJECT {
+                            self.world_events.push(WorldEvent::Touch(link));
+                        }
+                    }
                     if let Some(link) = triggers
                         .links(node)
                         .into_iter()
@@ -1628,20 +1648,33 @@ impl Skater {
         Ok(())
     }
 
-    /// Runs the command points a node links to.
+    /// Pulses the nodes a node links to.
     fn pulse_links(&mut self, triggers: &Triggers, node: usize, depth: u32) -> Result<(), String> {
         for link in triggers.links(node) {
-            match triggers.kind(link) {
-                kind if CREATED_OBJECTS.contains(&kind) => {}
-                _ if triggers.is_command_point(link) => {
-                    self.run_command_point(triggers, link, depth + 1)?
-                }
-                kind => {
-                    return Err(format!(
-                        "command point node={node} pulses node={link} kind={kind}"
-                    ));
-                }
+            self.pulse(triggers, node, link, depth)?;
+        }
+        Ok(())
+    }
+
+    /// A pulse runs a command point or creates the object a node describes.
+    fn pulse(
+        &mut self,
+        triggers: &Triggers,
+        from: usize,
+        node: usize,
+        depth: u32,
+    ) -> Result<(), String> {
+        match triggers.kind(node) {
+            MOVING_OBJECT | SIGNALLED_OBJECT
+                if triggers.object(node)?.object_type == objects::SCRIPT_OBJECT =>
+            {
+                self.world_events.push(WorldEvent::Create(node))
             }
+            kind if CREATED_OBJECTS.contains(&kind) => {}
+            _ if triggers.is_command_point(node) => {
+                self.run_command_point(triggers, node, depth + 1)?
+            }
+            kind => return Err(format!("node={from} pulses node={node} kind={kind}")),
         }
         Ok(())
     }
@@ -3159,6 +3192,10 @@ pub enum WorldEvent {
     Kill(u32),
     Regions(Regions),
     Visible(u32, bool),
+    /// A pulse created the script object of this node.
+    Create(usize),
+    /// A kill or signal reached the objects of this node.
+    Touch(usize),
 }
 
 /// One single session run: the skater, the frame clock and the unpaused VB counter.
@@ -3169,6 +3206,8 @@ pub struct Run {
     pub vb: i32,
     /// The level world once a script has broken or hidden something in it.
     pub world: Option<CollisionWorld>,
+    /// Script objects, the newest first like the original's object list.
+    pub objects: Vec<ScriptObject>,
 }
 
 impl Run {
@@ -3185,19 +3224,34 @@ impl Run {
             clock,
             vb: 0,
             world: None,
+            objects: Vec::new(),
         };
         run.apply_world_events(level)?;
         Ok(run)
     }
 
     pub fn frame(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
+        if self.skater.session.ended {
+            return Ok(Outcome::Ended);
+        }
+        self.skater.wind_down(level.table, pad)?;
+        // the end menu pauses the game before the skaters update
+        if self.skater.session.ended {
+            return Ok(Outcome::Ended);
+        }
+        let pad = self.skater.time_up_pad(pad);
         self.vb += 2;
         let live = Level {
             world: self.world.as_ref().unwrap_or(level.world),
             ..*level
         };
-        let outcome = step(&live, &mut self.skater, rules, self.clock.current(), pad)?;
+        let frame = self.clock.current();
+        let outcome = step(&live, &mut self.skater, rules, frame, pad)?;
         self.clock.end_frame(self.vb);
+        self.apply_world_events(level)?;
+        for object in &mut self.objects {
+            object.update(&mut self.skater, level.triggers, frame.hold_delta)?;
+        }
         self.apply_world_events(level)?;
         Ok(outcome)
     }
@@ -3207,8 +3261,8 @@ impl Run {
             let world = self.world.get_or_insert_with(|| level.world.clone());
             match event {
                 WorldEvent::Kill(checksum) => {
-                    for _ in 0..world.shatter(checksum).unwrap_or(0) {
-                        self.skater.rng.next(SHARD_ODDS);
+                    if let Some(panes) = world.shatter(checksum) {
+                        shatter_draws(&panes, &mut self.skater.rng);
                     }
                 }
                 WorldEvent::Regions(r) => {
@@ -3217,6 +3271,17 @@ impl Run {
                     }
                 }
                 WorldEvent::Visible(checksum, show) => world.show_item(checksum, show),
+                WorldEvent::Create(node) => self.objects.insert(
+                    0,
+                    ScriptObject::new(node, level.triggers.object(node)?.script),
+                ),
+                WorldEvent::Touch(node) => {
+                    if self.objects.iter().any(|o| o.node == node) {
+                        return Err(format!(
+                            "kill or signal of script object node={node} unsupported"
+                        ));
+                    }
+                }
             }
         }
         Ok(())
@@ -3253,6 +3318,7 @@ pub fn step(
     }
     s.accel = [0; 3];
     s.push(table, rules, pad)?;
+    s.check_time();
     if !s.bailing {
         s.jump_input(table, level.tricks, rules, pad.jump)?;
     }

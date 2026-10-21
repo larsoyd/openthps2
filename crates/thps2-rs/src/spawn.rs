@@ -212,7 +212,7 @@ pub fn advance_ground(
                 motion.frames = frame;
                 motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));
             }
-            Ok(Outcome::LeftGround(_) | Outcome::Airborne | Outcome::Grinding) => {
+            Ok(Outcome::LeftGround(_) | Outcome::Airborne | Outcome::Grinding | Outcome::Ended) => {
                 motion.frames = frame
             }
             Err(error) => motion.halted = Some(format!("frame={frame} {error}")),

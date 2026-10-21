@@ -2,6 +2,7 @@ use crate::{
     anim::AnimationTable,
     camera::{Camera, Moment, Tripod},
     collision::CollisionWorld,
+    fixes::Fixes,
     font::Font,
     ground::{Level, Outcome, Pad, Rules, Run, TONY_HAWK_STATS},
     hud::{self, EndScreens, FontId, ImageId, Overlay},
@@ -16,6 +17,7 @@ use crate::{
     script::TrickScripts,
     sprite::Sprite,
     text::{ScreenQuad, gamma_table},
+    tricktext::TrickText,
     trig::Triggers,
 };
 
@@ -49,6 +51,8 @@ pub struct Hangar {
     mess_glyphs: Vec<Texture>,
     score_font: Font,
     score_glyphs: Vec<Texture>,
+    trick_font: Font,
+    trick_glyphs: Vec<Texture>,
     sprites: Vec<(ImageId, Sprite)>,
 }
 
@@ -72,10 +76,20 @@ impl Hangar {
         apply_logos(&mut materials, archive, &TONY_HAWK_LOGOS, LOGO_START)?;
         let surfaces: Vec<_> = materials.iter().map(|t| t.surface_1555()).collect();
         let triggers = Triggers::parse(read("data/SKHAN_T.TRG")?)?;
-        let time_font = Font::parse(read("data/TIME.FNT")?)?;
-        let mess_font = Font::parse(read("data/INGAME1.FNT")?)?;
-        let score_font = Font::parse(read("data/SCORE.FNT")?)?;
+        // the level mounts the panel archive first, so its fonts win over the loose ones
         let panel = Pre::parse(read("data/PANEL.PRE")?)?;
+        let font = |name: &str| {
+            Font::parse(
+                panel
+                    .get(name)
+                    .ok_or_else(|| format!("[panel] missing={name}"))?,
+            )
+            .map_err(|e| format!("[panel] font={name} {e}"))
+        };
+        let time_font = font("time.fnt")?;
+        let mess_font = font("ingame1.fnt")?;
+        let score_font = font("score.fnt")?;
+        let trick_font = font("s2tricks.fnt")?;
         let sprites = ImageId::ALL
             .iter()
             .map(|&(id, name)| {
@@ -117,6 +131,8 @@ impl Hangar {
             mess_font,
             score_glyphs: glyphs(&score_font),
             score_font,
+            trick_glyphs: glyphs(&trick_font),
+            trick_font,
             sprites,
             scene,
             triggers,
@@ -140,7 +156,9 @@ impl Hangar {
 pub struct Session {
     pub run: Run,
     pub camera: Camera,
+    pub fixes: Fixes,
     screens: EndScreens,
+    text: TrickText,
     overlay: Vec<Overlay>,
 }
 
@@ -156,7 +174,9 @@ impl Session {
         Ok(Self {
             run,
             camera,
+            fixes: Fixes::default(),
             screens: EndScreens::default(),
+            text: TrickText::default(),
             overlay: Vec::new(),
         })
     }
@@ -166,9 +186,14 @@ impl Session {
         let level = hangar.level();
         // the pass that takes Retry only restarts, the new run's first frame is the next pass
         if self.run.frame(&level, TONY, pad)? == Outcome::Retry {
+            let fixes = self.fixes;
             *self = Self::start(hangar)?;
+            self.fixes = fixes;
             return Ok(());
         }
+        let tricks = self
+            .text
+            .pass(&hangar.trick_font, &mut self.run.skater, self.fixes)?;
         let s = &self.run.skater;
         let moment = Moment {
             step: self.run.clock.current().scale,
@@ -179,7 +204,8 @@ impl Session {
         let world = self.run.world.as_ref().unwrap_or(level.world);
         self.camera.update(&Tripod::of(s), world, moment)?;
         let time = self.run.clock.current().time;
-        self.overlay = hud::panels(&hangar.time_font, &hangar.score_font, s, time, self.run.vb)?;
+        let fonts = [&hangar.time_font, &hangar.score_font];
+        self.overlay = hud::panels(fonts, s, &tricks, time, self.run.vb)?;
         let screens = self
             .screens
             .pass(&hangar.mess_font, &self.run, HIGH_SCORE)?;
@@ -223,6 +249,7 @@ impl Session {
                         FontId::Time => (&hangar.time_font, &hangar.time_glyphs),
                         FontId::Score => (&hangar.score_font, &hangar.score_glyphs),
                         FontId::Mess => (&hangar.mess_font, &hangar.mess_glyphs),
+                        FontId::Tricks => (&hangar.trick_font, &hangar.trick_glyphs),
                     };
                     let texture = &glyphs[prim.glyph as usize];
                     let quad = ScreenQuad::new(&prim, font, size, &gamma);

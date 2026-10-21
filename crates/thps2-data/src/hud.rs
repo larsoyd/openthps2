@@ -215,6 +215,7 @@ pub enum FontId {
     Time,
     Score,
     Mess,
+    Tricks,
 }
 
 /// Panel images of PANEL.PRE.
@@ -291,12 +292,13 @@ fn meter(skater: &Skater, vb: i32) -> Option<Overlay> {
     })
 }
 
-/// The single player panels in submission order: stance icon, clock, then the score panel with
-/// its meter, labels and digits. Nothing is drawn while the end screens pause the game.
+/// The single player panels in submission order: stance icon, the pending points and trick lines,
+/// clock, then the score panel with its meter, labels and digits. Nothing is drawn while the end
+/// screens pause the game.
 pub fn panels(
-    time_font: &Font,
-    score_font: &Font,
+    [time_font, score_font]: [&Font; 2],
     skater: &Skater,
+    tricks: &[Prim],
     time: i32,
     vb: i32,
 ) -> Result<Vec<Overlay>, String> {
@@ -311,6 +313,7 @@ pub fn panels(
             raw: true,
         });
     }
+    out.extend(tricks.iter().map(|&p| Overlay::Glyph(FontId::Tricks, p)));
     out.extend(
         clock(time_font, &skater.session, time, vb)?
             .into_iter()

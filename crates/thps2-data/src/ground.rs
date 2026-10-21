@@ -76,6 +76,8 @@ const SCRIPT_LAST_FRAME: i16 = 0x2711;
 const GAP_SLOTS: usize = 20;
 const LEVEL_SEED: u32 = 0x12a6cc58;
 const DEFAULT_TRICK_POINTS: i32 = 0x7b;
+const GRIND_UP_FRAMES: i32 = 0x13;
+const WALLRIDE_GAP: i32 = 0x29;
 const BOOST_MAX: i32 = 20;
 const UNLIMITED_PULSES: u16 = 0xffff;
 const PULSE_DEPTH: u32 = 8;
@@ -338,6 +340,9 @@ pub struct Skater {
     /// Frame time of the last air landing, and the switch stance bonus judged after it.
     pub landed_at: i32,
     pub switch_bonus: bool,
+    /// Frames since the grind button was let go, and the frame time of the last wall the board left.
+    pub grind_up: i32,
+    pub wall_time: i32,
     /// Bail kinds the script sets for falling off a rail and for landing mid move.
     pub rail_bail: i16,
     pub landing_bail: i16,
@@ -664,6 +669,8 @@ impl Skater {
             frame_time: 0,
             landed_at: 0,
             switch_bonus: false,
+            grind_up: 0,
+            wall_time: 0,
             rail_bail: 0,
             landing_bail: 0,
         }
@@ -1391,6 +1398,25 @@ impl Skater {
             let d = self.bail_drag;
             self.velocity = self.velocity.map(|c| c - (((c / d) * frame.scale) >> 8));
         }
+    }
+
+    /// A wall in the air pushes the board off with a quarter of its normal and at times a random kick.
+    fn air_bounce(&mut self, world: &CollisionWorld, hit: &Hit) -> Result<(), String> {
+        if self.grind.no_stick != 0 {
+            return Err("air wall bounce while rails are held off unsupported".into());
+        }
+        let normal = hit.normal.map(i32::from);
+        (self.last_normal, self.smoothed_up, self.same_normal_time) = (WORLD_UP, WORLD_UP, 0);
+        self.smooth_basis();
+        self.position = world.move_retrying(self.position, add(hit.position_fixed, normal)?)?;
+        self.jumped = true;
+        self.wall_response(normal, WALL_TURN)?;
+        self.velocity = add(self.velocity, normal.map(|c| c / 4))?;
+        if self.rng.next(3) == 0 {
+            self.velocity[0] += self.rng.next(0x4000) - 0x2000;
+            self.velocity[2] += self.rng.next(0x4000) - 0x2000;
+        }
+        Ok(())
     }
 
     /// Landing in the middle of a trick move bails.
@@ -2536,10 +2562,15 @@ pub fn air_step(
     }
     match hit {
         Some(hit) if hit.flags & 0x1000000 != 0 => {
-            return Err(format!(
-                "air wall contact unsupported item={} face={}",
-                hit.item_index, hit.face_index
-            ));
+            let low = hit.flags & 0x800000 == 0;
+            let reach = pad.grind || s.grind_up <= GRIND_UP_FRAMES;
+            if low && !s.bailing && reach && s.frame_time - s.wall_time >= WALLRIDE_GAP {
+                return Err(format!(
+                    "air wallride unsupported item={} face={}",
+                    hit.item_index, hit.face_index
+                ));
+            }
+            s.air_bounce(world, &hit)?;
         }
         Some(hit) if hit.flags & 0x400000 != 0 => land_on_lip(world, table, s, pad, &hit)?,
         Some(hit) => land(level, s, rules, pad, &hit)?,
@@ -2633,6 +2664,7 @@ pub fn step(
     s.track_up_hold(pad, frame);
     s.now += 1;
     s.frame_time = frame.time;
+    s.grind_up = if pad.grind { 0 } else { s.grind_up + 1 };
     if !matches!(s.state, State::Air | State::Vert)
         && frame.time - s.landed_at > (frame.scale * 15) >> 8
     {

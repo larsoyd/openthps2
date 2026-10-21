@@ -12,6 +12,7 @@ pub mod pkr;
 pub mod projection;
 pub mod psx;
 pub mod rail;
+pub mod raster;
 pub mod rec;
 pub mod rng;
 pub mod score;

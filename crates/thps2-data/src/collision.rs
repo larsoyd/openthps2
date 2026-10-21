@@ -240,6 +240,8 @@ struct CollisionItem {
     position: [i32; 3],
     model: usize,
     faces: Vec<CollisionFace>,
+    triggers: Vec<CollisionFace>,
+    checksum: u32,
 }
 
 #[derive(Debug)]
@@ -293,7 +295,7 @@ impl CollisionWorld {
                 .models
                 .get(item.model_index as usize)
                 .ok_or("collision invalid model index")?;
-            let mut faces = Vec::new();
+            let (mut faces, mut triggers) = (Vec::new(), Vec::new());
             for (index, face) in model.faces.iter().enumerate() {
                 let raw = face
                     .raw
@@ -306,7 +308,7 @@ impl CollisionWorld {
                     .ok_or_else(|| {
                         format!("collision item={item_index} face={index} invalid normal index")
                     })?;
-                if flags & 0x30000 == 0x10000 || flags & 0x20000 != 0 {
+                if flags & 0x30000 == 0x10000 {
                     continue;
                 }
                 let normal = std::array::from_fn(|a| {
@@ -344,7 +346,12 @@ impl CollisionWorld {
                 if bounds.iter().flatten().any(|&n| i32::try_from(n).is_err()) {
                     return Err("collision world bounds overflow".into());
                 }
-                faces.push(CollisionFace {
+                let target = if flags & 0x20000 != 0 {
+                    &mut triggers
+                } else {
+                    &mut faces
+                };
+                target.push(CollisionFace {
                     index,
                     vertices,
                     normal,
@@ -357,9 +364,36 @@ impl CollisionWorld {
                 position: item.position_fixed,
                 model: item.model_index as usize,
                 faces,
+                triggers,
+                checksum: model.checksum,
             });
         }
         Ok(Self { zone, items })
+    }
+
+    /// Model checksums of the items whose trigger faces the segment crosses, in walk order.
+    pub fn crossed_triggers(&self, start: [i32; 3], end: [i32; 3]) -> Result<Vec<u32>, String> {
+        let mut fired = Vec::new();
+        if start == end {
+            return Ok(fired);
+        }
+        let mut stamped = vec![false; self.items.len()];
+        for cell in self.zone.walk([start[0], start[2]], [end[0], end[2]]) {
+            for &item_index in &self.zone.cell(cell).unwrap().items {
+                if std::mem::replace(&mut stamped[item_index], true) {
+                    continue;
+                }
+                let item = &self.items[item_index];
+                let (s, e) = (item.local(start), item.local(end));
+                for face in &item.triggers {
+                    if crossing(face, start, end, s, e)?.is_some() {
+                        fired.push(item.checksum);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(fired)
     }
 
     /// Q12 endpoints, static skater filter ignoring lip faces, no trigger execution or moving objects.
@@ -424,54 +458,14 @@ impl CollisionWorld {
             ignore_lips,
         } = *query;
         let item = &self.items[item_index];
-        let s: [i64; 3] =
-            std::array::from_fn(|a| i64::from(start[a] >> 12) - i64::from(item.position[a] >> 12));
-        let e: [i64; 3] =
-            std::array::from_fn(|a| i64::from(end[a] >> 12) - i64::from(item.position[a] >> 12));
+        let (s, e) = (item.local(start), item.local(end));
         for face in &item.faces {
             if ignore_lips && face.flags & 0x400000 != 0 {
                 continue;
             }
-            if (0..3).any(|a| {
-                face.bounds[0][a] > i64::from(start[a].max(end[a]) & !0xfff) + 0x4000
-                    || face.bounds[1][a] < i64::from(start[a].min(end[a]) & !0xfff) - 0x4000
-            }) {
+            let Some((d0, d1)) = crossing(face, start, end, s, e)? else {
                 continue;
-            }
-            let plane = |p: [i64; 3]| -> Result<i64, String> {
-                let distance: i64 = (0..3)
-                    .map(|a| i64::from(face.normal[a]) * (p[a] - i64::from(face.vertices[0][a])))
-                    .sum();
-                i32::try_from(distance)
-                    .map(i64::from)
-                    .map_err(|_| "collision plane distance overflow".into())
             };
-            let d0 = plane(s)?;
-            let d1 = plane(e)?;
-            if d0 < 0 || d1 > 0 || (d0 < 0x800 && d1 > -0x800) {
-                continue;
-            }
-            let direction: [f64; 3] = std::array::from_fn(|a| (e[a] - s[a]) as f64);
-            let mut inside = true;
-            for edge in 0..face.vertices.len() {
-                let a: [f64; 3] =
-                    std::array::from_fn(|i| (i64::from(face.vertices[edge][i]) - s[i]) as f64);
-                let b: [f64; 3] = std::array::from_fn(|i| {
-                    (i64::from(face.vertices[(edge + 1) % face.vertices.len()][i]) - s[i]) as f64
-                });
-                let cross = [
-                    a[1] * b[2] - a[2] * b[1],
-                    a[2] * b[0] - a[0] * b[2],
-                    a[0] * b[1] - a[1] * b[0],
-                ];
-                if (0..3).map(|i| cross[i] * direction[i]).sum::<f64>() < 0.0 {
-                    inside = false;
-                    break;
-                }
-            }
-            if !inside {
-                continue;
-            }
             let denominator =
                 i32::try_from(d0 - d1).map_err(|_| "collision plane difference overflow")?;
             let t = d0 * 0x4000 / i64::from(denominator);
@@ -494,6 +488,58 @@ impl CollisionWorld {
         }
         Ok(())
     }
+}
+
+impl CollisionItem {
+    fn local(&self, p: [i32; 3]) -> [i64; 3] {
+        std::array::from_fn(|a| i64::from(p[a] >> 12) - i64::from(self.position[a] >> 12))
+    }
+}
+
+/// Plane distances of a segment entering the face from the front and passing inside every edge.
+fn crossing(
+    face: &CollisionFace,
+    start: [i32; 3],
+    end: [i32; 3],
+    s: [i64; 3],
+    e: [i64; 3],
+) -> Result<Option<(i64, i64)>, String> {
+    if (0..3).any(|a| {
+        face.bounds[0][a] > i64::from(start[a].max(end[a]) & !0xfff) + 0x4000
+            || face.bounds[1][a] < i64::from(start[a].min(end[a]) & !0xfff) - 0x4000
+    }) {
+        return Ok(None);
+    }
+    let plane = |p: [i64; 3]| -> Result<i64, String> {
+        let distance: i64 = (0..3)
+            .map(|a| i64::from(face.normal[a]) * (p[a] - i64::from(face.vertices[0][a])))
+            .sum();
+        i32::try_from(distance)
+            .map(i64::from)
+            .map_err(|_| "collision plane distance overflow".into())
+    };
+    let d0 = plane(s)?;
+    let d1 = plane(e)?;
+    if d0 < 0 || d1 > 0 || (d0 < 0x800 && d1 > -0x800) {
+        return Ok(None);
+    }
+    let direction: [f64; 3] = std::array::from_fn(|a| (e[a] - s[a]) as f64);
+    for edge in 0..face.vertices.len() {
+        let a: [f64; 3] =
+            std::array::from_fn(|i| (i64::from(face.vertices[edge][i]) - s[i]) as f64);
+        let b: [f64; 3] = std::array::from_fn(|i| {
+            (i64::from(face.vertices[(edge + 1) % face.vertices.len()][i]) - s[i]) as f64
+        });
+        let cross = [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ];
+        if (0..3).map(|i| cross[i] * direction[i]).sum::<f64>() < 0.0 {
+            return Ok(None);
+        }
+    }
+    Ok(Some((d0, d1)))
 }
 
 struct Query {

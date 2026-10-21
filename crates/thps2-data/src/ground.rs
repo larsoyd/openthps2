@@ -1,5 +1,6 @@
 use crate::anim::{AnimState, AnimationTable};
 use crate::collision::{CollisionWorld, Hit};
+use crate::score::Panel;
 use crate::script::TrickScripts;
 use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
 
@@ -286,6 +287,7 @@ pub struct Skater {
     pub gravity: i32,
     /// Offset of the next trick script opcode, none while no script runs.
     pub script: Option<usize>,
+    pub panel: Panel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -540,6 +542,7 @@ impl Skater {
             gravity_percent: 100,
             gravity: AIR_GRAVITY,
             script: None,
+            panel: Panel::default(),
         }
     }
 

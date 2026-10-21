@@ -1,6 +1,8 @@
 #[derive(Debug)]
 pub struct Node {
     pub kind: i16,
+    /// File offset of the node, scripts align their operands to it.
+    pub offset: usize,
     pub raw: Vec<u8>,
 }
 
@@ -27,7 +29,91 @@ fn bytes<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], String> 
         .ok_or_else(|| format!("trigger offset={offset} truncated record"))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Command {
+    Gap { end: u32, id: i16 },
+    InitialPulses(u16),
+    SendPulse,
+}
+
+const COMMAND_POINT: i16 = 6;
+
+impl Node {
+    fn links(&self) -> usize {
+        self.raw
+            .get(2..4)
+            .map_or(0, |b| usize::from(u16::from_le_bytes([b[0], b[1]])))
+    }
+
+    /// Node offset of the four byte aligned word after the links.
+    fn after_links(&self) -> usize {
+        ((self.offset + 4 + self.links() * 2 + 3) & !3) - self.offset
+    }
+
+    fn checksum(&self) -> Option<u32> {
+        let at = self.after_links();
+        Some(u32::from_le_bytes(
+            self.raw.get(at..at + 4)?.try_into().ok()?,
+        ))
+    }
+}
+
 impl Triggers {
+    pub fn command_point(&self, checksum: u32) -> Option<usize> {
+        self.nodes
+            .iter()
+            .position(|n| n.kind == COMMAND_POINT && n.checksum() == Some(checksum))
+    }
+
+    /// Decodes a command point script, refusing opcodes the rewrite does not run.
+    pub fn commands(&self, node: usize) -> Result<Vec<Command>, String> {
+        let n = &self.nodes[node];
+        if n.kind != COMMAND_POINT {
+            return Err(format!(
+                "trigger node={node} kind={} is no command point",
+                n.kind
+            ));
+        }
+        let half = |at: usize| {
+            n.raw
+                .get(at..at + 2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .ok_or_else(|| format!("trigger node={node} script truncated at={at}"))
+        };
+        let mut at = n.after_links() + 4;
+        let mut commands = Vec::new();
+        loop {
+            let op = half(at)?;
+            at += 2;
+            match op {
+                0xffff => return Ok(commands),
+                0xc9 => {
+                    at = ((n.offset + at + 3) & !3) - n.offset;
+                    let end = u32::from(half(at)?) | u32::from(half(at + 2)?) << 16;
+                    commands.push(Command::Gap {
+                        end,
+                        id: half(at + 4)? as i16,
+                    });
+                    at += 6;
+                }
+                0x86 => {
+                    commands.push(Command::InitialPulses(half(at)?));
+                    at += 2;
+                }
+                0x03 => commands.push(Command::SendPulse),
+                _ => {
+                    return Err(format!(
+                        "trigger node={node} command op={op:#x} at={at} unsupported"
+                    ));
+                }
+            }
+        }
+    }
+
+    pub fn has_links(&self, node: usize) -> bool {
+        self.nodes[node].links() > 0
+    }
+
     pub fn parse(data: &[u8]) -> Result<Self, String> {
         if bytes::<4>(data, 0)? != *b"_TRG" || u32::from_le_bytes(bytes(data, 4)?) != 2 {
             return Err("trigger unsupported magic/version".into());
@@ -112,6 +198,7 @@ impl Triggers {
             }
             nodes.push(Node {
                 kind,
+                offset,
                 raw: raw.to_vec(),
             });
         }

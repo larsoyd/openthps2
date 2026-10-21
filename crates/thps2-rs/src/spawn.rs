@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use thps2_data::{
     anim::AnimationTable,
     collision::{CollisionWorld, Hit},
-    ground::{Outcome, Pad, Rules, Run},
+    ground::{Level, Outcome, Pad, Rules, Run},
     psx::Scene,
     script::TrickScripts,
     skater::GROUND_STICK_DISTANCE,
@@ -144,26 +144,28 @@ pub fn advance_ground(
     collision: Option<Res<SessionCollision>>,
     animations: Option<Res<SessionAnimations>>,
     scripts: Option<Res<SessionScripts>>,
+    triggers: Option<Res<SessionTriggers>>,
     rules: Res<SessionRules>,
     pad: Res<SessionPad>,
     mut motions: Query<&mut SkaterMotion>,
 ) {
-    let (Some(collision), Some(animations), Some(scripts)) = (collision, animations, scripts)
+    let (Some(collision), Some(animations), Some(scripts), Some(triggers)) =
+        (collision, animations, scripts, triggers)
     else {
         return;
+    };
+    let level = Level {
+        world: &collision.0,
+        table: &animations.0,
+        tricks: &scripts.0,
+        triggers: &triggers.0,
     };
     for mut motion in &mut motions {
         if motion.halted.is_some() {
             continue;
         }
         let frame = motion.frames + 1;
-        match motion.run.frame(
-            &collision.0,
-            &animations.0,
-            &scripts.0,
-            rules.0,
-            pad.at(frame),
-        ) {
+        match motion.run.frame(&level, rules.0, pad.at(frame)) {
             Ok(Outcome::Grounded(hit) | Outcome::Landed(hit)) => {
                 motion.frames = frame;
                 motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));

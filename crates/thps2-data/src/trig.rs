@@ -31,9 +31,16 @@ fn bytes<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], String> 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
-    Gap { end: u32, id: i16 },
+    Gap {
+        end: u32,
+        id: i16,
+    },
     InitialPulses(u16),
     SendPulse,
+    /// Shows or hides the geometry in a list of boxes, which collision never reads.
+    Regions,
+    /// Kills the objects, skaters or rails the node links to.
+    Kill,
 }
 
 const COMMAND_POINT: i16 = 6;
@@ -101,6 +108,15 @@ impl Triggers {
                     at += 2;
                 }
                 0x03 => commands.push(Command::SendPulse),
+                0x0c => commands.push(Command::Kill),
+                0x8d => {
+                    at += 4;
+                    while half(at)? != 0xff {
+                        at = ((n.offset + at + 3) & !3) - n.offset + 24;
+                    }
+                    at += 2;
+                    commands.push(Command::Regions);
+                }
                 _ => {
                     return Err(format!(
                         "trigger node={node} command op={op:#x} at={at} unsupported"
@@ -110,8 +126,19 @@ impl Triggers {
         }
     }
 
-    pub fn has_links(&self, node: usize) -> bool {
-        self.nodes[node].links() > 0
+    pub fn links(&self, node: usize) -> Vec<usize> {
+        let n = &self.nodes[node];
+        (0..n.links())
+            .map(|k| usize::from(u16::from_le_bytes([n.raw[4 + k * 2], n.raw[5 + k * 2]])))
+            .collect()
+    }
+
+    pub fn is_command_point(&self, node: usize) -> bool {
+        self.nodes[node].kind == COMMAND_POINT
+    }
+
+    pub fn checksum(&self, node: usize) -> Option<u32> {
+        self.nodes[node].checksum()
     }
 
     pub fn parse(data: &[u8]) -> Result<Self, String> {

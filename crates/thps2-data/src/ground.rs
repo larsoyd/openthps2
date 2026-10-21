@@ -1,8 +1,9 @@
 use crate::anim::{AnimState, AnimationTable};
 use crate::collision::{CollisionWorld, Hit};
-use crate::score::Panel;
+use crate::score::{Entry, Panel, Style, hangar_gap};
 use crate::script::TrickScripts;
 use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
+use crate::trig::{Command, Triggers};
 
 pub const GRAVITY: i32 = 0x1964;
 pub const AIR_GRAVITY: i32 = 13000;
@@ -68,6 +69,10 @@ const BAIL_SLOW_SPEED: i32 = 0x2d000;
 const BAIL_TILT: usize = 3;
 const BAIL_END_COOLDOWN: i32 = 4;
 const SCRIPT_LAST_FRAME: i16 = 0x2711;
+const GAP_SLOTS: usize = 20;
+const BOOST_MAX: i32 = 20;
+const UNLIMITED_PULSES: u16 = 0xffff;
+const PULSE_DEPTH: u32 = 8;
 
 /// Digital pad state for one frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -288,6 +293,36 @@ pub struct Skater {
     /// Offset of the next trick script opcode, none while no script runs.
     pub script: Option<usize>,
     pub panel: Panel,
+    /// A combo is open: tricks and gaps push onto the panel until the landing commits them.
+    pub combo: bool,
+    pub gaps: Vec<PendingGap>,
+    /// An ended gap that only counts once the skater grinds.
+    pub grind_gap: Option<i16>,
+    /// The last landing's alignment, and whether a spin button or a wall bonk excused it.
+    pub style: Style,
+    pub unjudged: bool,
+    /// Frames of landing push left, each one about a unit along the velocity.
+    pub boost: i32,
+    /// Trigger checksums the last sweep touched, they fire again only after a sweep without them.
+    pub touching: Vec<u32>,
+    /// Pulses left per command point node, set by the first run of its script.
+    pub pulses: Vec<(usize, u16)>,
+}
+
+/// A gap started by one command point, ended by the command point with the end checksum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PendingGap {
+    pub end: u32,
+    pub id: i16,
+}
+
+/// What the skater meets in a run: collision, its animation bank, trick scripts and level nodes.
+#[derive(Clone, Copy)]
+pub struct Level<'a> {
+    pub world: &'a CollisionWorld,
+    pub table: &'a AnimationTable,
+    pub tricks: &'a TrickScripts,
+    pub triggers: &'a Triggers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -543,6 +578,14 @@ impl Skater {
             gravity: AIR_GRAVITY,
             script: None,
             panel: Panel::default(),
+            combo: false,
+            gaps: Vec::new(),
+            grind_gap: None,
+            style: Style::default(),
+            unjudged: false,
+            boost: 0,
+            touching: Vec::new(),
+            pulses: Vec::new(),
         }
     }
 
@@ -589,6 +632,7 @@ impl Skater {
             return Ok(());
         }
         self.set_state(State::Air);
+        self.open_combo();
         self.landing_timer = LANDING_TIMER;
         (self.spin_angle, self.spins) = (0, 0);
         self.jumped = true;
@@ -632,7 +676,11 @@ impl Skater {
             } else {
                 self.set_anim(table, ANIM_LAND)?;
             }
-            self.spin_angle = 0;
+            if self.script.is_some() {
+                return Err("landing with a trick script running unsupported".into());
+            }
+            self.boost += (self.panel.total(self.landed_style()) / 100).min(BOOST_MAX);
+            self.commit_combo()?;
         }
         if !held {
             self.crouching = false;
@@ -738,6 +786,7 @@ impl Skater {
             return Err("vert air state unsupported".into());
         }
         self.set_state(State::Air);
+        self.open_combo();
         self.landing_timer = LANDING_TIMER;
         self.set_anim(table, ANIM_OLLIE)
     }
@@ -838,6 +887,7 @@ impl Skater {
         }
         left |= pad.spin_left;
         right |= pad.spin_right;
+        self.unjudged |= pad.spin_left || pad.spin_right;
         self.crouch_lean = false;
         self.turning = left || right;
         self.turn = if left {
@@ -912,11 +962,236 @@ impl Skater {
         if self.spin_angle > 0x7ff {
             self.spin_angle -= 0x800;
             self.spins += 1;
+            self.refresh_spins();
         }
         if self.spin_angle < -0x7ff {
             self.spin_angle += 0x800;
             self.spins += 1;
+            self.refresh_spins();
         }
+    }
+
+    fn open_combo(&mut self) {
+        self.combo = true;
+        (self.style, self.unjudged) = (Style::default(), false);
+    }
+
+    /// Landing style counts only while half spins are in hand.
+    fn landed_style(&self) -> Style {
+        if self.spins == 0 {
+            Style::default()
+        } else {
+            self.style
+        }
+    }
+
+    /// Half spins so far, a turn past 1500 units rounding up to the next.
+    fn round_spins(&mut self) -> i32 {
+        if self.spin_angle.abs() > 1500 {
+            self.spin_angle = 0;
+            return self.spins + 1;
+        }
+        self.spins
+    }
+
+    /// The last gap entry takes the current half spins, on a lip only once there are two.
+    fn refresh_spins(&mut self) {
+        let lip = self.state == State::Vert || self.previous_state == State::Vert;
+        let stacked = self.panel.spins();
+        let spins = self.spins;
+        if let Some(last) = self.panel.entries.last_mut()
+            && last.kind == 0
+            && last.spins != spins
+            && (!lip || spins > 1 || stacked > 0)
+        {
+            last.spins = spins;
+        }
+    }
+
+    /// A new entry after a gap freezes the gap's half spins.
+    fn push_entry(&mut self, entry: Entry) {
+        if !self.combo {
+            return;
+        }
+        let after_gap = self.panel.entries.last().is_some_and(|e| e.kind == 0);
+        let kind = entry.kind;
+        self.panel.push(entry);
+        let n = self.panel.entries.len();
+        if after_gap {
+            self.panel.entries[n - 2].spins = self.round_spins();
+            self.spins = 0;
+        } else if kind == 1 {
+            self.spins = self.round_spins();
+            self.panel.entries[n - 1].spins = self.spins;
+        }
+        self.refresh_spins();
+    }
+
+    /// Landing rounds the half spins into the last gap and moves the combo total to the panel.
+    fn commit_combo(&mut self) -> Result<(), String> {
+        self.spins = self.round_spins();
+        self.refresh_spins();
+        let stacked = self.panel.spins();
+        if stacked == 0 || (self.previous_state == State::Vert && stacked == 1) {
+            self.style = Style::default();
+        }
+        let spin_ollie = self.spins != 0
+            && self.panel.entries.last().is_none_or(|e| e.kind != 0)
+            && (self.previous_state != State::Vert || self.spins > 1);
+        if spin_ollie {
+            return Err(format!("spin ollie entry unsupported spins={}", self.spins));
+        }
+        self.panel.commit(self.landed_style());
+        (self.spin_angle, self.spins, self.combo) = (0, 0, false);
+        Ok(())
+    }
+
+    /// The landing push adds about one unit along the velocity per boost frame.
+    fn apply_boost(&mut self) -> Result<(), String> {
+        if self.boost == 0 {
+            return Ok(());
+        }
+        let speed = speed_of(self.velocity)?;
+        if speed & !0xfff > 0 {
+            let k = speed >> 12;
+            self.accel = std::array::from_fn(|a| self.accel[a] + self.velocity[a] / k);
+        }
+        self.boost -= 1;
+        Ok(())
+    }
+
+    /// Pending gaps whose state mask covers the current state are lost.
+    fn cancel_gaps(&mut self) -> Result<(), String> {
+        let mask = if self.bailing {
+            0xffff
+        } else {
+            match self.state {
+                State::Ground => 1,
+                State::Air | State::Vert => 0x20,
+                State::Stopped => 0,
+            }
+        };
+        let mut kept = Vec::with_capacity(self.gaps.len());
+        for g in &self.gaps {
+            if hangar_gap(g.id)?.mask & mask == 0 {
+                kept.push(*g);
+            }
+        }
+        self.gaps = kept;
+        if self.state == State::Ground {
+            self.grind_gap = None;
+        }
+        Ok(())
+    }
+
+    /// Sweeps the frame's travel for trigger planes and runs the command points newly touched.
+    fn sweep_triggers(&mut self, level: &Level) -> Result<(), String> {
+        let delta: V3 = std::array::from_fn(|a| self.position[a] - self.old_position[a]);
+        if delta == [0; 3] {
+            return Ok(());
+        }
+        let back = normalize(delta).map(|c| c * 16);
+        let start = std::array::from_fn(|a| self.old_position[a] - back[a]);
+        let fired = level.world.crossed_triggers(start, self.position)?;
+        for &checksum in &fired {
+            if !self.touching.contains(&checksum) {
+                let node = level.triggers.command_point(checksum).ok_or_else(|| {
+                    format!("trigger checksum={checksum:#x} has no command point")
+                })?;
+                self.run_command_point(level.triggers, node, 0)?;
+            }
+        }
+        self.touching = fired;
+        Ok(())
+    }
+
+    /// Runs a command point script, pulses run the scripts of the command points it links to.
+    fn run_command_point(
+        &mut self,
+        triggers: &Triggers,
+        node: usize,
+        depth: u32,
+    ) -> Result<(), String> {
+        if depth > PULSE_DEPTH {
+            return Err(format!("command point node={node} pulse chain too deep"));
+        }
+        let own = triggers.checksum(node).unwrap_or(0);
+        for command in triggers.commands(node)? {
+            match command {
+                Command::Gap { end, id } => self.gap_command(own, end, id)?,
+                Command::InitialPulses(n) => {
+                    if !self.pulses.iter().any(|p| p.0 == node) {
+                        self.pulses.push((node, n));
+                    }
+                }
+                Command::SendPulse => {
+                    let Some(slot) = self.pulses.iter_mut().find(|p| p.0 == node) else {
+                        continue;
+                    };
+                    if slot.1 == 0 {
+                        continue;
+                    }
+                    if slot.1 != UNLIMITED_PULSES {
+                        slot.1 -= 1;
+                    }
+                    for link in triggers.links(node) {
+                        if !triggers.is_command_point(link) {
+                            return Err(format!(
+                                "command point node={node} pulses node={link} of another kind"
+                            ));
+                        }
+                        self.run_command_point(triggers, link, depth + 1)?;
+                    }
+                }
+                Command::Kill if !triggers.links(node).is_empty() => {
+                    return Err(format!(
+                        "command point node={node} kills linked nodes unsupported"
+                    ));
+                }
+                Command::Regions | Command::Kill => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Ends the gaps waiting for this command point, then starts the one it names.
+    fn gap_command(&mut self, own: u32, end: u32, id: i16) -> Result<(), String> {
+        if self.bailing {
+            return Ok(());
+        }
+        let (ended, kept): (Vec<_>, Vec<_>) = self.gaps.iter().partition(|g| g.end == own);
+        self.gaps = kept;
+        for g in ended {
+            let gap = hangar_gap(g.id)?;
+            if gap.mask & 0x40 != 0 {
+                return Err(format!("gap id={} finishing in a manual unsupported", g.id));
+            }
+            if gap.mask & 8 != 0 {
+                self.grind_gap = Some(g.id);
+                continue;
+            }
+            if self.state == State::Ground {
+                self.open_combo();
+            }
+            self.push_entry(Entry {
+                name: gap.name,
+                points: i32::from(gap.points),
+                spins: 0,
+                kind: 0,
+                gap: Some(g.id),
+            });
+            if self.on_ground() {
+                self.commit_combo()?;
+            }
+        }
+        if end != 0 {
+            hangar_gap(id)?;
+            if self.gaps.len() == GAP_SLOTS {
+                self.gaps.clear();
+            }
+            self.gaps.push(PendingGap { end, id });
+        }
+        Ok(())
     }
 
     fn air_spin(&mut self, rules: Rules, frame: FrameScale) -> Result<(), String> {
@@ -952,6 +1227,9 @@ impl Skater {
     ) -> Result<(), String> {
         self.bail_lift = lift;
         self.gravity_percent = 100;
+        (self.combo, self.grind_gap) = (false, None);
+        (self.spins, self.spin_angle) = (0, 0);
+        self.panel.entries.clear();
         self.bailing = true;
         self.set_state(State::Air);
         let kind = if kind == 0 && speed_of(self.velocity)? < BAIL_SLOW_SPEED {
@@ -1449,6 +1727,7 @@ impl Skater {
     ) -> Result<(), String> {
         if self.head_on(normal, needs_speed)? {
             self.set_anim(table, ANIM_WALL_HIT)?;
+            self.unjudged = true;
             return self.wall_response(normal, WALL_HIT_TURN);
         }
         self.wall_response(normal, WALL_TURN)
@@ -1964,24 +2243,39 @@ fn land(
     head_probe(world, s)
 }
 
-/// Fast sideways landings and drops past the landing stat limit bail.
-fn landing_bails(s: &Skater, rules: Rules, normal: V3) -> Result<(), String> {
+/// Fast landings are judged by how the board lines up with the travel, sideways ones and drops past
+/// the landing stat limit bail.
+fn landing_bails(s: &mut Skater, rules: Rules, normal: V3) -> Result<(), String> {
+    s.style = Style::default();
     let flat = project_onto_plane(s.velocity, normal);
     if speed_of(flat)? > 0x1e000 {
         let heading = normalize(flat);
         let facing = normalize(project_onto_plane(s.forward, normal));
-        if dot_q12(heading, facing).abs() < 0x666 {
+        let line = dot_q12(heading, facing).abs();
+        if !s.unjudged {
+            s.style = Style {
+                perfect: line > 0xfc1,
+                sloppy: line < 0xb50,
+            };
+        }
+        if line < 0x666 {
             return Err("sideways landing bail unsupported".into());
         }
     }
     let height = (s.clearance + s.fall) >> 12;
-    let mut limit = rules.big_drop_limit(s.switched);
+    let base = rules.big_drop_limit(s.switched);
+    let mut limit = base;
     if s.charge != 0 {
         limit += (0xb - s.charge) * 0x3c;
     }
     if height > limit {
         return Err(format!(
             "big drop bail unsupported height={height} limit={limit}"
+        ));
+    }
+    if height > base && s.combo {
+        return Err(format!(
+            "big drop entry unsupported height={height} base={base}"
         ));
     }
     Ok(())
@@ -2090,24 +2384,9 @@ impl Run {
         })
     }
 
-    pub fn frame(
-        &mut self,
-        world: &CollisionWorld,
-        table: &AnimationTable,
-        scripts: &TrickScripts,
-        rules: Rules,
-        pad: Pad,
-    ) -> Result<Outcome, String> {
+    pub fn frame(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
         self.vb += 2;
-        let outcome = step(
-            world,
-            table,
-            scripts,
-            &mut self.skater,
-            rules,
-            self.clock.current(),
-            pad,
-        )?;
+        let outcome = step(level, &mut self.skater, rules, self.clock.current(), pad)?;
         self.clock.end_frame(self.vb);
         Ok(outcome)
     }
@@ -2115,14 +2394,14 @@ impl Run {
 
 /// One frame: animation tick, pad input, ollie handling, the state handler and the airborne timer.
 pub fn step(
-    world: &CollisionWorld,
-    table: &AnimationTable,
-    scripts: &TrickScripts,
+    level: &Level,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
+    let (world, table, scripts) = (level.world, level.table, level.tricks);
+    s.panel.count_up();
     s.gravity = s.air_gravity(rules);
     s.track_up_hold(pad, frame);
     s.now += 1;
@@ -2143,12 +2422,15 @@ pub fn step(
     }
     s.wall_hit_recovery(table)?;
     s.decay_push_target(rules);
+    s.apply_boost()?;
+    s.cancel_gaps()?;
     let outcome = match s.state {
         State::Ground | State::Stopped | State::Vert => {
             ground_step(world, table, s, rules, frame, pad)
         }
         State::Air => air_step(world, table, scripts, s, rules, frame, pad),
     }?;
+    s.sweep_triggers(level)?;
     if s.on_ground() {
         s.air_since = 0;
     } else if s.air_since == 0 {

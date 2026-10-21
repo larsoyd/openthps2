@@ -64,6 +64,13 @@ pub struct Entry {
     pub gap: Option<i16>,
 }
 
+/// How the last landing lined up, judged only for combos with half spins.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Style {
+    pub perfect: bool,
+    pub sloppy: bool,
+}
+
 /// Score panel: the counted score, landed points still counting up, and the open combo.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Panel {
@@ -97,8 +104,9 @@ impl Panel {
         sum
     }
 
-    pub fn sum(&self) -> i32 {
-        (0..self.entries.len())
+    /// Perfect landings add half, sloppy ones lose a quarter.
+    pub fn sum(&self, style: Style) -> i32 {
+        let mut sum: i32 = (0..self.entries.len())
             .map(|i| {
                 let s = self.spin_group(i);
                 let factor = if s < 6 {
@@ -108,14 +116,21 @@ impl Panel {
                 };
                 self.entries[i].points * (factor + 2) / 2
             })
-            .sum()
+            .sum();
+        if style.perfect {
+            sum = sum * 150 / 100;
+        }
+        if style.sloppy {
+            sum = sum * 75 / 100;
+        }
+        sum
     }
 
     /// The sum times the entry count, half a step per entry past fourteen.
-    pub fn total(&self) -> i32 {
+    pub fn total(&self, style: Style) -> i32 {
         let n = self.entries.len() as i32;
         let multiplier = if n < 15 { 2 * n } else { n + 14 };
-        self.sum() * multiplier / 2
+        self.sum(style) * multiplier / 2
     }
 
     /// The first entry of a new combo counts the last landing straight into the score.
@@ -128,11 +143,11 @@ impl Panel {
         self.entries.push(entry);
     }
 
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self, style: Style) {
         if self.entries.is_empty() {
             return;
         }
-        self.pending += self.total();
+        self.pending += self.total(style);
         self.entries.clear();
         self.delay = COUNT_UP_DELAY;
     }

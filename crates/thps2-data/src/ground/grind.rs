@@ -11,7 +11,6 @@ const RAIL_POINT_SPAN: i32 = 0x1e;
 const NO_STICK_FRAMES: i32 = 5;
 const BLOCK_FRAMES: i32 = 15;
 const WALL_LOOK: i32 = 0x78;
-const DPAD: [u8; 16] = [0, 1, 2, 2, 3, 5, 7, 7, 4, 6, 8, 8, 4, 6, 8, 8];
 
 fn sub(a: V3, b: V3) -> V3 {
     std::array::from_fn(|i| a[i] - b[i])
@@ -115,14 +114,11 @@ impl Skater {
             across < 0
         };
         self.grind.last_rail = Some(hit.start);
-        let held = usize::from(pad.up)
-            | usize::from(pad.down) << 1
-            | usize::from(pad.left) << 2
-            | usize::from(pad.right) << 3;
         let index = usize::from(self.grind.outer)
             + 2 * (usize::from(square)
                 + 2 * (usize::from(ahead)
-                    + 2 * (usize::from(self.switched) + 2 * usize::from(DPAD[held]))));
+                    + 2 * (usize::from(self.switched)
+                        + 2 * usize::from(crate::input::direction(pad)))));
         self.grind.board = 1;
         let script = level.tricks.grind_script(index)?;
         self.start_script(script);

@@ -14,6 +14,7 @@ pub mod psx;
 pub mod rail;
 pub mod raster;
 pub mod rec;
+pub mod render;
 pub mod rng;
 pub mod score;
 pub mod script;

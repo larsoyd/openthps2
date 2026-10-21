@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 210 (4.4%) | 149,436 (15.6%) |
+| Implemented | 215 (4.6%) | 154,823 (16.1%) |
 | Recovered | 221 (4.7%) | 87,711 (9.1%) |
-| Open | 4289 | 722,592 |
+| Open | 4284 | 717,205 |
 
-`███░░░░░░░░░░░░░░░░░` 15.6% implemented by bytes
+`███░░░░░░░░░░░░░░░░░` 16.1% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 76 | 100 | `█░░░░░░░░░` 7% |
+| unattributed | 2977 | 354,046 | 81 | 100 | `█░░░░░░░░░` 9% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -159,7 +159,8 @@ Implemented routines and the Rust module that holds them.
 | 0044ca60 | 4737 | front.cpp | hud.rs |
 | 0044e3f0 | 41 | front.cpp | hud.rs |
 | 00457160 | 628 | Image.cpp | text.rs |
-| 0045f530 | 4024 | unattributed | projection.rs |
+| 0045e8e0 | 1690 | unattributed | render.rs |
+| 0045f530 | 4024 | unattributed | render.rs |
 | 004604f0 | 1429 | m3d.cpp | draw.rs |
 | 00460ca0 | 1092 | m3d.cpp | draw.rs |
 | 004610f0 | 2388 | m3d.cpp | draw.rs |
@@ -312,11 +313,14 @@ Implemented routines and the Rust module that holds them.
 | 004cd710 | 53 | video.cpp | rec.rs |
 | 004d0a20 | 22 | unattributed | materials.rs |
 | 004d0a40 | 27 | unattributed | materials.rs |
-| 004d14d0 | 988 | unattributed | draw.rs |
-| 004d18b0 | 175 | unattributed | draw.rs |
-| 004d1d40 | 936 | unattributed | draw.rs |
-| 004d20f0 | 530 | unattributed | draw.rs |
-| 004d29e0 | 959 | unattributed | draw.rs |
+| 004d14d0 | 988 | unattributed | render.rs |
+| 004d18b0 | 175 | unattributed | render.rs |
+| 004d1960 | 873 | unattributed | render.rs |
+| 004d1d40 | 936 | unattributed | render.rs |
+| 004d20f0 | 530 | unattributed | render.rs |
+| 004d2310 | 688 | unattributed | render.rs |
+| 004d26b0 | 797 | unattributed | render.rs |
+| 004d29e0 | 959 | unattributed | render.rs |
 | 004d4120 | 117 | unattributed | text.rs |
 | 004d8cd0 | 285 | d3dtex.cpp | bitmap.rs |
 | 004d8df0 | 273 | d3dtex.cpp | materials.rs |
@@ -344,6 +348,7 @@ Implemented routines and the Rust module that holds them.
 | 004e9940 | 568 | unattributed | pkr.rs |
 | 004f3980 | 42 | unattributed | ground.rs |
 | 004f39b0 | 42 | unattributed | ground.rs |
+| 004f39f0 | 1339 | unattributed | render.rs |
 | 004f4940 | 445 | unattributed | collision.rs |
 | 004f53b0 | 44 | unattributed | skater.rs |
 | 004f5f90 | 39 | unattributed | camera.rs |
@@ -575,4 +580,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 0040f850, 004d4bf0
+Status entries outside the function inventory: 0040f850, 004d4bf0, 004d68b0

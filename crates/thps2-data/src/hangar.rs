@@ -18,7 +18,7 @@ use crate::{
     psx::Scene,
     rail::Rails,
     raster::{BLEND_ZERO, DrawState, Raster, Texture},
-    render::{self, HANGAR_VIEWPORT, Poly, TextureInfo, View},
+    render::{self, HANGAR_VIEWPORT, Placed, Poly, TextureInfo, View},
     script::TrickScripts,
     sprite::Sprite,
     text::{ScreenQuad, gamma_table},
@@ -62,6 +62,24 @@ pub struct Hangar {
     figure: Figure,
     /// Index of the skater's first texture, after the level's.
     figure_textures: usize,
+    /// The level's object bank, the models props draw, and where its textures start.
+    objects: Scene,
+    object_infos: Vec<TextureInfo>,
+    object_textures: usize,
+}
+
+fn texture_infos(materials: &[crate::materials::Texture]) -> Vec<TextureInfo> {
+    materials
+        .iter()
+        .map(|t| {
+            let s = t.surface_1555();
+            TextureInfo {
+                width: t.logical_size[0],
+                height: t.logical_size[1],
+                opaque: s.pixels.iter().all(|p| p & 0x8000 != 0),
+            }
+        })
+        .collect()
 }
 
 fn glyphs(font: &Font) -> Vec<Texture> {
@@ -112,28 +130,25 @@ impl Hangar {
             .collect::<Result<_, String>>()?;
         let scripts = TrickScripts::parse(read("data/TRICKS.BIN")?.to_vec())?;
         let (figure, figure_surfaces) = load_figure(archive)?;
+        let objects = load_scene(archive, "data/SKHAN_O.PSX")?;
+        let object_materials =
+            resolve_textures(archive, &objects.texture_checksums, &objects, "Hangar")?;
+        let object_infos = texture_infos(&object_materials);
         let figure_textures = surfaces.len();
+        let object_textures = figure_textures + figure_surfaces.len();
         let textures = surfaces
             .into_iter()
             .chain(figure_surfaces)
+            .chain(object_materials.iter().map(|t| t.surface_1555()))
             .map(|s| Texture {
                 width: s.width.into(),
                 height: s.height.into(),
                 texels: s.pixels,
             })
             .collect();
-        let mut infos: Vec<TextureInfo> = materials
-            .iter()
-            .map(|t| {
-                let s = t.surface_1555();
-                TextureInfo {
-                    width: t.logical_size[0],
-                    height: t.logical_size[1],
-                    opaque: s.pixels.iter().all(|p| p & 0x8000 != 0),
-                }
-            })
-            .collect();
+        let mut infos = texture_infos(&materials);
         infos.extend(figure.textures.iter().copied());
+        infos.extend(object_infos.iter().copied());
         Ok(Self {
             world: CollisionWorld::from_scene(&scene)?,
             table: AnimationTable::from_scene(&load_scene(archive, "data/SK2ANIM.PSX")?)?,
@@ -143,6 +158,9 @@ impl Hangar {
             textures,
             figure,
             figure_textures,
+            objects,
+            object_infos,
+            object_textures,
             time_glyphs: glyphs(&time_font),
             mess_glyphs: glyphs(&mess_font),
             time_font,
@@ -287,6 +305,7 @@ impl Session {
         };
         let gamma = gamma_table(0);
         let mut polys = view.level(&level, &self.camera.matrix)?;
+        polys.extend(self.props(hangar, &view)?);
         polys.extend(self.figure.iter().cloned());
         let mut draws: Vec<FrameDraw> = view
             .draws(&polys, view.fog([0, 0, 0]), &gamma)
@@ -412,6 +431,50 @@ impl Session {
         }
         for p in &mut polys {
             p.texture = p.texture.map(|t| t + hangar.figure_textures as u32);
+        }
+        Ok(polys)
+    }
+
+    /// The props in their draw list order, from the object bank.
+    fn props(&self, hangar: &Hangar, view: &View) -> Result<Vec<Poly>, String> {
+        // a prop without a model stays hidden
+        let placed = self
+            .run
+            .props
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.frozen_at.is_none() && !p.hidden)
+            .filter_map(|(index, p)| p.model.map(|m| (index, p, m)))
+            .map(|(index, p, checksum)| {
+                let model = hangar
+                    .objects
+                    .models
+                    .iter()
+                    .position(|m| m.checksum == checksum)
+                    .ok_or_else(|| {
+                        format!(
+                            "[props] node={} model={checksum:08x} not in the object bank",
+                            p.node
+                        )
+                    })?;
+                Ok(Placed {
+                    index,
+                    model,
+                    position: p.position,
+                    angles: p.angles,
+                    open_far: false,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let bank = render::Level {
+            scene: &hangar.objects,
+            textures: &hangar.object_infos,
+            bias: &render::hangar_bias,
+            hidden: &|_| false,
+        };
+        let mut polys = view.items(&bank, &placed, &self.camera.matrix)?;
+        for p in &mut polys {
+            p.texture = p.texture.map(|t| t + hangar.object_textures as u32);
         }
         Ok(polys)
     }

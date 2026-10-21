@@ -253,6 +253,16 @@ fn brightness(rgb: &[u8]) -> i32 {
     rgb[..3].iter().map(|&c| i32::from(c)).sum::<i32>() / 3
 }
 
+/// An origin inside the box on every axis, or outside it on every axis.
+pub fn in_region(p: [i32; 3], [min, max]: [[i32; 3]; 2], inside: bool) -> bool {
+    let mut within = (0..3).map(|a| (min[a]..=max[a]).contains(&p[a]));
+    if inside {
+        within.all(|w| w)
+    } else {
+        within.all(|w| !w)
+    }
+}
+
 /// Glass faces stay solid until a kill shatters their item.
 const BREAKABLE: u32 = 0x80000;
 /// Faces the camera probes see, the others let the view through.
@@ -577,16 +587,9 @@ impl CollisionWorld {
     }
 
     /// Hides or shows the items whose origin is inside the box, or outside it on every axis.
-    pub fn show_items(&mut self, [min, max]: [[i32; 3]; 2], inside: bool, show: bool) {
+    pub fn show_items(&mut self, region: [[i32; 3]; 2], inside: bool, show: bool) {
         for (item, hidden) in self.items.iter().zip(&mut self.hidden) {
-            let p = item.position;
-            let mut within = (0..3).map(|a| (min[a]..=max[a]).contains(&p[a]));
-            let hit = if inside {
-                within.all(|w| w)
-            } else {
-                within.all(|w| !w)
-            };
-            if hit {
+            if in_region(item.position, region, inside) {
                 *hidden = !show;
             }
         }

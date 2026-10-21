@@ -111,8 +111,8 @@ fn colour_table(scene: &Scene) -> Result<&[u8], String> {
         .iter()
         .find(|c| c.kind == COLOUR_TABLE_KIND)
         .map(|c| c.payload.as_slice())
-        .filter(|p| p.len() == 1024)
-        .ok_or_else(|| "[render] scene has no 256 entry colour table".into())
+        .filter(|p| !p.is_empty() && p.len() % 4 == 0)
+        .ok_or_else(|| "[render] scene has no colour table".into())
 }
 
 impl View {
@@ -251,25 +251,49 @@ impl View {
 
     /// Polygons of the level items in submission order.
     pub fn level(&self, level: &Level, camera: &Matrix) -> Result<Vec<Poly>, String> {
+        let mut placed = Vec::with_capacity(level.scene.items.len());
+        for (index, item) in level.scene.items.iter().enumerate() {
+            if (level.hidden)(index) {
+                continue;
+            }
+            check_item(index, item)?;
+            placed.push(Placed {
+                index,
+                model: usize::from(item.model_index),
+                position: item.position_fixed,
+                angles: item.rotation,
+                open_far: item.flags[0] & OPEN_FAR != 0,
+            });
+        }
+        self.items(level, &placed, camera)
+    }
+
+    /// Models placed in the world in draw list order, turned by their angles when they have any.
+    pub fn items(
+        &self,
+        level: &Level,
+        placed: &[Placed],
+        camera: &Matrix,
+    ) -> Result<Vec<Poly>, String> {
         let colours = colour_table(level.scene)?;
         let planes = self.planes(camera);
         let rf: [[f32; 3]; 3] =
             std::array::from_fn(|i| std::array::from_fn(|j| f32::from(self.rows[i * 3 + j]) * Q12));
         let mut polys = Vec::new();
-        for (index, item) in level.scene.items.iter().enumerate() {
-            if (level.hidden)(index) {
-                continue;
-            }
-            let rel: [i32; 3] =
-                std::array::from_fn(|i| (item.position_fixed[i] >> 12) - self.eye[i]);
+        for &Placed {
+            index,
+            model: model_index,
+            position,
+            angles,
+            open_far,
+        } in placed
+        {
+            let rel: [i32; 3] = std::array::from_fn(|i| (position[i] >> 12) - self.eye[i]);
             let base = level
                 .scene
                 .models
-                .get(item.model_index as usize)
-                .ok_or_else(|| {
-                    format!("[render] item={index} model={} missing", item.model_index)
-                })?;
-            let open_far = item.flags[0] & OPEN_FAR != 0;
+                .get(model_index)
+                .ok_or_else(|| format!("[render] item={index} model={model_index} missing"))?;
             if self.culled(&planes, base, rel, open_far) {
                 continue;
             }
@@ -285,17 +309,24 @@ impl View {
             } else {
                 *self
             };
-            let Some(model) = self.lod(level.scene, item.model_index as usize, rel)? else {
+            let Some(model) = self.lod(level.scene, model_index, rel)? else {
                 continue;
             };
-            check_item(index, item, model)?;
+            check_model(index, model)?;
+            // a turned item takes the view times its Euler matrix, its origin still the view's
+            let rotated: [[f32; 3]; 3] = if angles == [0; 3] {
+                rf
+            } else {
+                let r = crate::figure::mvmva(&self.rows, &crate::pose::euler(angles));
+                std::array::from_fn(|i| std::array::from_fn(|j| f32::from(r[i * 3 + j]) * Q12))
+            };
             let [rx, ry, rz] = rel.map(|c| c as f32);
             let t: [f32; 3] =
                 std::array::from_fn(|i| (rf[i][2] * rz + rf[i][1] * ry) + rf[i][0] * rx);
             let mut projected: Vec<Projected> = Vec::with_capacity(model.vertices.len());
             for (vi, v) in model.vertices.iter().enumerate() {
                 let p = match v.flags {
-                    0 => item_view.project(&rf, t, v.words),
+                    0 => item_view.project(&rotated, t, v.words),
                     0x10 => {
                         let at = |w: i16| projected.get((w as u16 >> 3) as usize).copied();
                         let (Some(a), Some(b)) = (at(v.words[0]), at(v.words[1])) else {
@@ -317,7 +348,7 @@ impl View {
                 textures: level.textures,
                 colours,
                 lights: None,
-                bias: (level.bias)(item.model_index as usize) as f32,
+                bias: (level.bias)(model_index) as f32,
                 figure: false,
                 mirrored: false,
                 flat: None,
@@ -603,20 +634,29 @@ impl View {
     }
 }
 
-fn check_item(index: usize, item: &Item, model: &Model) -> Result<(), String> {
-    let model_flags = u16::from_le_bytes([model.header[0], model.header[1]]);
-    if item.rotation != [0; 3] {
-        return Err(format!(
-            "[render] item={index} rotation={:?} unsupported",
-            item.rotation
-        ));
-    }
+/// One model placed in the world: its index in the list for diagnostics, model, 20.12 position,
+/// angles and whether it ignores the far plane.
+#[derive(Clone, Copy, Debug)]
+pub struct Placed {
+    pub index: usize,
+    pub model: usize,
+    pub position: [i32; 3],
+    pub angles: [i16; 3],
+    pub open_far: bool,
+}
+
+fn check_item(index: usize, item: &Item) -> Result<(), String> {
     if item.flags[0] & !OPEN_FAR != 0 || item.flags[1] != 0 {
         return Err(format!(
             "[render] item={index} flags={:04x?} unsupported",
             item.flags
         ));
     }
+    Ok(())
+}
+
+fn check_model(index: usize, model: &Model) -> Result<(), String> {
+    let model_flags = u16::from_le_bytes([model.header[0], model.header[1]]);
     if model_flags & 0x604 != 0 {
         return Err(format!(
             "[render] item={index} model flags={model_flags:#x} unsupported"

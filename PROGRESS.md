@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 252 (5.3%) | 170,965 (17.8%) |
-| Recovered | 214 (4.5%) | 83,442 (8.7%) |
-| Open | 4254 | 705,332 |
+| Implemented | 257 (5.4%) | 171,321 (17.9%) |
+| Recovered | 215 (4.6%) | 83,911 (8.7%) |
+| Open | 4248 | 704,507 |
 
-`████░░░░░░░░░░░░░░░░` 17.8% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 17.9% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 89 | 98 | `█░░░░░░░░░` 10% |
+| unattributed | 2977 | 354,046 | 91 | 99 | `█░░░░░░░░░` 10% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -30,7 +30,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
 | panel.cpp | 37 | 14,181 | 16 | 1 | `██████░░░░` 62% |
 | career.cpp | 81 | 13,988 | 0 | 5 | `░░░░░░░░░░` 0% |
-| trig.cpp | 30 | 13,716 | 10 | 2 | `███████░░░` 73% |
+| trig.cpp | 30 | 13,716 | 12 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
 | Menu.cpp | 51 | 10,954 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -41,7 +41,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | EquipSel.cpp | 44 | 8,492 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickwin.cpp | 17 | 8,388 | 0 | 0 | `░░░░░░░░░░` 0% |
 | camera.cpp | 22 | 8,285 | 3 | 0 | `███████░░░` 74% |
-| m3d.cpp | 16 | 7,875 | 8 | 0 | `███████░░░` 73% |
+| m3d.cpp | 16 | 7,875 | 9 | 0 | `███████░░░` 73% |
 | camera.h | 1 | 7,297 | 1 | 0 | `██████████` 100% |
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -174,6 +174,7 @@ Implemented routines and the Rust module that holds them.
 | 00460a90 | 500 | m3d.cpp | figure.rs |
 | 00460ca0 | 1092 | m3d.cpp | draw.rs |
 | 004610f0 | 2388 | m3d.cpp | draw.rs |
+| 00461a50 | 50 | m3d.cpp | render.rs |
 | 00461a90 | 50 | m3d.cpp | projection.rs |
 | 00461b10 | 64 | m3d.cpp | figure.rs |
 | 00461b70 | 50 | m3d.cpp | projection.rs |
@@ -269,6 +270,7 @@ Implemented routines and the Rust module that holds them.
 | 0049df00 | 1296 | physics.cpp | ground.rs |
 | 0049e480 | 229 | physics.cpp | session.rs |
 | 0049e680 | 2983 | physics.cpp | ground.rs |
+| 0049f250 | 235 | unattributed | objects.rs |
 | 004a9650 | 255 | unattributed | camera.rs |
 | 004a9820 | 71 | unattributed | camera.rs |
 | 004a9870 | 71 | unattributed | camera.rs |
@@ -318,6 +320,8 @@ Implemented routines and the Rust module that holds them.
 | 004c4bd0 | 114 | unattributed | ground.rs |
 | 004c4d10 | 286 | trig.cpp | ground.rs |
 | 004c5130 | 580 | trig.cpp | trig.rs |
+| 004c5420 | 32 | trig.cpp | trig.rs |
+| 004c5440 | 20 | trig.cpp | trig.rs |
 | 004c5460 | 880 | trig.cpp | ground.rs |
 | 004c58b0 | 498 | trig.cpp | ground.rs |
 | 004c5b00 | 44 | trig.cpp | ground.rs |
@@ -387,6 +391,7 @@ Implemented routines and the Rust module that holds them.
 | 004f39b0 | 42 | unattributed | ground.rs |
 | 004f39f0 | 1339 | unattributed | render.rs |
 | 004f4940 | 445 | unattributed | collision.rs |
+| 004f5390 | 19 | unattributed | pose.rs |
 | 004f53b0 | 44 | unattributed | skater.rs |
 | 004f5f90 | 39 | unattributed | camera.rs |
 | 004f5fc0 | 19 | unattributed | skater.rs |
@@ -504,6 +509,7 @@ Implemented routines and the Rust module that holds them.
 | 0049d8a0 | 283 | physics.cpp |
 | 0049dad0 | 168 | physics.cpp |
 | 0049e570 | 268 | physics.cpp |
+| 004a1060 | 469 | unattributed |
 | 004a12d0 | 354 | unattributed |
 | 004aa410 | 16 | rail.cpp |
 | 004aa420 | 16 | rail.cpp |
@@ -610,4 +616,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 0040f850, 0046d160, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0
+Status entries outside the function inventory: 0040f850, 0046d160, 0049fef0, 004a07e0, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0

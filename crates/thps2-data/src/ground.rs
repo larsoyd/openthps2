@@ -15,7 +15,7 @@ mod session;
 mod wall;
 
 pub use manual::{Balance, QueuedTrick};
-pub use objects::ScriptObject;
+pub use objects::{Prop, ScriptObject};
 pub use session::{SESSION_TICKS, Session};
 
 pub const GRAVITY: i32 = 0x1964;
@@ -1714,9 +1714,14 @@ impl Skater {
     ) -> Result<(), String> {
         match triggers.kind(node) {
             MOVING_OBJECT | SIGNALLED_OBJECT
-                if triggers.object(node)?.object_type == objects::SCRIPT_OBJECT =>
+                if triggers.object_type(node)? == objects::SCRIPT_OBJECT =>
             {
                 self.world_events.push(WorldEvent::Create(node))
+            }
+            kind if CREATED_OBJECTS.contains(&kind)
+                && triggers.object_type(node)? == objects::PROP =>
+            {
+                self.world_events.push(WorldEvent::Prop(node))
             }
             kind if CREATED_OBJECTS.contains(&kind) => {}
             _ if triggers.is_command_point(node) => {
@@ -3291,6 +3296,7 @@ pub enum WorldEvent {
     Visible(u32, bool),
     /// A pulse created the script object of this node.
     Create(usize),
+    Prop(usize),
     /// A kill or signal reached the objects of this node.
     Touch(usize),
 }
@@ -3307,6 +3313,8 @@ pub struct Run {
     pub world: Option<CollisionWorld>,
     /// Script objects, the newest first like the original's object list.
     pub objects: Vec<ScriptObject>,
+    /// Placed object models, the newest first like their draw list.
+    pub props: Vec<Prop>,
 }
 
 impl Run {
@@ -3326,6 +3334,7 @@ impl Run {
             ticks: 0,
             world: None,
             objects: Vec::new(),
+            props: Vec::new(),
         };
         run.apply_world_events(level)?;
         Ok(run)
@@ -3361,6 +3370,9 @@ impl Run {
         for object in &mut self.objects {
             object.update(&mut self.skater, level.triggers, frame.hold_delta)?;
         }
+        for prop in &mut self.props {
+            prop.update(&mut self.skater, frame.hold_delta)?;
+        }
         self.apply_world_events(level)?;
         Ok(outcome)
     }
@@ -3377,6 +3389,11 @@ impl Run {
                 WorldEvent::Regions(r) => {
                     for b in r.boxes {
                         world.show_items(b, r.inside, r.show);
+                        for prop in &mut self.props {
+                            if crate::collision::in_region(prop.position, b, r.inside) {
+                                prop.hidden = !r.show;
+                            }
+                        }
                     }
                 }
                 WorldEvent::Visible(checksum, show) => world.show_item(checksum, show),
@@ -3384,6 +3401,9 @@ impl Run {
                     0,
                     ScriptObject::new(node, level.triggers.object(node)?.script),
                 ),
+                WorldEvent::Prop(node) => self
+                    .props
+                    .insert(0, Prop::new(node, &level.triggers.object(node)?)),
                 WorldEvent::Touch(node) => {
                     if self.objects.iter().any(|o| o.node == node) {
                         return Err(format!(

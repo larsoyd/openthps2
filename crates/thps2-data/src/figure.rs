@@ -195,7 +195,7 @@ fn sat16(v: i32) -> i16 {
 }
 
 /// a times the columns of b through the transform unit, each entry saturated.
-fn mvmva(a: &[i16; 9], b: &[i16; 9]) -> [i16; 9] {
+pub(crate) fn mvmva(a: &[i16; 9], b: &[i16; 9]) -> [i16; 9] {
     std::array::from_fn(|k| {
         let (i, j) = (k / 3, k % 3);
         let sum: i32 = (0..3)

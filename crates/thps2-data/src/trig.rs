@@ -62,7 +62,12 @@ const COMMAND_POINT: i16 = 6;
 pub struct ObjectNode {
     pub object_type: u16,
     pub flags: Vec<u8>,
+    /// World position in 20.12 fixed point and the three angles.
+    pub origin: [i32; 3],
+    pub angles: [i16; 3],
     pub script: Vec<u16>,
+    /// File offset of the script, four byte operands align to the file.
+    pub script_offset: usize,
 }
 
 impl Node {
@@ -167,6 +172,14 @@ impl Triggers {
         }
     }
 
+    pub fn object_type(&self, node: usize) -> Result<u16, String> {
+        let n = &self.nodes[node];
+        n.raw
+            .get(2..4)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .ok_or_else(|| format!("object node={node} has no type"))
+    }
+
     pub fn object(&self, node: usize) -> Result<ObjectNode, String> {
         let n = &self.nodes[node];
         let half = |at: usize| {
@@ -188,15 +201,33 @@ impl Triggers {
             }
             flags.push(flag);
         }
-        at = ((n.offset + at + 3) & !3) - n.offset + 18;
-        let script = (at..n.raw.len() - 1)
+        let origin_at = ((n.offset + at + 3) & !3) - n.offset;
+        let word = |at: usize| {
+            n.raw
+                .get(at..at + 4)
+                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+                .ok_or_else(|| format!("object node={node} truncated at={at}"))
+        };
+        let mut origin = [0; 3];
+        for (k, o) in origin.iter_mut().enumerate() {
+            *o = (word(origin_at + 4 * k)? as i32) << 12;
+        }
+        let mut angles = [0; 3];
+        for (k, a) in angles.iter_mut().enumerate() {
+            *a = half(origin_at + 12 + 2 * k)? as i16;
+        }
+        at = origin_at + 18;
+        let script: Vec<u16> = (at..n.raw.len() - 1)
             .step_by(2)
             .map(half)
             .collect::<Result<_, _>>()?;
         Ok(ObjectNode {
             object_type: half(2)?,
             flags,
+            origin,
+            angles,
             script,
+            script_offset: n.offset + at,
         })
     }
 

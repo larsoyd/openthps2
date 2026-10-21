@@ -926,7 +926,8 @@ impl Skater {
         }
     }
 
-    /// Lip contact from the ground starts the lip ride with the air animation and a fresh landing timer.
+    /// Lip contact from the ground starts the lip ride with the air animation and a fresh landing
+    /// timer, or pops off the lip when up has been held alone and the face allows it.
     fn enter_lip(
         &mut self,
         table: &AnimationTable,
@@ -936,11 +937,20 @@ impl Skater {
         if self.state == State::Stopped {
             return Err("stopped lip contact unsupported".into());
         }
-        if self.up_since != 0 && frame.time - self.up_since >= 5 {
-            return Err(format!(
-                "lip pop unsupported item={} face={}",
-                hit.item_index, hit.face_index
-            ));
+        let held = self.up_since != 0 && frame.time - self.up_since >= 5;
+        if held && hit.face_flags & 0x80 == 0 {
+            let quarter = speed_of(self.velocity)? / 4;
+            let [nx, _, nz] = hit.normal.map(i32::from);
+            self.velocity[0] -= mul_q12(nx, quarter);
+            self.velocity[2] -= mul_q12(nz, quarter);
+            self.velocity[1] /= 2;
+            (self.spin_angle, self.spins) = (0, 0);
+            self.set_state(State::Air);
+            self.landing_timer = LANDING_TIMER;
+            self.vert = false;
+            self.set_anim(table, ANIM_AIR)?;
+            self.jumped = true;
+            return Ok(());
         }
         if !self.jumped {
             self.set_anim(table, ANIM_AIR)?;

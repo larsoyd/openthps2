@@ -248,7 +248,7 @@ fn isqrt(n: i32) -> i32 {
 }
 
 /// Unit vector the way the rail code takes it, a zero vector staying zero.
-fn norm(v: V3) -> V3 {
+pub fn norm(v: V3) -> V3 {
     let (v, _) = fit_short(v);
     let len = isqrt(square(v));
     if len == 0 {

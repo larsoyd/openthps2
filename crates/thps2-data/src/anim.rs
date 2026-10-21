@@ -97,6 +97,8 @@ pub struct AnimState {
     pub finished: bool,
     pub mode: u8,
     pub start: i16,
+    /// Time driven swing between two frames: the frames and the time it began.
+    pub swing: [i16; 3],
 }
 
 impl Default for AnimState {
@@ -113,6 +115,7 @@ impl Default for AnimState {
             finished: true,
             mode: 0,
             start: 0,
+            swing: [0; 3],
         }
     }
 }
@@ -120,6 +123,8 @@ impl Default for AnimState {
 const FALLBACK_ANIM: u16 = 0x2e;
 /// Grind animations swing between their ends for as long as the rail lasts.
 pub const RAIL_MODE: u8 = 4;
+/// Frames follow the frame time back and forth between two frames.
+pub const SWING_MODE: u8 = 3;
 
 impl AnimState {
     /// Runs an animation from start to end at one design frame per frame, minus one meaning the last frame.
@@ -168,6 +173,25 @@ impl AnimState {
     fn at_end(&self) -> bool {
         (self.direction == 1 && self.frame >= i16::from(self.end))
             || (self.direction == -1 && self.frame <= i16::from(self.end))
+    }
+
+    /// The tick of the frame, a time driven swing taking its frame from the frame time.
+    pub fn tick_at(&mut self, scale: i32, time: i32) -> Result<(), String> {
+        if self.mode != SWING_MODE {
+            return self.tick(scale);
+        }
+        let [from, to, start] = self.swing.map(i32::from);
+        let range = to - from;
+        if range == 0 {
+            return Err(format!("animation id={} swing on one frame", self.id));
+        }
+        let period = 2 * range.abs();
+        let mut m = (time - start) / (0x20000 / self.speed) % period;
+        if range.abs() < m {
+            m = period - m;
+        }
+        self.frame = (if range > 0 { from + m } else { from - m }) as i16;
+        Ok(())
     }
 
     /// Advances by speed times the Q8 frame scale, flipping at a pingpong end or finishing.

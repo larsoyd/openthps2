@@ -1,9 +1,13 @@
 use crate::anim::{AnimState, AnimationTable};
 use crate::collision::{CollisionWorld, Hit};
+use crate::rail::{RailHit, Rails};
+use crate::rng::Rng;
 use crate::score::{Entry, Panel, Style, hangar_gap};
 use crate::script::TrickScripts;
 use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
 use crate::trig::{Command, Triggers};
+
+mod grind;
 
 pub const GRAVITY: i32 = 0x1964;
 pub const AIR_GRAVITY: i32 = 13000;
@@ -70,6 +74,8 @@ const BAIL_TILT: usize = 3;
 const BAIL_END_COOLDOWN: i32 = 4;
 const SCRIPT_LAST_FRAME: i16 = 0x2711;
 const GAP_SLOTS: usize = 20;
+const LEVEL_SEED: u32 = 0x12a6cc58;
+const DEFAULT_TRICK_POINTS: i32 = 0x7b;
 const BOOST_MAX: i32 = 20;
 const UNLIMITED_PULSES: u16 = 0xffff;
 const PULSE_DEPTH: u32 = 8;
@@ -220,6 +226,8 @@ pub enum State {
     Stopped,
     /// Riding up or down a lip face past the coping, the ground handler keeps the skater on its plane.
     Vert,
+    /// Sliding along a rail chain.
+    Grind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -311,6 +319,56 @@ pub struct Skater {
     pub touching: Vec<u32>,
     /// Pulses left per command point node, set by the first run of its script.
     pub pulses: Vec<(usize, u16)>,
+    pub grind: Grind,
+    pub rng: Rng,
+    /// Position at the start of the last frame the ground handler ran.
+    pub ground_start: [i32; 3],
+    /// Name and points the trick script will push, and the script queued for leaving a rail.
+    pub trick_name: String,
+    pub trick_points: i32,
+    pub exit_script: Option<usize>,
+    /// Points each thirty units of rail add to the trick on top of the stack.
+    pub rail_points: i32,
+    /// A trick script is running a move, a rail start then bails unless the script ended it.
+    pub trick_running: bool,
+    pub script_ended: bool,
+    pub script_return: Option<usize>,
+    /// The frame time this frame runs at, for time driven animation.
+    pub frame_time: i32,
+    /// Frame time of the last air landing, and the switch stance bonus judged after it.
+    pub landed_at: i32,
+    pub switch_bonus: bool,
+    /// Bail kinds the script sets for falling off a rail and for landing mid move.
+    pub rail_bail: i16,
+    pub landing_bail: i16,
+}
+
+/// The skater's rail state: the candidate the search found, the rail ridden and its balance.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Grind {
+    pub found: Option<RailHit>,
+    pub on_rail: bool,
+    pub start: usize,
+    pub segment: usize,
+    pub kind: u8,
+    /// Unit vector against the travel along the segment.
+    pub direction: [i32; 3],
+    /// Which way the board faces along the rail, one or minus one.
+    pub board: i32,
+    pub last_rail: Option<usize>,
+    pub last_balanced: Option<usize>,
+    /// Frames the last rail stays blocked, and frames no rail can be taken.
+    pub block: i32,
+    pub no_stick: i32,
+    /// Grows the longer the same rail is ridden, the balance swings harder with it.
+    pub heat: i32,
+    pub angle: i32,
+    pub rate: i32,
+    pub latch: bool,
+    pub counted_from: [i32; 3],
+    pub side: u8,
+    /// The rail approached from the outside of the last ground position, kept while on one rail.
+    pub outer: bool,
 }
 
 /// A gap started by one command point, ended by the command point with the end checksum.
@@ -327,10 +385,12 @@ pub struct Level<'a> {
     pub table: &'a AnimationTable,
     pub tricks: &'a TrickScripts,
     pub triggers: &'a Triggers,
+    pub rails: &'a Rails,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
+    Grinding,
     Grounded(Hit),
     LeftGround(Option<Hit>),
     Airborne,
@@ -591,6 +651,21 @@ impl Skater {
             boost: 0,
             touching: Vec::new(),
             pulses: Vec::new(),
+            grind: Grind::default(),
+            rng: Rng::seeded(LEVEL_SEED),
+            ground_start: [0; 3],
+            trick_name: String::new(),
+            trick_points: 0,
+            exit_script: None,
+            rail_points: 0,
+            trick_running: false,
+            script_ended: false,
+            script_return: None,
+            frame_time: 0,
+            landed_at: 0,
+            switch_bonus: false,
+            rail_bail: 0,
+            landing_bail: 0,
         }
     }
 
@@ -681,9 +756,8 @@ impl Skater {
             } else {
                 self.set_anim(table, ANIM_LAND)?;
             }
-            if self.script.is_some() {
-                return Err("landing with a trick script running unsupported".into());
-            }
+            self.script = None;
+            self.landed_trick()?;
             self.boost += (self.panel.total(self.landed_style()) / 100).min(BOOST_MAX);
             self.commit_combo()?;
         }
@@ -1013,10 +1087,13 @@ impl Skater {
         }
     }
 
-    /// A new entry after a gap freezes the gap's half spins.
-    fn push_entry(&mut self, entry: Entry) {
+    /// A new entry after a gap freezes the gap's half spins, riding switch adds a fifth.
+    fn push_entry(&mut self, mut entry: Entry) {
         if !self.combo {
             return;
+        }
+        if self.switch_bonus {
+            entry.points = entry.points * 120 / 100;
         }
         let after_gap = self.panel.entries.last().is_some_and(|e| e.kind == 0);
         let kind = entry.kind;
@@ -1073,6 +1150,7 @@ impl Skater {
             match self.state {
                 State::Ground => 1,
                 State::Air | State::Vert => 0x20,
+                State::Grind => 2,
                 State::Stopped => 0,
             }
         };
@@ -1085,6 +1163,15 @@ impl Skater {
         self.gaps = kept;
         if self.state == State::Ground {
             self.grind_gap = None;
+        }
+        if self.state == State::Grind
+            && let Some(id) = self.grind_gap.take()
+        {
+            let gap = hangar_gap(id)?;
+            self.push_entry(Entry {
+                gap: Some(id),
+                ..Entry::new(gap.name, i32::from(gap.points), 0, 2)
+            });
         }
         Ok(())
     }
@@ -1251,9 +1338,23 @@ impl Skater {
         } else {
             kind
         };
-        self.script = Some(scripts.bail_script(kind)?);
+        self.start_script(scripts.bail_script(kind)?);
+        self.run_script(table, scripts)?;
+        self.trick_running = false;
+        Ok(())
+    }
+
+    /// A new trick script with the default name and points and nothing queued for leaving a rail.
+    fn start_script(&mut self, pc: usize) {
+        self.trick_running = true;
+        self.script_ended = false;
+        self.script = Some(pc);
+        self.exit_script = None;
+        self.trick_name = "Trick".into();
+        self.trick_points = DEFAULT_TRICK_POINTS;
         self.anim.speed = 0x10000;
-        self.run_script(table, scripts)
+        self.script_return = None;
+        (self.rail_bail, self.landing_bail) = (0, 0);
     }
 
     /// Landing tipped over: the board turns onto its back and the skater slides off along the old up.
@@ -1292,6 +1393,41 @@ impl Skater {
         }
     }
 
+    /// Landing in the middle of a trick move bails.
+    fn landed_trick(&self) -> Result<(), String> {
+        if !self.bailing && self.trick_running && !self.script_ended {
+            return Err("landing during a trick move bail unsupported".into());
+        }
+        Ok(())
+    }
+
+    /// Moves the frame along the play direction, held between the start and end frames.
+    fn step_frame(&mut self, n: i16) {
+        let a = &mut self.anim;
+        a.frame += i16::from(a.direction) * n;
+        let end = i16::from(a.end);
+        a.frame = if a.direction > 0 {
+            a.frame.max(a.start).min(end)
+        } else {
+            a.frame.min(a.start).max(end)
+        };
+    }
+
+    /// The script's trick enters the combo, a rail trick closing its spin group.
+    fn push_script_trick(&mut self) {
+        let kind = if self.state == State::Grind {
+            1
+        } else {
+            self.open_combo();
+            0
+        };
+        self.push_entry(Entry {
+            trick: true,
+            switched: self.switched,
+            ..Entry::new(&self.trick_name, self.trick_points, 0, kind)
+        });
+    }
+
     /// Frame a script wait targets, counted back from the end frame when negative.
     fn script_frame(&self, arg: i16) -> i32 {
         let (end, last) = (i32::from(self.anim.end), i32::from(self.anim.count) - 1);
@@ -1328,6 +1464,7 @@ impl Skater {
                 0x02 => self.set_anim(table, self.anim.id)?,
                 0x07 => {
                     self.script = None;
+                    self.script_ended = true;
                     return Ok(());
                 }
                 0x0d => {
@@ -1339,6 +1476,76 @@ impl Skater {
                     }
                     pc += 2;
                 }
+                0x03 => self.anim.reverse(),
+                0x09 => {
+                    self.step_frame(short(pc)?);
+                    pc += 2;
+                }
+                0x0a => {
+                    self.trick_points = i32::from(short(pc)?);
+                    pc += 2;
+                }
+                0x0b => {
+                    let end = (pc..)
+                        .find(|&i| scripts.byte(i).is_none_or(|b| b == 0))
+                        .unwrap();
+                    self.trick_name = (pc..end)
+                        .map(|i| char::from(scripts.byte(i).unwrap_or(0)))
+                        .collect();
+                    pc = end + 1;
+                }
+                0x0c => self.push_script_trick(),
+                0x18 => {
+                    let to = self.script_frame(short(pc)?);
+                    let time = self.frame_time as i16;
+                    let a = &mut self.anim;
+                    a.swing = [a.frame, to as i16, time];
+                    a.mode = crate::anim::SWING_MODE;
+                    pc += 2;
+                }
+                0x19 => {
+                    self.exit_script = Some(scripts.offset(pc)?);
+                    pc += 2;
+                }
+                0x3d => {
+                    if self.script_return.replace(pc + 2).is_some() {
+                        return Err(format!("trick script gosub pc={at:#x} nested"));
+                    }
+                    pc = scripts.offset(pc)?;
+                }
+                0x3e => {
+                    pc = self
+                        .script_return
+                        .take()
+                        .ok_or_else(|| format!("trick script return pc={at:#x} without gosub"))?;
+                }
+                0x3f => {
+                    self.rail_bail = short(pc)?;
+                    pc += 2;
+                }
+                0x40 => {
+                    self.landing_bail = short(pc)?;
+                    pc += 2;
+                }
+                0x41 if self.grind.side != 0 => pc = scripts.offset(pc)?,
+                0x41 => pc += 2,
+                0x1a if self.grind.on_rail => {
+                    self.script = Some(at);
+                    return Ok(());
+                }
+                0x1a => {}
+                0x1c => self.anim.mode = crate::anim::RAIL_MODE,
+                0x1d => {
+                    self.anim.speed = (i32::from(short(pc)?) << 17) / 60;
+                    pc += 2;
+                }
+                0x20 => self.trick_running = false,
+                0x23 => {
+                    self.rail_points = i32::from(short(pc)?);
+                    pc += 2;
+                }
+                // grind sound variant and a second queued move nothing here plays
+                0x29 | 0x2a => pc += 2,
                 0x0f => {
                     for a in 0..3 {
                         self.velocity[a] = i32::from(short(pc + a * 2)?) << 12;
@@ -1403,6 +1610,7 @@ impl Skater {
             self.velocity[1] /= 2;
             (self.spin_angle, self.spins) = (0, 0);
             self.set_state(State::Air);
+            self.open_combo();
             self.landing_timer = LANDING_TIMER;
             self.vert = false;
             self.set_anim(table, ANIM_AIR)?;
@@ -1413,6 +1621,7 @@ impl Skater {
             self.set_anim(table, ANIM_AIR)?;
             self.jumped = true;
         }
+        self.open_combo();
         self.landing_timer = LANDING_TIMER;
         (self.spin_angle, self.spins) = (0, 0);
         self.set_state(State::Vert);
@@ -2072,6 +2281,7 @@ pub fn ground_step(
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
+    s.ground_start = s.position;
     let stopped = s.state == State::Stopped;
     let vert = s.state == State::Vert;
     if s.state == State::Ground {
@@ -2232,17 +2442,15 @@ pub fn ground_step(
     })
 }
 
-fn land(
-    world: &CollisionWorld,
-    table: &AnimationTable,
-    scripts: &TrickScripts,
-    s: &mut Skater,
-    rules: Rules,
-    hit: &Hit,
-) -> Result<(), String> {
+fn land(level: &Level, s: &mut Skater, rules: Rules, pad: Pad, hit: &Hit) -> Result<(), String> {
+    let (world, table, scripts) = (level.world, level.table, level.tricks);
     let normal = hit.normal.map(i32::from);
     let target = add(hit.position_fixed, scaled(normal, STANDING_HEIGHT)?)?;
     s.position = world.move_retrying(s.position, target)?;
+    // the landing check runs with the no stick timer set, it only searches and counts down
+    s.grind.no_stick = 1;
+    s.try_grind(level, rules, pad)?;
+    s.landed_at = s.frame_time;
     s.terrain = (hit.flags >> 25) & 0xf;
     s.turn = 0;
     s.set_state(State::Ground);
@@ -2253,6 +2461,7 @@ fn land(
         if tilt < 2000 && s.up[1] > -2000 && (s.velocity[1] > 150000 || tilt < 200) {
             return s.tilt_bail(table, scripts);
         }
+        s.landed_trick()?;
     }
     s.velocity = project_onto_plane(s.velocity, normal);
     s.last_normal = normal;
@@ -2302,14 +2511,13 @@ fn landing_bails(s: &mut Skater, rules: Rules, normal: V3) -> Result<(), String>
 
 /// The air handler after the input phase, stopping at wall bounces, lips, wallrides and bails.
 pub fn air_step(
-    world: &CollisionWorld,
-    table: &AnimationTable,
-    scripts: &TrickScripts,
+    level: &Level,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
+    let (world, table) = (level.world, level.table);
     s.begin_frame(world)?;
     let (start_up, start_forward) = (s.up, s.forward);
     let mut accel = [0; 3];
@@ -2334,7 +2542,7 @@ pub fn air_step(
             ));
         }
         Some(hit) if hit.flags & 0x400000 != 0 => land_on_lip(world, table, s, pad, &hit)?,
-        Some(hit) => land(world, table, scripts, s, rules, &hit)?,
+        Some(hit) => land(level, s, rules, pad, &hit)?,
         None => accel = add(accel, [0, s.gravity, 0])?,
     }
     s.finish_frame(world, accel, frame, false)?;
@@ -2424,10 +2632,16 @@ pub fn step(
     s.gravity = s.air_gravity(rules);
     s.track_up_hold(pad, frame);
     s.now += 1;
-    s.anim.tick(frame.scale)?;
+    s.frame_time = frame.time;
+    if !matches!(s.state, State::Air | State::Vert)
+        && frame.time - s.landed_at > (frame.scale * 15) >> 8
+    {
+        s.switch_bonus = s.switched;
+    }
+    s.anim.tick_at(frame.scale, frame.time)?;
     if s.on_ground() {
         s.turn_input(table, rules, pad, frame)?;
-    } else {
+    } else if s.state != State::Grind {
         s.air_turn(table, pad, frame)?;
     }
     s.accel = [0; 3];
@@ -2447,8 +2661,15 @@ pub fn step(
         State::Ground | State::Stopped | State::Vert => {
             ground_step(world, table, s, rules, frame, pad)
         }
-        State::Air => air_step(world, table, scripts, s, rules, frame, pad),
+        State::Air => air_step(level, s, rules, frame, pad),
+        State::Grind => {
+            s.old_position = s.position;
+            s.grind.heat += frame.hold_delta;
+            s.grind_frame(level, rules, frame, pad)?;
+            Ok(Outcome::Grinding)
+        }
     }?;
+    s.try_grind(level, rules, pad)?;
     s.sweep_triggers(level)?;
     s.integrate(rules, frame)?;
     if s.on_ground() {

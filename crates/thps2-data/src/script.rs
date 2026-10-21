@@ -1,4 +1,5 @@
 const BAIL_KINDS: usize = 25;
+const GRIND_TRICKS: usize = 0xd0;
 
 /// The trick script file: bytecode the skater runs for tricks, manuals and bails.
 pub struct TrickScripts {
@@ -28,6 +29,15 @@ impl TrickScripts {
             return Err(format!("bail kind={kind} outside the table"));
         }
         self.offset(self.bail_table + kind * 2)
+    }
+
+    /// Grind script by approach and pad code, from the table the header's second word points at.
+    pub fn grind_script(&self, index: usize) -> Result<usize, String> {
+        if index >= GRIND_TRICKS {
+            return Err(format!("grind trick index={index} outside the table"));
+        }
+        let table = usize::from(u16::from_le_bytes([self.data[2], self.data[3]]));
+        self.offset(table + index * 2)
     }
 
     pub fn byte(&self, at: usize) -> Option<u8> {

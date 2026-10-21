@@ -1,9 +1,10 @@
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 use thps2_data::{
     anim::AnimationTable,
     collision::{CollisionWorld, Hit},
     ground::{Level, Outcome, Pad, Rules, Run},
     psx::Scene,
+    rail::Rails,
     script::TrickScripts,
     skater::GROUND_STICK_DISTANCE,
     trig::{Restart, Triggers},
@@ -23,6 +24,9 @@ pub struct SessionAnimations(pub AnimationTable);
 
 #[derive(Resource)]
 pub struct SessionScripts(pub TrickScripts);
+
+#[derive(Resource)]
+pub struct SessionRails(pub Rails);
 
 #[derive(Resource, Clone, Copy)]
 pub struct SessionRules(pub Rules);
@@ -118,6 +122,7 @@ pub fn initialize_spawn(
         let scripts = TrickScripts::parse(tricks.clone())?;
         let collision = CollisionWorld::from_scene(&scene.0)?;
         let restart = triggers.restart_named("Start")?;
+        let rails = Rails::from_triggers(&triggers, 1)?;
         let placement = place(restart, &collision)?;
         let motion = SkaterMotion {
             run: Run::start(&table, restart.position_fixed, restart.angles)?,
@@ -125,13 +130,16 @@ pub fn initialize_spawn(
             last_ground: None,
             halted: None,
         };
-        Ok::<_, String>((triggers, table, scripts, collision, placement, motion))
+        Ok::<_, String>((
+            triggers, rails, table, scripts, collision, placement, motion,
+        ))
     })();
     match result {
-        Ok((triggers, table, scripts, collision, placement, motion)) => {
+        Ok((triggers, rails, table, scripts, collision, placement, motion)) => {
             commands.insert_resource(SessionTriggers(triggers));
             commands.insert_resource(SessionAnimations(table));
             commands.insert_resource(SessionScripts(scripts));
+            commands.insert_resource(SessionRails(rails));
             commands.insert_resource(SessionCollision(collision));
             commands.spawn((placement, motion));
         }
@@ -139,19 +147,30 @@ pub fn initialize_spawn(
     }
 }
 
+/// The loaded level a run frame needs, absent until the spawn has built it.
+#[derive(SystemParam)]
+pub struct SessionLevel<'w> {
+    collision: Option<Res<'w, SessionCollision>>,
+    animations: Option<Res<'w, SessionAnimations>>,
+    scripts: Option<Res<'w, SessionScripts>>,
+    triggers: Option<Res<'w, SessionTriggers>>,
+    rails: Option<Res<'w, SessionRails>>,
+}
+
 /// One run frame per fixed tick with the held pad, stopping at the first unsupported contact.
 pub fn advance_ground(
-    collision: Option<Res<SessionCollision>>,
-    animations: Option<Res<SessionAnimations>>,
-    scripts: Option<Res<SessionScripts>>,
-    triggers: Option<Res<SessionTriggers>>,
+    session: SessionLevel,
     rules: Res<SessionRules>,
     pad: Res<SessionPad>,
     mut motions: Query<&mut SkaterMotion>,
 ) {
-    let (Some(collision), Some(animations), Some(scripts), Some(triggers)) =
-        (collision, animations, scripts, triggers)
-    else {
+    let (Some(collision), Some(animations), Some(scripts), Some(triggers), Some(rails)) = (
+        &session.collision,
+        &session.animations,
+        &session.scripts,
+        &session.triggers,
+        &session.rails,
+    ) else {
         return;
     };
     let level = Level {
@@ -159,6 +178,7 @@ pub fn advance_ground(
         table: &animations.0,
         tricks: &scripts.0,
         triggers: &triggers.0,
+        rails: &rails.0,
     };
     for mut motion in &mut motions {
         if motion.halted.is_some() {
@@ -170,7 +190,9 @@ pub fn advance_ground(
                 motion.frames = frame;
                 motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));
             }
-            Ok(Outcome::LeftGround(_) | Outcome::Airborne) => motion.frames = frame,
+            Ok(Outcome::LeftGround(_) | Outcome::Airborne | Outcome::Grinding) => {
+                motion.frames = frame
+            }
             Err(error) => motion.halted = Some(format!("frame={frame} {error}")),
         }
     }

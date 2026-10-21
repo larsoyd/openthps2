@@ -1,0 +1,353 @@
+use super::*;
+use crate::rail::{Sweep, norm};
+
+const RAIL_STAND: i32 = 0x19000;
+const RAIL_GRAVITY: i32 = 13000;
+const HEAT_STEP: i32 = 0x28000;
+const STAT_RAIL: usize = 7;
+const STEPS_PER_FRAME: usize = 5;
+const BALANCE_FALL: i32 = 4000;
+const RAIL_POINT_SPAN: i32 = 0x1e;
+const NO_STICK_FRAMES: i32 = 5;
+const BLOCK_FRAMES: i32 = 15;
+const WALL_LOOK: i32 = 0x78;
+const DPAD: [u8; 16] = [0, 1, 2, 2, 3, 5, 7, 7, 4, 6, 8, 8, 4, 6, 8, 8];
+
+fn sub(a: V3, b: V3) -> V3 {
+    std::array::from_fn(|i| a[i] - b[i])
+}
+
+fn flat(v: V3) -> V3 {
+    norm([v[0], 0, v[2]])
+}
+
+impl Skater {
+    /// End of frame rail check: the search, the stick timers and the rail start.
+    pub(super) fn try_grind(
+        &mut self,
+        level: &Level,
+        rules: Rules,
+        pad: Pad,
+    ) -> Result<(), String> {
+        self.search_rails(level, pad)?;
+        if self.grind.block != 0 {
+            self.grind.block -= 1;
+        }
+        if self.grind.no_stick > 0 {
+            self.grind.on_rail = false;
+            self.grind.no_stick -= 1;
+            self.grind.found = None;
+            return Ok(());
+        }
+        if !pad.grind || self.bailing || (self.state == State::Vert && self.velocity[1] > 0) {
+            self.grind.found = None;
+            return Ok(());
+        }
+        if self.grind.found.is_none() {
+            return Ok(());
+        }
+        if self.grind.on_rail {
+            self.grind.found = None;
+            return Ok(());
+        }
+        if self.state == State::Ground {
+            (self.spins, self.spin_angle) = (0, 0);
+        }
+        if self.trick_running {
+            return Err("rail start while a trick script runs unsupported".into());
+        }
+        if !self.combo {
+            self.grind.found = None;
+            return Ok(());
+        }
+        self.start_grind(level, rules, pad)
+    }
+
+    fn search_rails(&mut self, level: &Level, pad: Pad) -> Result<(), String> {
+        if !pad.grind || self.grind.on_rail || self.bailing {
+            return Ok(());
+        }
+        let sweep = Sweep {
+            old: self.old_position,
+            new: self.position,
+            velocity: self.velocity,
+            forward: self.forward,
+            below: matches!(self.state, State::Ground | State::Vert),
+            blocked: self.grind.last_rail.filter(|_| self.grind.block > 0),
+        };
+        level
+            .rails
+            .search(level.world, &sweep, &mut self.grind.found)
+    }
+
+    /// Onto the rail point: the grind script by approach and pad, the velocity along the rail plus
+    /// a push from the speed stat.
+    fn start_grind(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<(), String> {
+        let hit = self.grind.found.take().unwrap();
+        let travel = hit.direction.map(|c| -c);
+        self.set_anim(level.table, ANIM_AIR)?;
+        self.grind.latch = false;
+        self.position = [hit.point[0], hit.point[1] - RAIL_STAND, hit.point[2]];
+        self.grind.on_rail = true;
+        self.grind.counted_from = self.position;
+        if self.grind.last_balanced == Some(hit.start) {
+            self.grind.heat += HEAT_STEP;
+        } else {
+            self.grind.heat = (self.grind.heat - HEAT_STEP).max(0);
+            self.grind.last_balanced = Some(hit.start);
+            self.grind.rate = 0;
+        }
+        let r = rules.stat(STAT_RAIL, self.switched);
+        self.trick_running = true;
+        self.grind.rate = (((300000 - 1800 * r) / 10000) * self.grind.rate / 100)
+            * ((self.grind.heat >> 12) + 60)
+            / (((r + 350) * 2000) / 10000);
+        let t = sub(hit.point, self.ground_start);
+        let perp = [t[2], 0, -t[0]];
+        let across = dot_q12(travel, self.lateral);
+        if self.grind.last_rail != Some(hit.start) {
+            self.grind.outer = dot_q12(travel, perp) > 0;
+        }
+        let square = across.abs() < 0xb33;
+        let ahead = if square {
+            dot_q12(travel, self.forward) > 0
+        } else {
+            across < 0
+        };
+        self.grind.last_rail = Some(hit.start);
+        let held = usize::from(pad.up)
+            | usize::from(pad.down) << 1
+            | usize::from(pad.left) << 2
+            | usize::from(pad.right) << 3;
+        let index = usize::from(self.grind.outer)
+            + 2 * (usize::from(square)
+                + 2 * (usize::from(ahead)
+                    + 2 * (usize::from(self.switched) + 2 * usize::from(DPAD[held]))));
+        self.grind.board = 1;
+        let script = level.tricks.grind_script(index)?;
+        self.start_script(script);
+        self.run_script(level.table, level.tricks)?;
+        self.set_state(State::Grind);
+        let along = dot_q12(travel, self.velocity);
+        let k = ((rules.stat(STAT_SPEED, self.switched) + 100) * 5000) / 10000;
+        self.velocity = std::array::from_fn(|i| mul_q12(travel[i], along) + travel[i] * k / 10);
+        (self.grind.start, self.grind.segment) = (hit.start, hit.segment);
+        (self.grind.kind, self.grind.direction) = (hit.kind, hit.direction);
+        self.grind.side = hit.side;
+        Ok(())
+    }
+
+    /// One rail frame: slide along up to five segments, then the board heading, balance and lean.
+    pub(super) fn grind_frame(
+        &mut self,
+        level: &Level,
+        rules: Rules,
+        frame: FrameScale,
+        pad: Pad,
+    ) -> Result<(), String> {
+        let rails = level.rails;
+        let mut accel = [0; 3];
+        self.count_rail_points();
+        let mut first = true;
+        let mut changed = false;
+        let mut left = false;
+        let mut slide = 0;
+        let mut d = [0; 3];
+        for step in 0..=STEPS_PER_FRAME {
+            if step == STEPS_PER_FRAME {
+                left = true;
+                break;
+            }
+            let seg = self.grind.segment;
+            let next = rails
+                .next(seg)
+                .ok_or_else(|| format!("rail node={seg} without a next segment"))?;
+            let (s0, s1) = (rails.position(seg), rails.position(next));
+            d = norm(sub(s1, s0));
+            let axis = if d[0].abs() < d[1].abs() {
+                if d[1].abs() < d[2].abs() { 2 } else { 1 }
+            } else if d[0].abs() < d[2].abs() {
+                2
+            } else {
+                0
+            };
+            slide = dot_q12(d, self.velocity);
+            if first {
+                first = false;
+                accel[1] += RAIL_GRAVITY;
+                if slide == 0 {
+                    slide = 1000;
+                }
+                if slide.abs() < 60000 {
+                    slide = if d[1] == 0 {
+                        slide * 5 / 4
+                    } else {
+                        slide + if d[1] >= 0 { 2000 } else { -2000 }
+                    };
+                }
+            }
+            let a = dot_q12(d, accel);
+            accel = d.map(|c| mul_q12(c, a));
+            self.velocity = d.map(|c| mul_q12(c, slide));
+            let length = ((s1[axis] - s0[axis]) / d[axis]) << 12;
+            let mut t = ((self.position[axis] - s0[axis]) / d[axis]) * 0x1000 + slide;
+            if t >= 0 {
+                if t <= length {
+                    let half = frame_part(accel, frame.scale_squared)?.map(|c| c / 2);
+                    self.position = add(
+                        self.position,
+                        add(frame_part(self.velocity, frame.scale)?, half)?,
+                    )?;
+                    break;
+                }
+                let turn_ok = rails.next(next).is_some_and(|after| {
+                    dot_q12(flat(d), flat(sub(rails.position(after), s1))) > 0xa48
+                });
+                if !turn_ok {
+                    left = true;
+                    break;
+                }
+                self.grind.segment = next;
+                self.grind.kind = rails.kind(next);
+                self.position = [s1[0], s1[1] - RAIL_STAND, s1[2]];
+                t -= length;
+            } else {
+                let Some(before) = rails.prev_in(seg, self.grind.start) else {
+                    left = true;
+                    break;
+                };
+                if dot_q12(d, norm(sub(s0, rails.position(before)))) < 0xa49 {
+                    left = true;
+                    break;
+                }
+                self.grind.segment = before;
+                self.grind.kind = rails.kind(before);
+                self.position = [s0[0], s0[1] - RAIL_STAND, s0[2]];
+            }
+            changed = true;
+            if t == 0 {
+                break;
+            }
+        }
+        if left {
+            self.leave_rail(level.table)?;
+        }
+        self.grind.direction = if slide < 0 { d } else { d.map(|c| -c) };
+        let heading = self.grind.direction.map(|c| c * self.grind.board);
+        if dot_q12(heading, self.forward) < 0 && self.position != self.old_position {
+            self.grind.board = -self.grind.board;
+        }
+        self.forward = self.grind.direction.map(|c| c * self.grind.board);
+        self.rail_basis();
+        self.balance(level.table, rules, frame, pad)?;
+        let lean = (self.grind.angle / 10) & 0xfff;
+        self.set_basis(mat_mul_cols(self.basis_matrix(), rot_z_matrix(lean)));
+        (self.lateral, self.up, self.forward) =
+            (short(self.lateral), short(self.up), short(self.forward));
+        if self.grind.on_rail && self.grind.heat & !0xfff > 0x2000 && !changed {
+            self.rail_wall(level)?;
+        }
+        self.frame_accel = accel;
+        Ok(())
+    }
+
+    /// Thirty units of rail add the script's rail points to the trick on top of the stack.
+    fn count_rail_points(&mut self) {
+        let gap = sub(self.position, self.grind.counted_from).map(|c| c >> 12);
+        let length = sqrt_int(gap.iter().map(|&c| c * c).sum());
+        if length > RAIL_POINT_SPAN {
+            if let Some(last) = self.panel.entries.last_mut() {
+                last.points += self.rail_points;
+                self.refresh_spins();
+            }
+            self.grind.counted_from = self.position;
+        }
+    }
+
+    /// Up straight, the lateral axis across the rail heading, then up again from both.
+    fn rail_basis(&mut self) {
+        self.up = WORLD_UP;
+        self.lateral = norm(cross_q12(short(self.forward), short(self.up)));
+        self.up = cross_q12(short(self.lateral), short(self.forward));
+        (self.lateral, self.up, self.forward) =
+            (short(self.lateral), short(self.up), short(self.forward));
+    }
+
+    /// The balance angle swings with the rate, the rate drifts at random and follows left and right.
+    fn balance(
+        &mut self,
+        table: &AnimationTable,
+        rules: Rules,
+        frame: FrameScale,
+        pad: Pad,
+    ) -> Result<(), String> {
+        let r = rules.stat(STAT_RAIL, self.switched);
+        let g = &mut self.grind;
+        let heat = (g.heat >> 12) + 60;
+        let damp = ((r + 350) * 2000) / 10000;
+        g.angle += (g.angle / ((r * 0x834 + 400000) / 10000) * heat / damp * frame.scale) >> 8;
+        g.angle += (heat * g.rate / damp * frame.scale) >> 8;
+        let u = g.rate.abs();
+        g.rate += (self.rng.next(u) - u / 2) / 10;
+        let g = &mut self.grind;
+        if !pad.left && !pad.right {
+            g.latch = true;
+        }
+        let nudge = (g.board * frame.scale * 20) >> 8;
+        if pad.left && g.latch {
+            g.rate -= nudge;
+        } else if pad.right && g.latch {
+            g.rate += nudge;
+        } else if g.rate.abs() < ((200 - r) * 1000) / 10000 {
+            g.rate = self.rng.next((800000 - 0xce4 * r) / 10000) + (0xce4 * r - 800000) / 20000;
+        }
+        if self.grind.angle.abs() > BALANCE_FALL {
+            if self.grind.side != 0 {
+                return Err("rail ledge drop unsupported".into());
+            }
+            return Err(format!(
+                "rail balance bail unsupported angle={}",
+                self.grind.angle
+            ));
+        }
+        let _ = table;
+        Ok(())
+    }
+
+    /// A wall ahead on the rail ends the grind where the frame began.
+    fn rail_wall(&mut self, level: &Level) -> Result<(), String> {
+        if self.position == self.old_position {
+            return Ok(());
+        }
+        let ahead = self.grind.direction.map(|c| -c * WALL_LOOK);
+        let mut start = self.old_position;
+        let mut end = add(self.position, ahead)?;
+        start[1] -= 0x32000;
+        end[1] -= 0x32000;
+        if level.world.query(start, end)?.is_some() {
+            self.position = self.old_position;
+            self.leave_rail(level.table)?;
+        }
+        Ok(())
+    }
+
+    /// Off the rail into the air, a blocked rail and the script's exit move or the air animation.
+    pub(super) fn leave_rail(&mut self, table: &AnimationTable) -> Result<(), String> {
+        self.set_state(State::Air);
+        self.grind.no_stick = NO_STICK_FRAMES;
+        self.grind.block = BLOCK_FRAMES;
+        self.grind.on_rail = false;
+        self.grind.found = None;
+        self.jumped = true;
+        self.trick_running = false;
+        (self.spins, self.spin_angle) = (0, 0);
+        match self.exit_script.take() {
+            Some(pc) => self.start_script(pc),
+            None => {
+                self.set_anim(table, ANIM_AIR)?;
+                self.script = None;
+            }
+        }
+        Ok(())
+    }
+}

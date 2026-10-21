@@ -51,17 +51,38 @@ pub fn hangar_gap(id: i16) -> Result<&'static Gap, String> {
 }
 
 const SPIN_FACTOR: [i32; 6] = [0, 1, 2, 4, 6, 10];
+const REPEAT_PERCENT: [i32; 5] = [100, 75, 50, 25, 10];
+const HISTORY_SIZE: usize = 100;
 const COUNT_UP_DELAY: i32 = 40;
 
 /// One trick or gap of the open combo.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
-    pub name: &'static str,
+    pub name: String,
     pub points: i32,
     pub spins: i32,
     /// Zero for gaps and plain entries, one closes a spin group.
     pub kind: u8,
     pub gap: Option<i16>,
+    /// Tricks lose points each time the session repeats them, gaps never do.
+    pub trick: bool,
+    pub switched: bool,
+    pub repeats: i32,
+}
+
+impl Entry {
+    pub fn new(name: &str, points: i32, spins: i32, kind: u8) -> Self {
+        Self {
+            name: name.to_string(),
+            points,
+            spins,
+            kind,
+            gap: None,
+            trick: false,
+            switched: false,
+            repeats: 0,
+        }
+    }
 }
 
 /// How the last landing lined up, judged only for combos with half spins.
@@ -78,6 +99,8 @@ pub struct Panel {
     pub pending: i32,
     pub delay: i32,
     pub entries: Vec<Entry>,
+    /// Session counts per name and variant, the variant being the switch flag plus twice the spins.
+    pub history: Vec<(String, i32, i32)>,
 }
 
 impl Panel {
@@ -114,7 +137,10 @@ impl Panel {
                 } else {
                     4 * s - 10
                 };
-                self.entries[i].points * (factor + 2) / 2
+                let e = &self.entries[i];
+                let repeats = if e.trick { e.repeats } else { 1 };
+                e.points * (factor + 2) / 2 * REPEAT_PERCENT[(repeats - 1).clamp(0, 4) as usize]
+                    / 100
             })
             .sum();
         if style.perfect {
@@ -134,13 +160,34 @@ impl Panel {
     }
 
     /// The first entry of a new combo counts the last landing straight into the score.
-    pub fn push(&mut self, entry: Entry) {
+    pub fn push(&mut self, mut entry: Entry) {
         if self.entries.is_empty() {
             self.score += self.pending;
             self.pending = 0;
             self.delay = 0;
         }
+        entry.repeats = self.repeat(&entry.name, i32::from(entry.switched) + entry.spins * 2);
         self.entries.push(entry);
+    }
+
+    fn repeat(&mut self, name: &str, variant: i32) -> i32 {
+        let slot = match self
+            .history
+            .iter()
+            .position(|h| h.0 == name && h.1 == variant)
+        {
+            Some(slot) => slot,
+            None if self.history.len() < HISTORY_SIZE => {
+                self.history.push((name.to_string(), variant, 0));
+                self.history.len() - 1
+            }
+            None => {
+                self.history[0] = (name.to_string(), variant, 0);
+                0
+            }
+        };
+        self.history[slot].2 += 1;
+        self.history[slot].2
     }
 
     pub fn commit(&mut self, style: Style) {

@@ -1191,11 +1191,8 @@ impl Skater {
                 self.open_combo();
             }
             self.push_entry(Entry {
-                name: gap.name,
-                points: i32::from(gap.points),
-                spins: 0,
-                kind: 0,
                 gap: Some(g.id),
+                ..Entry::new(gap.name, i32::from(gap.points), 0, 0)
             });
             if self.on_ground() {
                 self.commit_combo()?;

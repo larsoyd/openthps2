@@ -53,13 +53,26 @@ impl View {
 }
 
 /// A projected vertex: screen position, view depth, H over depth and its clip outcode.
-#[derive(Clone, Copy, Debug)]
-struct Projected {
-    sx: f32,
-    sy: f32,
-    z: f32,
-    hz: f32,
-    outcode: u32,
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Projected {
+    pub sx: f32,
+    pub sy: f32,
+    pub z: f32,
+    pub hz: f32,
+    pub outcode: u32,
+}
+
+/// How the faces of one model are coloured and placed in the ordering table.
+pub(crate) struct Faces<'a> {
+    pub textures: &'a [TextureInfo],
+    pub colours: &'a [u8],
+    /// Per vertex light of lit models, none for unlit ones.
+    pub lights: Option<&'a [u32]>,
+    pub bias: f32,
+    /// Skater parts take seven tenths of their depth for the table and the depth buffer.
+    pub figure: bool,
+    /// A mirrored model keeps the faces the others drop.
+    pub mirrored: bool,
 }
 
 /// One polygon record as the 3D pass queues it, in its ordering table slot.
@@ -112,7 +125,7 @@ impl View {
             | u32::from(z >= far) << 5
     }
 
-    fn project(&self, r: &[[f32; 3]; 3], t: [f32; 3], v: [i16; 3]) -> Projected {
+    pub(crate) fn project(&self, r: &[[f32; 3]; 3], t: [f32; 3], v: [i16; 3]) -> Projected {
         let [vx, vy, vz] = v.map(f32::from);
         let row = |i: usize| ((r[i][2] * vz + r[i][1] * vy) + r[i][0] * vx) + t[i];
         let (x, y, z) = (row(0), row(1), row(2));
@@ -298,11 +311,18 @@ impl View {
                 };
                 projected.push(p);
             }
-            let bias = (level.bias)(item.model_index as usize) as f32;
+            let faces = Faces {
+                textures: level.textures,
+                colours,
+                lights: None,
+                bias: (level.bias)(item.model_index as usize) as f32,
+                figure: false,
+                mirrored: false,
+            };
             for (fi, face) in model.faces.iter().enumerate() {
                 let at = polys.len();
                 item_view
-                    .face(level, colours, &projected, face, bias, &mut polys)
+                    .face(&faces, &projected, face, &mut polys)
                     .map_err(|e| format!("[render] item={index} face={fi} {e}"))?;
                 for p in &mut polys[at..] {
                     (p.item, p.face, p.fogged) = (index, fi, !open_far);
@@ -312,15 +332,14 @@ impl View {
         Ok(polys)
     }
 
-    fn face(
+    pub(crate) fn face(
         &self,
-        level: &Level,
-        colours: &[u8],
+        ctx: &Faces,
         projected: &[Projected],
         face: &Face,
-        bias: f32,
         polys: &mut Vec<Poly>,
     ) -> Result<(), String> {
+        let (colours, bias) = (ctx.colours, ctx.bias);
         let source = face.flags & 0xffff;
         let f = if source & 0x40 != 0 {
             source
@@ -330,31 +349,47 @@ impl View {
         if f & 0xc0 == 0 {
             return Ok(());
         }
-        if f & 0xc != 0 {
-            return Err(format!("lit face flags={f:#x} unsupported"));
-        }
         let count = if f & 0x10 != 0 { 3 } else { 4 };
         let raw = &face.raw;
-        let colour = |k: usize| -> u32 {
-            let c = if f & 0x800 != 0 {
-                let e = &colours[raw[8 + k] as usize * 4..][..3];
+        let light = |k: usize| -> Result<Option<u32>, String> {
+            let at = match (f & 0xc, ctx.lights) {
+                (0, _) => return Ok(None),
+                (0xc, Some(_)) => usize::from(raw[4 + k]),
+                (4, Some(_)) => usize::from(u16::from_le_bytes([raw[0xc], raw[0xd]]) >> 3),
+                _ => return Err(format!("lit face flags={f:#x} unsupported")),
+            };
+            let lights = ctx.lights.unwrap_or_default();
+            lights
+                .get(at)
+                .copied()
+                .map(Some)
+                .ok_or_else(|| format!("light={at} lights={}", lights.len()))
+        };
+        let colour = |k: usize| -> Result<u32, String> {
+            let mut c = if f & 0x800 != 0 {
+                let e = colours
+                    .get(raw[8 + k] as usize * 4..)
+                    .ok_or("gouraud face without a colour table")?;
                 0xff00_0000 | u32::from(e[0]) << 16 | u32::from(e[1]) << 8 | u32::from(e[2])
             } else {
                 0xff00_0000 | u32::from(raw[8]) << 16 | u32::from(raw[9]) << 8 | u32::from(raw[10])
             };
-            if f & 0x1c0 == 0x140 {
+            if let Some(l) = light(k)? {
+                let lit = |s: u32| ((c >> s & 0xff) * (l >> s & 0xff) / 255) << s;
+                c = 0xff00_0000 | lit(16) | lit(8) | lit(0);
+            }
+            Ok(if f & 0x1c0 == 0x140 {
                 let five = |s: u32| ((c >> s & 0xff) * 5).min(255) << s;
                 0xff00_0000 | five(16) | five(8) | five(0)
             } else {
                 c
-            }
+            })
         };
         let texture = if f & 1 != 0 {
             let index = face.texture_index.ok_or("textured face without texture")?;
             Some((
                 index,
-                *level
-                    .textures
+                *ctx.textures
                     .get(index as usize)
                     .ok_or_else(|| format!("texture={index} missing"))?,
             ))
@@ -364,7 +399,7 @@ impl View {
         let order: &[usize] = if count == 3 { &[0, 1, 2] } else { &QUAD_FAN };
         let corners: Vec<(Projected, ScreenVertex)> = order
             .iter()
-            .map(|&c| {
+            .map(|&c| -> Result<(Projected, ScreenVertex), String> {
                 let p = projected[raw[4 + c] as usize];
                 let uv = texture.map_or([0.0; 2], |(_, t)| {
                     [
@@ -372,19 +407,19 @@ impl View {
                         (f32::from(raw[21 + 2 * c]) + 0.5) / f32::from(t.height),
                     ]
                 });
-                (
+                Ok((
                     p,
                     ScreenVertex {
                         x: p.sx,
                         y: p.sy,
                         z: p.z,
                         rhw: p.hz,
-                        diffuse: colour(c),
+                        diffuse: colour(c)?,
                         uv,
                     },
-                )
+                ))
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         let and = corners.iter().fold(0x3f, |a, (p, _)| a & p.outcode);
         let or = corners.iter().fold(0, |a, (p, _)| a | p.outcode);
         if and & 0x10 != 0 || (and & 0x3f != 0 && or & 0x10 == 0) {
@@ -403,10 +438,11 @@ impl View {
                     None => continue,
                 }
             }
-            if back_facing(&v) {
+            if back_facing(&v, ctx.mirrored) {
                 continue;
             }
             let (s, use_min) = match texture {
+                _ if ctx.figure => (0.7, false),
                 Some((_, t)) if f & 0x40 == 0 && t.opaque => (1.0, false),
                 Some(_) => (0.95, bias == 0.0),
                 None if f & 0x40 == 0 => (1.0, false),
@@ -505,8 +541,9 @@ impl View {
     }
 }
 
-/// Clockwise on screen is front facing, a quad whose two halves disagree is kept.
-fn back_facing(v: &[ScreenVertex]) -> bool {
+/// Clockwise on screen is front facing, the other way round when mirrored, and a quad whose two
+/// halves disagree is kept.
+fn back_facing(v: &[ScreenVertex], mirrored: bool) -> bool {
     let n = v.len();
     let c1 = (v[n - 1].y - v[0].y) * (v[1].x - v[0].x) - (v[n - 1].x - v[0].x) * (v[1].y - v[0].y);
     if n >= 4 {
@@ -515,7 +552,7 @@ fn back_facing(v: &[ScreenVertex]) -> bool {
             return false;
         }
     }
-    c1 <= 0.0
+    if mirrored { c1 > 0.0 } else { c1 <= 0.0 }
 }
 
 impl View {

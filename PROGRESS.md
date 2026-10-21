@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 239 (5.1%) | 164,368 (17.1%) |
-| Recovered | 217 (4.6%) | 82,986 (8.6%) |
-| Open | 4264 | 712,385 |
+| Implemented | 250 (5.3%) | 170,049 (17.7%) |
+| Recovered | 215 (4.6%) | 83,858 (8.7%) |
+| Open | 4255 | 705,832 |
 
-`███░░░░░░░░░░░░░░░░░` 17.1% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 17.7% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 82 | 100 | `█░░░░░░░░░` 9% |
+| unattributed | 2977 | 354,046 | 88 | 99 | `█░░░░░░░░░` 9% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -41,7 +41,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | EquipSel.cpp | 44 | 8,492 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickwin.cpp | 17 | 8,388 | 0 | 0 | `░░░░░░░░░░` 0% |
 | camera.cpp | 22 | 8,285 | 3 | 0 | `███████░░░` 74% |
-| m3d.cpp | 16 | 7,875 | 5 | 1 | `██████░░░░` 64% |
+| m3d.cpp | 16 | 7,875 | 7 | 0 | `███████░░░` 66% |
 | camera.h | 1 | 7,297 | 1 | 0 | `██████████` 100% |
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -55,7 +55,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | PCMovie.cpp | 7 | 4,977 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickscript.cpp | 2 | 4,585 | 1 | 0 | `█████████░` 95% |
 | create_stitch.cpp | 15 | 4,319 | 0 | 0 | `░░░░░░░░░░` 0% |
-| ob.cpp | 29 | 4,297 | 3 | 3 | `███░░░░░░░` 25% |
+| ob.cpp | 29 | 4,297 | 4 | 3 | `████░░░░░░` 35% |
 | soundlib.cpp | 14 | 4,264 | 0 | 0 | `░░░░░░░░░░` 0% |
 | Image.cpp | 32 | 4,213 | 2 | 0 | `██░░░░░░░░` 21% |
 | powerup.cpp | 14 | 4,208 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -68,7 +68,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | platform.cpp | 4 | 3,463 | 0 | 0 | `░░░░░░░░░░` 0% |
 | skatmgr.cpp | 30 | 3,436 | 0 | 2 | `░░░░░░░░░░` 0% |
 | DxPlay.cpp | 24 | 2,986 | 0 | 0 | `░░░░░░░░░░` 0% |
-| decomp.cpp | 2 | 2,930 | 0 | 0 | `░░░░░░░░░░` 0% |
+| decomp.cpp | 2 | 2,930 | 2 | 0 | `██████████` 100% |
 | mem.cpp | 11 | 2,904 | 0 | 0 | `░░░░░░░░░░` 0% |
 | player_spool.cpp | 11 | 2,885 | 0 | 0 | `░░░░░░░░░░` 0% |
 | statedit.cpp | 7 | 2,740 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -148,6 +148,8 @@ Implemented routines and the Rust module that holds them.
 | 0040c370 | 7297 | camera.h | camera.rs |
 | 0040e090 | 3294 | camera.cpp | camera.rs |
 | 00410610 | 1431 | camera.cpp | camera.rs |
+| 004305f0 | 773 | decomp.cpp | pose.rs |
+| 00430920 | 2157 | decomp.cpp | pose.rs |
 | 004321d0 | 117 | DynamicLogo.cpp | materials.rs |
 | 00432330 | 752 | DynamicLogo.cpp | materials.rs |
 | 00448860 | 289 | exp.cpp | collision.rs |
@@ -172,7 +174,9 @@ Implemented routines and the Rust module that holds them.
 | 00460ca0 | 1092 | m3d.cpp | draw.rs |
 | 004610f0 | 2388 | m3d.cpp | draw.rs |
 | 00461a90 | 50 | m3d.cpp | projection.rs |
+| 00461b10 | 64 | m3d.cpp | figure.rs |
 | 00461b70 | 50 | m3d.cpp | projection.rs |
+| 00461bf0 | 158 | m3d.cpp | figure.rs |
 | 004624d0 | 1046 | unattributed | collision.rs |
 | 00462a20 | 2903 | m3dcolij.cpp | collision.rs |
 | 004638d0 | 1143 | m3dcolij.cpp | collision.rs |
@@ -189,14 +193,20 @@ Implemented routines and the Rust module that holds them.
 | 00469d30 | 175 | main.cpp | session.rs |
 | 00469de0 | 774 | main.cpp | ground.rs |
 | 0046a3a0 | 352 | main.cpp | ground.rs |
+| 0046c5f0 | 62 | unattributed | ground.rs |
+| 0046c630 | 64 | unattributed | ground.rs |
 | 0046c670 | 167 | unattributed | ground.rs |
 | 0046ce70 | 172 | mech.cpp | score.rs |
 | 0046cf20 | 191 | mech.cpp | score.rs |
+| 0046d1d0 | 77 | unattributed | collision.rs |
+| 0046d220 | 189 | unattributed | collision.rs |
+| 0046d2e0 | 938 | unattributed | collision.rs |
 | 0046d970 | 252 | unattributed | ground.rs |
 | 0047b400 | 730 | mmu.cpp | rec.rs |
 | 004801d0 | 31 | ob.cpp | ground.rs |
 | 00480730 | 340 | ob.cpp | anim.rs |
 | 00480950 | 709 | ob.cpp | anim.rs |
+| 00480d90 | 436 | ob.cpp | figure.rs |
 | 0048a7e0 | 749 | pal.cpp | materials.rs |
 | 0048b760 | 371 | panel.cpp | hud.rs |
 | 0048bae0 | 1037 | panel.cpp | hud.rs |
@@ -336,6 +346,7 @@ Implemented routines and the Rust module that holds them.
 | 004cd710 | 53 | video.cpp | rec.rs |
 | 004d0a20 | 22 | unattributed | materials.rs |
 | 004d0a40 | 27 | unattributed | materials.rs |
+| 004d11d0 | 763 | unattributed | figure.rs |
 | 004d14d0 | 988 | unattributed | render.rs |
 | 004d18b0 | 175 | unattributed | render.rs |
 | 004d1960 | 873 | unattributed | render.rs |
@@ -412,7 +423,6 @@ Implemented routines and the Rust module that holds them.
 | 004544a0 | 615 | FrontEnd2.cpp |
 | 00458500 | 400 | unattributed |
 | 0045c390 | 130 | unattributed |
-| 00461bf0 | 158 | m3d.cpp |
 | 004628f0 | 182 | unattributed |
 | 00463d50 | 241 | m3dcolij.cpp |
 | 00464200 | 1004 | unattributed |
@@ -429,8 +439,6 @@ Implemented routines and the Rust module that holds them.
 | 0046aee0 | 12 | unattributed |
 | 0046aef0 | 421 | unattributed |
 | 0046b720 | 329 | MainMenu.cpp |
-| 0046c5f0 | 62 | unattributed |
-| 0046c630 | 64 | unattributed |
 | 0046c720 | 1212 | mech.cpp |
 | 0046d040 | 285 | unattributed |
 | 0046d6e0 | 58 | unattributed |
@@ -452,6 +460,7 @@ Implemented routines and the Rust module that holds them.
 | 00489990 | 127 | unattributed |
 | 00489a10 | 674 | unattributed |
 | 0048d6d0 | 58 | panel.cpp |
+| 0048ec00 | 1156 | unattributed |
 | 0048f5f0 | 129 | physics.cpp |
 | 0048f7c0 | 56 | physics.cpp |
 | 0048f800 | 151 | physics.cpp |
@@ -600,4 +609,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 0040f850, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0
+Status entries outside the function inventory: 0040f850, 0046d160, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0

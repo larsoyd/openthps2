@@ -2,6 +2,7 @@ use crate::{
     anim::AnimationTable,
     camera::{Camera, Moment, Tripod},
     collision::CollisionWorld,
+    figure::{Figure, HANGAR_LIGHT, HANGAR_LIGHT_SCALE, Placement, Shared, object_matrix},
     fixes::Fixes,
     font::Font,
     ground::{Level, Outcome, Pad, Rules, Run, TONY_HAWK_STATS},
@@ -9,11 +10,12 @@ use crate::{
     input::KeyTable,
     materials::{TONY_HAWK_LOGOS, apply_logos, resolve_textures},
     pkr::Archive,
+    pose::Rig,
     pre::Pre,
     psx::Scene,
     rail::Rails,
     raster::{BLEND_ZERO, DrawState, Raster, Texture},
-    render::{self, HANGAR_VIEWPORT, TextureInfo, View},
+    render::{self, HANGAR_VIEWPORT, Poly, TextureInfo, View},
     script::TrickScripts,
     sprite::Sprite,
     text::{ScreenQuad, gamma_table},
@@ -54,6 +56,9 @@ pub struct Hangar {
     trick_font: Font,
     trick_glyphs: Vec<Texture>,
     sprites: Vec<(ImageId, Sprite)>,
+    figure: Figure,
+    /// Index of the skater's first texture, after the level's.
+    figure_textures: usize,
 }
 
 fn glyphs(font: &Font) -> Vec<Texture> {
@@ -103,28 +108,38 @@ impl Hangar {
             })
             .collect::<Result<_, String>>()?;
         let scripts = TrickScripts::parse(read("data/TRICKS.BIN")?.to_vec())?;
+        let (figure, figure_surfaces) = load_figure(archive)?;
+        let figure_textures = surfaces.len();
+        let textures = surfaces
+            .into_iter()
+            .chain(figure_surfaces)
+            .map(|s| Texture {
+                width: s.width.into(),
+                height: s.height.into(),
+                texels: s.pixels,
+            })
+            .collect();
+        let mut infos: Vec<TextureInfo> = materials
+            .iter()
+            .map(|t| {
+                let s = t.surface_1555();
+                TextureInfo {
+                    width: t.logical_size[0],
+                    height: t.logical_size[1],
+                    opaque: s.pixels.iter().all(|p| p & 0x8000 != 0),
+                }
+            })
+            .collect();
+        infos.extend(figure.textures.iter().copied());
         Ok(Self {
             world: CollisionWorld::from_scene(&scene)?,
             table: AnimationTable::from_scene(&load_scene(archive, "data/SK2ANIM.PSX")?)?,
             rails: Rails::from_triggers(&triggers, 1)?,
             keys: KeyTable::build(&scripts, 0)?,
-            infos: materials
-                .iter()
-                .zip(&surfaces)
-                .map(|(t, s)| TextureInfo {
-                    width: t.logical_size[0],
-                    height: t.logical_size[1],
-                    opaque: s.pixels.iter().all(|p| p & 0x8000 != 0),
-                })
-                .collect(),
-            textures: surfaces
-                .into_iter()
-                .map(|s| Texture {
-                    width: s.width.into(),
-                    height: s.height.into(),
-                    texels: s.pixels,
-                })
-                .collect(),
+            infos,
+            textures,
+            figure,
+            figure_textures,
             time_glyphs: glyphs(&time_font),
             mess_glyphs: glyphs(&mess_font),
             time_font,
@@ -152,6 +167,35 @@ impl Hangar {
     }
 }
 
+/// The skater drawn from Tony Hawk's model with the shared animation bank.
+fn load_figure(archive: &Archive) -> Result<(Figure, Vec<crate::materials::Surface1555>), String> {
+    let read = |path: &str| archive.read(path).map_err(|e| format!("entry={path} {e}"));
+    let text = |path: &str| -> Result<String, String> {
+        String::from_utf8(read(path)?.to_vec()).map_err(|e| format!("entry={path} {e}"))
+    };
+    let scene = load_scene(archive, "data/HAWK2.PSX")?;
+    let rig = Rig::from_scene(&load_scene(archive, "data/SK2ANIM.PSX")?)?;
+    let materials = resolve_textures(archive, &scene.texture_checksums, &scene, "Hangar")?;
+    let surfaces: Vec<_> = materials.iter().map(|t| t.surface_1555()).collect();
+    let infos = materials
+        .iter()
+        .zip(&surfaces)
+        .map(|(t, s)| TextureInfo {
+            width: t.logical_size[0],
+            height: t.logical_size[1],
+            opaque: s.pixels.iter().all(|p| p & 0x8000 != 0),
+        })
+        .collect();
+    let figure = Figure::new(
+        scene,
+        rig,
+        &text("data/HAWK2.PSH")?,
+        &text("data/SK2ANIM.PSH")?,
+        infos,
+    )?;
+    Ok((figure, surfaces))
+}
+
 /// One single session: the run, the camera following it and the end screens, one frame at a time.
 pub struct Session {
     pub run: Run,
@@ -160,6 +204,9 @@ pub struct Session {
     screens: EndScreens,
     text: TrickText,
     overlay: Vec<Overlay>,
+    shared: Shared,
+    clip: Option<(u16, Vec<Vec<[i16; 6]>>)>,
+    figure: Vec<Poly>,
 }
 
 impl Session {
@@ -178,6 +225,9 @@ impl Session {
             screens: EndScreens::default(),
             text: TrickText::default(),
             overlay: Vec::new(),
+            shared: Shared::default(),
+            clip: None,
+            figure: Vec::new(),
         })
     }
 
@@ -203,6 +253,8 @@ impl Session {
         };
         let world = self.run.world.as_ref().unwrap_or(level.world);
         self.camera.update(&Tripod::of(s), world, moment)?;
+        self.figure = self.figure_polys(hangar)?;
+        let s = &self.run.skater;
         let time = self.run.clock.current().time;
         let fonts = [&hangar.time_font, &hangar.score_font];
         self.overlay = hud::panels(fonts, s, &tricks, time, self.run.vb)?;
@@ -231,7 +283,8 @@ impl Session {
             hidden: &|i| hidden.binary_search(&i).is_ok(),
         };
         let gamma = gamma_table(0);
-        let polys = view.level(&level, &self.camera.matrix)?;
+        let mut polys = view.level(&level, &self.camera.matrix)?;
+        polys.extend(self.figure.iter().cloned());
         let mut draws: Vec<FrameDraw> = view
             .draws(&polys, view.fog([0, 0, 0]), &gamma)
             .into_iter()
@@ -311,6 +364,42 @@ impl Session {
             });
         }
         Ok(draws)
+    }
+
+    /// The skater's polygons for the frame, its pose from the current anim frame.
+    fn figure_polys(&mut self, hangar: &Hangar) -> Result<Vec<Poly>, String> {
+        let s = &self.run.skater;
+        let anim = s.anim.id;
+        if self.clip.as_ref().is_none_or(|(id, _)| *id != anim) {
+            self.clip = Some((anim, hangar.figure.rig.decode(usize::from(anim))?));
+        }
+        let frames = &self.clip.as_ref().expect("clip decoded above").1;
+        let frame = frames.get(s.anim.frame as usize).ok_or_else(|| {
+            format!(
+                "[figure] anim={anim} frame={} frames={}",
+                s.anim.frame,
+                frames.len()
+            )
+        })?;
+        let pose = hangar.figure.rig.pose(frame);
+        let view = View::new(self.camera.eye, &self.camera.matrix, HANGAR_VIEWPORT);
+        let place = Placement {
+            pose: &pose,
+            orientation: object_matrix(s.basis_matrix(), s.balance.angle),
+            position: s.position,
+            light: HANGAR_LIGHT.scaled(HANGAR_LIGHT_SCALE, s.brightness),
+            mirrored: s.switched,
+            hidden: if s.board_hidden {
+                hangar.figure.board
+            } else {
+                0
+            },
+        };
+        let mut polys = view.figure(&hangar.figure, &place, &mut self.shared)?;
+        for p in &mut polys {
+            p.texture = p.texture.map(|t| t + hangar.figure_textures as u32);
+        }
+        Ok(polys)
     }
 
     pub fn compose(&self, hangar: &Hangar) -> Result<Raster, String> {

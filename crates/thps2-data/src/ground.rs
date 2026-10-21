@@ -455,6 +455,11 @@ pub struct Skater {
     /// Kills and visibility changes the frame's scripts made, applied to the world after the frame.
     pub world_events: Vec<WorldEvent>,
     pub text_events: Vec<TextEvent>,
+    /// Light level of the ground under the skater, easing toward the doubled ground brightness.
+    pub brightness: i32,
+    pub brightness_target: i32,
+    /// A bail script took the board off the skater, it comes back when the bail ends.
+    pub board_hidden: bool,
     /// Pulses left per command point node, set by the first run of its script.
     pub pulses: Vec<(usize, u16)>,
     pub grind: Grind,
@@ -826,6 +831,9 @@ impl Skater {
             touching: Vec::new(),
             world_events: Vec::new(),
             text_events: Vec::new(),
+            brightness: 0,
+            brightness_target: 0,
+            board_hidden: false,
             jump_block: 0,
             pulses: Vec::new(),
             grind: Grind::default(),
@@ -1224,7 +1232,7 @@ impl Skater {
         self.start_bail(level.table, level.tricks, kind, false)
     }
 
-    fn basis_matrix(&self) -> [i32; 9] {
+    pub fn basis_matrix(&self) -> [i32; 9] {
         let (l, u, f) = (short(self.lateral), short(self.up), short(self.forward));
         [l[0], u[0], f[0], l[1], u[1], f[1], l[2], u[2], f[2]]
     }
@@ -2100,8 +2108,10 @@ impl Skater {
                 }
                 0x2f => pc += 2,
                 0x31 => self.end_bail(table)?,
-                // body part mask and rumble only change what is drawn and felt
-                0x32 | 0x33 | 0x46 => {}
+                0x32 => self.board_hidden = false,
+                0x33 => self.board_hidden = true,
+                // rumble only changes what is felt
+                0x46 => {}
                 0x36 => pc += 2,
                 0x37 => pc += 4,
                 0x38 | 0x45 => pc += 6,
@@ -2719,7 +2729,25 @@ impl Skater {
             );
         };
         self.clearance = hit.position_fixed[1] - self.position[1] - STANDING_HEIGHT * 4096;
+        self.follow_light(world.shade(&hit)?);
+        if !self.bailing {
+            self.board_hidden = false;
+        }
         Ok(())
+    }
+
+    /// The light eases forty steps a frame toward twice the ground brightness, kept up on a vert.
+    fn follow_light(&mut self, shade: i32) {
+        let mut target = shade * 2;
+        if self.state == State::Vert {
+            target = target.max(0x100);
+        }
+        self.brightness_target = target;
+        self.brightness = if self.brightness < target {
+            (self.brightness + 0x28).min(target)
+        } else {
+            (self.brightness - 0x28).max(target)
+        };
     }
 
     fn finish_frame(

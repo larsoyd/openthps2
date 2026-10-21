@@ -236,6 +236,21 @@ struct CollisionFace {
     bounds: [[i64; 3]; 2],
     flags: u32,
     face_flags: u32,
+    shade: Shade,
+}
+
+/// How bright a face is where the skater stands on it: one value for a flat face, or for a
+/// gouraud face each corner's x, z and brightness in face corner order.
+#[derive(Clone, Debug)]
+enum Shade {
+    Flat(i32),
+    Corners(Vec<[i32; 3]>),
+}
+
+const COLOUR_TABLE_KIND: u32 = u32::from_le_bytes(*b"RGBs");
+
+fn brightness(rgb: &[u8]) -> i32 {
+    rgb[..3].iter().map(|&c| i32::from(c)).sum::<i32>() / 3
 }
 
 /// Glass faces stay solid until a kill shatters their item.
@@ -359,6 +374,63 @@ fn loaded_face_word(word: u32) -> u32 {
 }
 
 impl CollisionWorld {
+    /// The brightness of the ground at a hit: across a gouraud face, along the line from corner
+    /// zero through the hit to the opposite edge, then back on the axis that line spans most.
+    pub fn shade(&self, hit: &Hit) -> Result<i32, String> {
+        let item = &self.items[hit.item_index];
+        let face = item
+            .faces
+            .iter()
+            .chain(&item.triggers)
+            .find(|f| f.index == hit.face_index)
+            .ok_or_else(|| {
+                format!(
+                    "shade item={} face={} missing",
+                    hit.item_index, hit.face_index
+                )
+            })?;
+        let corners = match &face.shade {
+            Shade::Flat(b) => return Ok(*b),
+            Shade::Corners(c) => c,
+        };
+        let [px, _, pz] = item.position.map(|c| c >> 12);
+        let [hx, _, hz] = hit.position_fixed.map(|c| c >> 12);
+        let mut r: Vec<[i32; 3]> = corners
+            .iter()
+            .map(|&[x, z, b]| [x - hx + px, z + pz - hz, b])
+            .collect();
+        if r.len() == 4 {
+            let [dx, dz] = [r[2][0] - r[1][0], r[2][1] - r[1][1]];
+            let len = crate::skater::sqrt_int(dz * dz + dx * dx);
+            if len == 0 {
+                return Err(format!(
+                    "shade item={} face={} degenerate edge",
+                    hit.item_index, hit.face_index
+                ));
+            }
+            if (r[1][1] * dx - r[1][0] * dz) / len < 0 {
+                (r[0], r[1]) = (r[1], r[3]);
+            }
+        }
+        let ([x0, z0, b0], [x1, z1, b1], [x2, z2, b2]) = (r[0], r[1], r[2]);
+        let (ex, ez) = (x2 - x1, z2 - z1);
+        let den = ez * -x0 - ex * -z0;
+        let (num, den) = if den == 0 {
+            (0, 1)
+        } else {
+            ((z0 - z1) * -x0 - (x0 - x1) * -z0, den)
+        };
+        let ix = ex * num / den + x1;
+        let iz = ez * num / den + z1;
+        let across = (b2 - b1) * num / den + b1;
+        let (span_x, span_z) = ((ix - x0).abs(), (iz - z0).abs());
+        Ok(if span_x > span_z {
+            x0.abs() * (across - b0) / span_x.max(1) + b0
+        } else {
+            z0.abs() * (across - b0) / span_z.max(1) + b0
+        })
+    }
+
     pub fn from_scene(scene: &Scene) -> Result<Self, String> {
         let mut zones = scene.chunks.iter().filter(|c| c.kind == 10);
         let zone = ZoneGrid::parse(
@@ -371,6 +443,11 @@ impl CollisionWorld {
         if zones.next().is_some() {
             return Err("scene has multiple collision zone chunks".into());
         }
+        let colours = scene
+            .chunks
+            .iter()
+            .find(|c| c.kind == COLOUR_TABLE_KIND)
+            .map(|c| c.payload.as_slice());
         let mut items = Vec::with_capacity(scene.items.len());
         for (item_index, item) in scene.items.iter().enumerate() {
             if item.rotation != [0; 3] {
@@ -433,6 +510,26 @@ impl CollisionWorld {
                 if bounds.iter().flatten().any(|&n| i32::try_from(n).is_err()) {
                     return Err("collision world bounds overflow".into());
                 }
+                let shade = if loaded_face_word(face.flags) & 0x800 == 0 {
+                    Shade::Flat(brightness(&face.raw[8..11]))
+                } else {
+                    let corners = if face.flags & 0x10 != 0 { 3 } else { 4 };
+                    let shades = (0..corners)
+                        .map(|k| {
+                            let v = model.vertices[usize::from(face.indices[k])].words;
+                            let entry = usize::from(face.raw[8 + k]) * 4;
+                            let rgb = colours.and_then(|t| t.get(entry..entry + 3)).ok_or_else(
+                                || {
+                                    format!(
+                                        "collision item={item_index} face={index} no colour entry"
+                                    )
+                                },
+                            )?;
+                            Ok([i32::from(v[0]), i32::from(v[2]), brightness(rgb)])
+                        })
+                        .collect::<Result<_, String>>()?;
+                    Shade::Corners(shades)
+                };
                 let target = if flags & 0x20000 != 0 {
                     &mut triggers
                 } else {
@@ -445,6 +542,7 @@ impl CollisionWorld {
                     bounds,
                     flags,
                     face_flags: loaded_face_word(face.flags),
+                    shade,
                 });
             }
             items.push(CollisionItem {

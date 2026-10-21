@@ -12,6 +12,8 @@ const Z_CAP: f32 = 0.99;
 const COLOUR_TABLE_KIND: u32 = u32::from_le_bytes(*b"RGBs");
 /// Quad corners in fan order.
 const QUAD_FAN: [usize; 4] = [0, 1, 3, 2];
+/// Item flag for geometry past the far plane, left out of the fog.
+const OPEN_FAR: u16 = 0x2000;
 
 /// The viewport and per level render settings the view is built from.
 #[derive(Clone, Copy, Debug)]
@@ -66,6 +68,7 @@ pub struct Poly {
     pub item: usize,
     pub face: usize,
     pub flags: u32,
+    pub fogged: bool,
     pub texture: Option<u32>,
     pub vertices: Vec<ScreenVertex>,
     pub slot: i32,
@@ -182,11 +185,18 @@ impl View {
     }
 
     /// Items whose bounding sphere, or failing that bounding box, lies outside a frustum plane.
-    fn culled(&self, planes: &[([i32; 3], f64); 6], model: &Model, rel: [i32; 3]) -> bool {
+    fn culled(
+        &self,
+        planes: &[([i32; 3], f64); 6],
+        model: &Model,
+        rel: [i32; 3],
+        open_far: bool,
+    ) -> bool {
         let r = rel.map(f64::from);
-        if r[0].abs() >= 32767.0 || r[1].abs() >= 32767.0 || r[2].abs() >= 32767.0 {
+        if r[0].abs() >= 32767.0 || r[1].abs() >= 32767.0 || (!open_far && r[2].abs() >= 32767.0) {
             return true;
         }
+        let planes = if open_far { &planes[1..] } else { &planes[..] };
         let distance = |p: &([i32; 3], f64), at: [f64; 3]| -> f64 {
             let n = p.0.map(|c| f64::from(c as f32 * Q12));
             n[0] * at[0] + n[1] * at[1] + n[2] * at[2] + p.1
@@ -244,9 +254,22 @@ impl View {
                 .ok_or_else(|| {
                     format!("[render] item={index} model={} missing", item.model_index)
                 })?;
-            if self.culled(&planes, base, rel) {
+            let open_far = item.flags[0] & OPEN_FAR != 0;
+            if self.culled(&planes, base, rel, open_far) {
                 continue;
             }
+            // these items ignore the far plane and the fog
+            let item_view = if open_far {
+                View {
+                    viewport: Viewport {
+                        far: 0x7fff,
+                        ..self.viewport
+                    },
+                    ..*self
+                }
+            } else {
+                *self
+            };
             let Some(model) = self.lod(level.scene, item.model_index as usize, rel)? else {
                 continue;
             };
@@ -257,7 +280,7 @@ impl View {
             let mut projected: Vec<Projected> = Vec::with_capacity(model.vertices.len());
             for (vi, v) in model.vertices.iter().enumerate() {
                 let p = match v.flags {
-                    0 => self.project(&rf, t, v.words),
+                    0 => item_view.project(&rf, t, v.words),
                     0x10 => {
                         let at = |w: i16| projected.get((w as u16 >> 3) as usize).copied();
                         let (Some(a), Some(b)) = (at(v.words[0]), at(v.words[1])) else {
@@ -265,7 +288,7 @@ impl View {
                                 "[render] item={index} vertex={vi} offset anchors not projected"
                             ));
                         };
-                        self.offset(a, b, f32::from(v.words[2]))
+                        item_view.offset(a, b, f32::from(v.words[2]))
                     }
                     f => {
                         return Err(format!(
@@ -278,10 +301,11 @@ impl View {
             let bias = (level.bias)(item.model_index as usize) as f32;
             for (fi, face) in model.faces.iter().enumerate() {
                 let at = polys.len();
-                self.face(level, colours, &projected, face, bias, &mut polys)
+                item_view
+                    .face(level, colours, &projected, face, bias, &mut polys)
                     .map_err(|e| format!("[render] item={index} face={fi} {e}"))?;
                 for p in &mut polys[at..] {
-                    (p.item, p.face) = (index, fi);
+                    (p.item, p.face, p.fogged) = (index, fi, !open_far);
                 }
             }
         }
@@ -405,6 +429,7 @@ impl View {
                 flags = (flags & !0x40) | 0x80;
             }
             polys.push(Poly {
+                fogged: true,
                 item: 0,
                 face: 0,
                 flags,
@@ -542,6 +567,12 @@ fn check_item(index: usize, item: &Item, model: &Model) -> Result<(), String> {
             item.rotation
         ));
     }
+    if item.flags[0] & !OPEN_FAR != 0 || item.flags[1] != 0 {
+        return Err(format!(
+            "[render] item={index} flags={:04x?} unsupported",
+            item.flags
+        ));
+    }
     if model_flags & 0x604 != 0 {
         return Err(format!(
             "[render] item={index} model flags={model_flags:#x} unsupported"
@@ -590,7 +621,7 @@ impl View {
         let far = self.viewport.far as f32 * self.viewport.fog_scale;
         draw_order(polys)
             .into_iter()
-            .map(|i| {
+            .filter_map(|i| {
                 let p = &polys[i];
                 let (blend, alpha) = match (p.flags & 0x40 != 0, p.flags & 0x180) {
                     (false, _) => (1, 0xff),
@@ -605,7 +636,7 @@ impl View {
                     .map(|v| {
                         let mut c = [24, 16, 8, 0].map(|s| (v.diffuse >> s) & 0xff);
                         c[0] = alpha;
-                        if fog.start < 1.0 {
+                        if p.fogged && fog.start < 1.0 {
                             let r = (self.h as f32 / v.rhw) / far;
                             if r >= fog.start {
                                 let t = ((r - fog.start) / (1.0 - fog.start)).min(1.0);
@@ -629,8 +660,12 @@ impl View {
                             ..*v
                         }
                     })
-                    .collect();
-                Draw {
+                    .collect::<Vec<ScreenVertex>>();
+                // a polygon fogged out at every corner is not drawn
+                if alpha != 0 && vertices.iter().all(|v| v.diffuse >> 24 == 0) {
+                    return None;
+                }
+                Some(Draw {
                     item: p.item,
                     face: p.face,
                     slot: p.slot,
@@ -638,7 +673,7 @@ impl View {
                     texture: p.texture,
                     blend,
                     wrap: p.flags & 0x20 != 0,
-                }
+                })
             })
             .collect()
     }

@@ -73,6 +73,8 @@ const GAP_SLOTS: usize = 20;
 const BOOST_MAX: i32 = 20;
 const UNLIMITED_PULSES: u16 = 0xffff;
 const PULSE_DEPTH: u32 = 8;
+// moving objects are not part of the rewrite world, so pulsing or killing them changes nothing
+const MOVING_OBJECT: i16 = 1;
 
 /// Digital pad state for one frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1085,7 +1087,7 @@ impl Skater {
     }
 
     /// Sweeps the frame's travel for trigger planes and runs the command points newly touched.
-    fn sweep_triggers(&mut self, level: &Level) -> Result<(), String> {
+    pub fn sweep_triggers(&mut self, level: &Level) -> Result<(), String> {
         let delta: V3 = std::array::from_fn(|a| self.position[a] - self.old_position[a]);
         if delta == [0; 3] {
             return Ok(());
@@ -1135,20 +1137,32 @@ impl Skater {
                         slot.1 -= 1;
                     }
                     for link in triggers.links(node) {
-                        if !triggers.is_command_point(link) {
-                            return Err(format!(
-                                "command point node={node} pulses node={link} of another kind"
-                            ));
+                        match triggers.kind(link) {
+                            MOVING_OBJECT => {}
+                            _ if triggers.is_command_point(link) => {
+                                self.run_command_point(triggers, link, depth + 1)?
+                            }
+                            kind => {
+                                return Err(format!(
+                                    "command point node={node} pulses node={link} kind={kind}"
+                                ));
+                            }
                         }
-                        self.run_command_point(triggers, link, depth + 1)?;
                     }
                 }
-                Command::Kill if !triggers.links(node).is_empty() => {
-                    return Err(format!(
-                        "command point node={node} kills linked nodes unsupported"
-                    ));
+                Command::Kill => {
+                    if let Some(link) = triggers
+                        .links(node)
+                        .into_iter()
+                        .find(|&l| triggers.kind(l) != MOVING_OBJECT)
+                    {
+                        return Err(format!(
+                            "command point node={node} kills node={link} kind={}",
+                            triggers.kind(link)
+                        ));
+                    }
                 }
-                Command::Regions | Command::Kill => {}
+                Command::Regions => {}
             }
         }
         Ok(())

@@ -133,6 +133,10 @@ impl Triggers {
             .collect()
     }
 
+    pub fn kind(&self, node: usize) -> i16 {
+        self.nodes[node].kind
+    }
+
     pub fn is_command_point(&self, node: usize) -> bool {
         self.nodes[node].kind == COMMAND_POINT
     }

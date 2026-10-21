@@ -8,9 +8,12 @@ pub struct Recording {
     pub level: i16,
     pub mode: i16,
     pub data: Vec<u8>,
+    /// Title from the memory card style prefix of a saved replay.
+    pub save_name: Option<String>,
 }
 
 const HEADER: usize = 0x36;
+const CARD_PREFIX: usize = 0x200;
 
 fn word(data: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap())
@@ -44,7 +47,23 @@ impl Recording {
             level: half(data, 0x32),
             mode: half(data, 0x34),
             data: data.to_vec(),
+            save_name: None,
         })
+    }
+
+    /// Saved replays carry a 0x200 byte card prefix, the block follows at file offset 0x200.
+    pub fn parse_save(file: &[u8]) -> Result<Self, String> {
+        if file.len() < CARD_PREFIX + HEADER {
+            return Err(format!("saved replay truncated size={}", file.len()));
+        }
+        if &file[..2] != b"SC" {
+            return Err(format!("saved replay card magic={:02x?}", &file[..4]));
+        }
+        let title = &file[4..0x44];
+        let end = title.iter().position(|&b| b == 0).unwrap_or(title.len());
+        let mut r = Self::parse(&file[CARD_PREFIX..])?;
+        r.save_name = Some(String::from_utf8_lossy(&title[..end]).into_owned());
+        Ok(r)
     }
 }
 

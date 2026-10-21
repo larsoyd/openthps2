@@ -387,6 +387,19 @@ impl Presses {
         }
     }
 
+    /// A release of the code newer than the time is still in the ring.
+    pub fn released_after(&self, code: u8, time: i32) -> bool {
+        let mut i = self.newest();
+        while i != self.next {
+            let p = self.ring[i];
+            if p.code == code && !p.down && p.time as u32 > time as u32 {
+                return true;
+            }
+            i = (i + RING - 1) % RING;
+        }
+        false
+    }
+
     /// Distinct edge times among the live records newer than the span before now.
     pub fn edges_since(&self, now: i32, span: i32) -> i32 {
         let (mut i, mut last, mut count) = (self.newest(), 0, 0);

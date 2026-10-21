@@ -34,6 +34,7 @@ pub struct Balance {
 pub struct QueuedTrick {
     script: usize,
     queued: i32,
+    button: u8,
     pressed: i32,
 }
 
@@ -164,6 +165,7 @@ impl Skater {
             self.air_queue.push_back(QueuedTrick {
                 script: entry.script,
                 queued: now,
+                button: last,
                 pressed: time,
             });
         } else if self.state != State::Vert && self.manual == 0 {
@@ -186,6 +188,7 @@ impl Skater {
         }
         let head = self.air_queue.pop_front().unwrap();
         if ((now - head.queued) as u32) < QUEUE_LIFE {
+            (self.trick_button, self.trick_pressed) = (head.button, head.pressed);
             self.presses.drop_before(head.pressed);
             self.start_script(head.script);
         }
@@ -246,10 +249,7 @@ impl Skater {
             return Ok(());
         }
         let s = rules.stat(STAT_MANUAL, self.switched);
-        let points = (frame.hold_delta * self.points_rate) >> 12;
-        if let Some(top) = self.panel.entries.last_mut() {
-            top.points += points;
-        }
+        self.add_held_points(self.points_rate);
         let b = &mut self.balance;
         if b.kick != 0 {
             b.kick = (b.kick - KICK_DECAY).max(0);
@@ -313,6 +313,22 @@ impl Skater {
         self.presses.clear();
         self.manual = 0;
         self.commit_combo()
+    }
+
+    /// Points the trick on top gains per frame it is held, the held time growing with them.
+    pub(super) fn add_held_points(&mut self, rate: i32) {
+        self.hold_time += self.frame.hold_delta;
+        let points = (self.frame.hold_delta * rate) >> 12;
+        if let Some(top) = self.panel.entries.last_mut() {
+            top.points += points;
+        }
+    }
+
+    /// The running air trick's button has not been let go since it was pressed.
+    pub(super) fn trick_held(&self) -> bool {
+        !self
+            .presses
+            .released_after(self.trick_button, self.trick_pressed)
     }
 
     /// After the state handler: off the ground the manual ends, on it without one the balance resets.

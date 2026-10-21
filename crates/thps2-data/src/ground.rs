@@ -71,6 +71,8 @@ pub const ANIM_CROUCH_LAND: u16 = 0x19;
 pub const ANIM_CROUCH_FALL: u16 = 0x1a;
 pub const ANIM_FALL: u16 = 0x1b;
 pub const ANIM_NOLLIE: u16 = 0xaf;
+/// An animation during which riding backwards does not turn the board round.
+const ANIM_NO_FAKIE: u16 = 0x22;
 const CROUCH_END: i32 = 0x1a;
 const CROUCH_PINGPONG: i32 = 0x13;
 const BAIL_SLOW_SPEED: i32 = 0x2d000;
@@ -364,6 +366,14 @@ pub struct Skater {
     pub balance: Balance,
     /// Move the script queues for an ollie out of a manual or off a rail.
     pub ollie_script: Option<usize>,
+    /// The running air trick's button and its press time, and how long its points have been held.
+    pub trick_button: u8,
+    pub trick_pressed: i32,
+    pub hold_time: i32,
+    pub frame: FrameScale,
+    /// Position at the start of this frame and of the one before.
+    pub frame_start: V3,
+    pub last_start: V3,
 }
 
 /// The skater's rail state: the candidate the search found, the rail ridden and its balance.
@@ -700,6 +710,12 @@ impl Skater {
             manual_friction: 0,
             balance: Balance::default(),
             ollie_script: None,
+            trick_button: 0,
+            trick_pressed: 0,
+            hold_time: 0,
+            frame: DESIGN_FRAME,
+            frame_start: position_fixed,
+            last_start: position_fixed,
         }
     }
 
@@ -922,6 +938,37 @@ impl Skater {
         self.open_combo();
         self.landing_timer = LANDING_TIMER;
         self.set_anim(table, ANIM_OLLIE)
+    }
+
+    /// Riding backwards turns the board round to fakie.
+    fn fakie_flip(&mut self) -> bool {
+        if self.anim.id == ANIM_NO_FAKIE || dot_q12(self.forward, self.velocity) <= FAKIE_DOT {
+            return false;
+        }
+        self.forward = self.forward.map(|c| -c);
+        self.lateral = self.lateral.map(|c| -c);
+        self.switched = !self.switched;
+        true
+    }
+
+    /// Landing across the travel faces the board along last frame's motion and bails to the side
+    /// the motion leans.
+    fn sideways_bail(&mut self, level: &Level, flat: V3, normal: V3) -> Result<(), String> {
+        self.fakie_flip();
+        let mut side = dot_q12(flat, self.lateral);
+        let mut travel: V3 = std::array::from_fn(|a| self.frame_start[a] - self.last_start[a]);
+        if travel.iter().map(|c| c.abs()).sum::<i32>() > 0x8000 {
+            travel = travel.map(|c| c >> 4);
+        }
+        self.forward = normalize(travel).map(|c| -c);
+        self.up = normal;
+        self.lateral = cross_q12(short(self.forward), short(self.up));
+        self.forward = cross_q12(short(self.up), short(self.lateral));
+        if self.switched {
+            side = -side;
+        }
+        let kind = if side < 1 { 2 } else { 0 };
+        self.start_bail(level.table, level.tricks, kind, false)
     }
 
     fn basis_matrix(&self) -> [i32; 9] {
@@ -1419,6 +1466,7 @@ impl Skater {
         self.script_return = None;
         (self.rail_bail, self.landing_bail) = (0, 0);
         (self.manual_pending, self.ollie_script) = (None, None);
+        self.hold_time = 0;
     }
 
     /// Landing tipped over: the board turns onto its back and the skater slides off along the old up.
@@ -1679,7 +1727,49 @@ impl Skater {
                 0x36 => pc += 2,
                 0x37 => pc += 4,
                 0x38 | 0x45 => pc += 6,
-                0x39 => pc = sound_branch(scripts, pc)?,
+                0x39 => {
+                    let branches = short(pc)?;
+                    if branches <= 0 {
+                        return Err(format!("trick script random pc={at:#x} bad branch count"));
+                    }
+                    let pick = self.rng.next(i32::from(branches)) as usize;
+                    pc = scripts.offset(pc + 2 + pick * 2)?;
+                }
+                0x10 => {
+                    let target = self.script_frame(short(pc)?);
+                    let dir = i32::from(self.anim.direction);
+                    if i32::from(self.anim.frame) * dir < target * dir
+                        && !self.anim.finished
+                        && self.trick_held()
+                    {
+                        self.script = Some(at);
+                        return Ok(());
+                    }
+                    pc += 2;
+                }
+                0x12 if self.trick_held() => pc = scripts.offset(pc)?,
+                0x12 => pc += 2,
+                0x14 => self.anim.mode = 0,
+                0x17 => {
+                    let (base, growth) = (i32::from(short(pc)?), i32::from(short(pc + 2)?));
+                    let held = self.hold_time >> 12;
+                    let rate = held * held * growth / 1000 + ((self.frame.scale * base) >> 8);
+                    self.add_held_points(rate);
+                    pc += 4;
+                }
+                // a trick database value, how near its end a trick may take a rail and the nollie
+                // flag, none of which this port reads
+                0x2d | 0x4e | 0x51 => pc += 2,
+                // clears the spin lock, which no ported op sets
+                0x3c => {}
+                // asks for a blood splat, which is only drawn
+                0x30 => {}
+                0x4b if dot_q12(self.forward, self.velocity) < -0x800 => pc = scripts.offset(pc)?,
+                0x4b => pc += 2,
+                0x4c if scripts.byte(pc) == Some(native_state(self.state)) => {
+                    pc = scripts.offset(pc + 1)?
+                }
+                0x4c => pc += 3,
                 0x44 => {
                     self.gravity_percent = i32::from(short(pc)?);
                     pc += 2;
@@ -2278,38 +2368,6 @@ impl Skater {
     }
 }
 
-/// A random pick between script branches that only differ in the sound they play.
-fn sound_branch(scripts: &TrickScripts, pc: usize) -> Result<usize, String> {
-    let count = scripts
-        .short(pc)
-        .filter(|&n| n > 0)
-        .ok_or_else(|| format!("trick script random pc={pc:#x} bad branch count"))?;
-    let mut join = None;
-    for k in 0..count as usize {
-        let mut at = scripts.offset(pc + 2 + k * 2)?;
-        loop {
-            match scripts.byte(at) {
-                Some(0x36) => at += 3,
-                Some(0x37) => at += 5,
-                Some(0x38) => at += 7,
-                Some(0x15) => break,
-                op => {
-                    return Err(format!(
-                        "trick script random branch pc={at:#x} op={op:?} unsupported"
-                    ));
-                }
-            }
-        }
-        let target = scripts.offset(at + 1)?;
-        if join.replace(target).is_some_and(|j| j != target) {
-            return Err(format!(
-                "trick script random pc={pc:#x} branches never join"
-            ));
-        }
-    }
-    scripts.offset(pc + 2)
-}
-
 /// Probes the movement segment, extended to the wall reach when short, with lips included.
 fn wall_probe(world: &CollisionWorld, old: V3, new: V3) -> Result<(Option<Hit>, i32), String> {
     if old == new {
@@ -2381,13 +2439,13 @@ pub fn brake_threshold(ground_normal: V3) -> i32 {
 
 /// The ground handler after the input phase, without bail, manual, triggers or moving objects.
 pub fn ground_step(
-    world: &CollisionWorld,
-    table: &AnimationTable,
+    level: &Level,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
+    let (world, table) = (level.world, level.table);
     s.ground_start = s.position;
     let stopped = s.state == State::Stopped;
     let vert = s.state == State::Vert;
@@ -2400,13 +2458,13 @@ pub fn ground_step(
     let half_push = frame_part(accel, frame.scale_squared)?.map(|c| c / 2);
     let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
     s.position = add(s.position, travel)?;
-    if !vert && !s.bailing && dot_q12(s.forward, s.velocity) > FAKIE_DOT {
-        s.forward = s.forward.map(|c| -c);
-        s.lateral = s.lateral.map(|c| -c);
-        s.switched = !s.switched;
-        if s.state == State::Ground && frame.time - s.landed_at > (5 * frame.scale) >> 8 {
-            s.manual_fakie(table)?;
-        }
+    if !vert
+        && !s.bailing
+        && s.fakie_flip()
+        && s.state == State::Ground
+        && frame.time - s.landed_at > (5 * frame.scale) >> 8
+    {
+        s.manual_fakie(table)?;
     }
     let mut turn_units = if vert {
         s.spin_amount(rules)
@@ -2474,7 +2532,7 @@ pub fn ground_step(
             } else if bit24 {
                 grounded = false;
             } else if vert {
-                landing_bails(s, rules, normal)?;
+                landing_bails(level, s, rules, normal)?;
                 s.set_state(State::Ground);
                 grounded = true;
             } else {
@@ -2569,25 +2627,28 @@ fn land(level: &Level, s: &mut Skater, rules: Rules, pad: Pad, hit: &Hit) -> Res
     s.set_state(State::Ground);
     s.vert = hit.flags & VERT_FACE != 0;
     if !s.bailing {
-        landing_bails(s, rules, normal)?;
+        landing_bails(level, s, rules, normal)?;
         let tilt = dot_q12(s.up, normal);
-        if tilt < 2000 && s.up[1] > -2000 && (s.velocity[1] > 150000 || tilt < 200) {
+        let tipped = tilt < 2000 && s.up[1] > -2000 && (s.velocity[1] > 150000 || tilt < 200);
+        if tipped && !s.bailing {
             return s.tilt_bail(table, scripts);
         }
         s.landed_trick()?;
         s.start_manual(level, rules, false)?;
     }
-    s.velocity = project_onto_plane(s.velocity, normal);
-    s.last_normal = normal;
-    s.smoothed_up = normal;
-    s.same_normal_time = 0;
-    s.smooth_basis();
+    if s.state != State::Air {
+        s.velocity = project_onto_plane(s.velocity, normal);
+        s.last_normal = normal;
+        s.smoothed_up = normal;
+        s.same_normal_time = 0;
+        s.smooth_basis();
+    }
     head_probe(world, s)
 }
 
 /// Fast landings are judged by how the board lines up with the travel, sideways ones and drops past
 /// the landing stat limit bail.
-fn landing_bails(s: &mut Skater, rules: Rules, normal: V3) -> Result<(), String> {
+fn landing_bails(level: &Level, s: &mut Skater, rules: Rules, normal: V3) -> Result<(), String> {
     s.style = Style::default();
     let flat = project_onto_plane(s.velocity, normal);
     if speed_of(flat)? > 0x1e000 {
@@ -2601,7 +2662,7 @@ fn landing_bails(s: &mut Skater, rules: Rules, normal: V3) -> Result<(), String>
             };
         }
         if line < 0x666 {
-            return Err("sideways landing bail unsupported".into());
+            return s.sideways_bail(level, flat, normal);
         }
     }
     let height = (s.clearance + s.fall) >> 12;
@@ -2704,6 +2765,17 @@ fn land_on_lip(
     Ok(())
 }
 
+/// The game's state number.
+pub fn native_state(state: State) -> u8 {
+    match state {
+        State::Ground => 0,
+        State::Air => 1,
+        State::Vert => 2,
+        State::Grind => 4,
+        State::Stopped => 7,
+    }
+}
+
 /// One single session run: the skater, the frame clock and the unpaused VB counter.
 #[derive(Clone, Debug)]
 pub struct Run {
@@ -2746,12 +2818,13 @@ pub fn step(
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
-    let (world, table) = (level.world, level.table);
+    let table = level.table;
     s.panel.count_up();
     s.gravity = s.air_gravity(rules);
     s.track_up_hold(pad, frame);
     s.now += 1;
     s.frame_time = frame.time;
+    s.frame = frame;
     s.grind_up = if pad.grind { 0 } else { s.grind_up + 1 };
     if !matches!(s.state, State::Air | State::Vert)
         && frame.time - s.landed_at > (frame.scale * 15) >> 8
@@ -2777,14 +2850,13 @@ pub fn step(
     s.decay_push_target(rules);
     s.apply_boost()?;
     s.cancel_gaps()?;
+    (s.last_start, s.frame_start) = (s.frame_start, s.position);
     let dispatched = s.state;
     if dispatched == State::Ground && frame.time - s.landed_at > (20 * frame.scale) >> 8 {
         s.start_manual(level, rules, true)?;
     }
     let outcome = match s.state {
-        State::Ground | State::Stopped | State::Vert => {
-            ground_step(world, table, s, rules, frame, pad)
-        }
+        State::Ground | State::Stopped | State::Vert => ground_step(level, s, rules, frame, pad),
         State::Air => air_step(level, s, rules, frame, pad),
         State::Grind => {
             s.old_position = s.position;

@@ -88,6 +88,20 @@ pub struct Prim {
     pub rect: [i32; 4],
 }
 
+/// What a text effect does to each glyph of a string while it is laid out and drawn.
+pub trait Effect {
+    /// Moves a glyph's top, 20.12 fixed point from the pen, once per glyph in string order.
+    fn offset(&mut self, _y: &mut i32) {}
+    /// The colour every glyph takes instead of the text's own.
+    fn colour(&mut self) -> Option<[u8; 3]> {
+        None
+    }
+}
+
+pub struct Plain;
+
+impl Effect for Plain {}
+
 struct Placed {
     glyph: Option<u8>,
     code: Option<Code>,
@@ -99,6 +113,20 @@ impl Text {
     /// The primitives in submission order. The overlay slot draws the newest first, so a string
     /// shows its last shadow under everything else.
     pub fn draw(&self, font: &Font, x: i32, y: i32, s: &str) -> Result<Vec<Prim>, String> {
+        self.draw_with(font, x, y, s, &mut Plain)
+    }
+
+    pub fn draw_with(
+        &self,
+        font: &Font,
+        x: i32,
+        y: i32,
+        s: &str,
+        effect: &mut dyn Effect,
+    ) -> Result<Vec<Prim>, String> {
+        if self.scale == 0 && !self.fixed_pitch {
+            return Ok(Vec::new());
+        }
         if s.len() > MAX_CHARS {
             return Err(format!(
                 "[text] chars={} max={MAX_CHARS} text={s:?}",
@@ -149,11 +177,13 @@ impl Text {
             } else {
                 pen += (w + self.spacing) * scale;
             }
+            let mut gy = -base * scale;
+            effect.offset(&mut gy);
             placed.push(Placed {
                 glyph,
                 code,
                 x: gx,
-                y: -base * scale,
+                y: gy,
             });
         }
         let origin_x = match self.hjust {
@@ -178,6 +208,9 @@ impl Text {
                 Some(Code::Nothing) | None => {}
             }
             let Some(g) = p.glyph else { continue };
+            if let Some(c) = effect.colour() {
+                colour = c;
+            }
             let glyph = &font.glyphs[g as usize];
             let rect = |dx: i32, dy: i32| {
                 let x0 = (p.x + dx * scale + origin_x) >> 12;
@@ -205,6 +238,34 @@ impl Text {
             }
         }
         Ok(prims)
+    }
+}
+
+impl Text {
+    /// Width a string takes at the text's scale: a space is glyph 0 wide, colour codes take none.
+    pub fn width(&self, font: &Font, s: &str) -> i32 {
+        let count = font.glyphs.len() - 1;
+        let sum: i32 = s
+            .bytes()
+            .map(|c| match self.map.glyph(c, count) {
+                Some(g) => i32::from(font.glyphs[g as usize].width) + self.spacing,
+                None if colour_code(c).is_none() => i32::from(font.glyphs[0].width),
+                None => 0,
+            })
+            .sum();
+        (sum * self.scale) >> 12
+    }
+
+    /// Deepest descent plus tallest ascent of a string's glyphs at the text's scale.
+    pub fn height(&self, font: &Font, s: &str) -> i32 {
+        let count = font.glyphs.len() - 1;
+        let (mut below, mut above) = (0, 0);
+        for g in s.bytes().filter_map(|c| self.map.glyph(c, count)) {
+            let glyph = &font.glyphs[g as usize];
+            below = below.max(i32::from(glyph.height) - i32::from(glyph.base));
+            above = above.max(i32::from(glyph.base));
+        }
+        ((below * self.scale) >> 12) + ((above * self.scale) >> 12)
     }
 }
 

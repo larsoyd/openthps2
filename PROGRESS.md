@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 223 (4.7%) | 160,571 (16.7%) |
-| Recovered | 219 (4.6%) | 85,219 (8.9%) |
-| Open | 4278 | 713,949 |
+| Implemented | 239 (5.1%) | 164,368 (17.1%) |
+| Recovered | 217 (4.6%) | 82,986 (8.6%) |
+| Open | 4264 | 712,385 |
 
-`███░░░░░░░░░░░░░░░░░` 16.7% implemented by bytes
+`███░░░░░░░░░░░░░░░░░` 17.1% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 81 | 100 | `█░░░░░░░░░` 9% |
+| unattributed | 2977 | 354,046 | 82 | 100 | `█░░░░░░░░░` 9% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -28,7 +28,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
 | create.cpp | 54 | 18,174 | 0 | 0 | `░░░░░░░░░░` 0% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
-| panel.cpp | 37 | 14,181 | 11 | 3 | `████░░░░░░` 40% |
+| panel.cpp | 37 | 14,181 | 16 | 1 | `██████░░░░` 62% |
 | career.cpp | 81 | 13,988 | 0 | 5 | `░░░░░░░░░░` 0% |
 | trig.cpp | 30 | 13,716 | 10 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
@@ -60,7 +60,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | Image.cpp | 32 | 4,213 | 2 | 0 | `██░░░░░░░░` 21% |
 | powerup.cpp | 14 | 4,208 | 0 | 0 | `░░░░░░░░░░` 0% |
 | statwin.cpp | 13 | 4,153 | 0 | 0 | `░░░░░░░░░░` 0% |
-| FontTools.cpp | 20 | 4,086 | 4 | 1 | `█████░░░░░` 49% |
+| FontTools.cpp | 20 | 4,086 | 8 | 1 | `██████░░░░` 56% |
 | dust.cpp | 7 | 3,770 | 0 | 0 | `░░░░░░░░░░` 0% |
 | commonfe.cpp | 26 | 3,710 | 0 | 0 | `░░░░░░░░░░` 0% |
 | rail.cpp | 14 | 3,610 | 5 | 2 | `███████░░░` 73% |
@@ -91,7 +91,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | player_ui.cpp | 5 | 1,590 | 0 | 0 | `░░░░░░░░░░` 0% |
 | redbook.cpp | 10 | 1,462 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickob.cpp | 6 | 1,419 | 0 | 3 | `░░░░░░░░░░` 0% |
-| texteffects.cpp | 17 | 1,332 | 0 | 0 | `░░░░░░░░░░` 0% |
+| texteffects.cpp | 17 | 1,332 | 6 | 0 | `███░░░░░░░` 27% |
 | create_ui.cpp | 6 | 1,325 | 0 | 0 | `░░░░░░░░░░` 0% |
 | PRE.cpp | 9 | 1,246 | 0 | 0 | `░░░░░░░░░░` 0% |
 | d3dsprite.cpp | 2 | 1,243 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -153,6 +153,10 @@ Implemented routines and the Rust module that holds them.
 | 00448860 | 289 | exp.cpp | collision.rs |
 | 00449cd0 | 906 | unattributed | font.rs |
 | 0044a070 | 1100 | FontTools.cpp | text.rs |
+| 0044a4d0 | 104 | FontTools.cpp | text.rs |
+| 0044a540 | 33 | FontTools.cpp | text.rs |
+| 0044a570 | 75 | FontTools.cpp | text.rs |
+| 0044a5c0 | 88 | FontTools.cpp | text.rs |
 | 0044a620 | 574 | FontTools.cpp | text.rs |
 | 0044a860 | 119 | FontTools.cpp | text.rs |
 | 0044aaa0 | 199 | FontTools.cpp | text.rs |
@@ -197,12 +201,17 @@ Implemented routines and the Rust module that holds them.
 | 0048b760 | 371 | panel.cpp | hud.rs |
 | 0048bae0 | 1037 | panel.cpp | hud.rs |
 | 0048bef0 | 447 | panel.cpp | hud.rs |
+| 0048c1a0 | 887 | panel.cpp | tricktext.rs |
 | 0048c520 | 562 | panel.cpp | hud.rs |
+| 0048cb10 | 74 | panel.cpp | tricktext.rs |
 | 0048cb60 | 94 | panel.cpp | score.rs |
 | 0048cbc0 | 374 | panel.cpp | score.rs |
 | 0048cd40 | 59 | panel.cpp | score.rs |
+| 0048cd80 | 673 | panel.cpp | tricktext.rs |
 | 0048d090 | 1455 | panel.cpp | hud.rs |
 | 0048d710 | 135 | panel.cpp | manual.rs |
+| 0048ddc0 | 1346 | panel.cpp | tricktext.rs |
+| 0048e320 | 142 | panel.cpp | tricktext.rs |
 | 0048e3b0 | 623 | panel.cpp | score.rs |
 | 0048e680 | 538 | panel.cpp | score.rs |
 | 0048ea80 | 131 | unattributed | collision.rs |
@@ -272,6 +281,13 @@ Implemented routines and the Rust module that holds them.
 | 004b39b0 | 1088 | spool.cpp | materials.rs |
 | 004b43e0 | 602 | spool.cpp | materials.rs |
 | 004b46a0 | 247 | spool.cpp | materials.rs |
+| 004b9720 | 8 | texteffects.cpp | tricktext.rs |
+| 004b9790 | 132 | texteffects.cpp | tricktext.rs |
+| 004b9820 | 56 | texteffects.cpp | tricktext.rs |
+| 004b9d50 | 13 | texteffects.cpp | tricktext.rs |
+| 004b9d60 | 119 | texteffects.cpp | tricktext.rs |
+| 004b9de0 | 26 | texteffects.cpp | tricktext.rs |
+| 004ba780 | 21 | unattributed | tricktext.rs |
 | 004bb4f0 | 602 | trickdb.cpp | input.rs |
 | 004bb7e0 | 493 | trickdb.cpp | input.rs |
 | 004bba50 | 581 | trickdb.cpp | input.rs |
@@ -435,9 +451,7 @@ Implemented routines and the Rust module that holds them.
 | 00489930 | 88 | unattributed |
 | 00489990 | 127 | unattributed |
 | 00489a10 | 674 | unattributed |
-| 0048c1a0 | 887 | panel.cpp |
 | 0048d6d0 | 58 | panel.cpp |
-| 0048ddc0 | 1346 | panel.cpp |
 | 0048f5f0 | 129 | physics.cpp |
 | 0048f7c0 | 56 | physics.cpp |
 | 0048f800 | 151 | physics.cpp |
@@ -586,4 +600,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 0040f850, 004d4bf0, 004d68b0
+Status entries outside the function inventory: 0040f850, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0

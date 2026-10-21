@@ -320,6 +320,7 @@ impl Skater {
         let points = (self.frame.hold_delta * rate) >> 12;
         if let Some(top) = self.panel.entries.last_mut() {
             top.points += points;
+            self.text_events.push(TextEvent::Lines(self.shown()));
         }
     }
 

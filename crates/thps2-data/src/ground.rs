@@ -3,7 +3,7 @@ use crate::collision::{CollisionWorld, Hit, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
 use crate::rng::Rng;
-use crate::score::{Entry, Panel, Style, hangar_gap};
+use crate::score::{Entry, Panel, Shown, Style, TextEvent, hangar_gap};
 use crate::script::TrickScripts;
 use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
 use crate::trig::{Command, Regions, Restart, Triggers};
@@ -454,6 +454,7 @@ pub struct Skater {
     pub jump_block: i32,
     /// Kills and visibility changes the frame's scripts made, applied to the world after the frame.
     pub world_events: Vec<WorldEvent>,
+    pub text_events: Vec<TextEvent>,
     /// Pulses left per command point node, set by the first run of its script.
     pub pulses: Vec<(usize, u16)>,
     pub grind: Grind,
@@ -824,6 +825,7 @@ impl Skater {
             trick_landed: false,
             touching: Vec::new(),
             world_events: Vec::new(),
+            text_events: Vec::new(),
             jump_block: 0,
             pulses: Vec::new(),
             grind: Grind::default(),
@@ -1398,21 +1400,31 @@ impl Skater {
             self.spin_angle -= 0x800;
             self.spins += 1;
             self.refresh_spins();
+            self.text_events.push(TextEvent::Lines(self.shown()));
         }
         if self.spin_angle < -0x7ff {
             self.spin_angle += 0x800;
             self.spins += 1;
             self.refresh_spins();
+            self.text_events.push(TextEvent::Lines(self.shown()));
         }
     }
 
     fn open_combo(&mut self) {
         self.combo = true;
         (self.style, self.unjudged) = (Style::default(), false);
+        self.text_events.push(TextEvent::Opened);
+    }
+
+    pub(crate) fn shown(&self) -> Shown {
+        Shown {
+            entries: self.panel.entries.clone(),
+            style: self.landed_style(),
+        }
     }
 
     /// Landing style counts only while half spins are in hand.
-    fn landed_style(&self) -> Style {
+    pub(crate) fn landed_style(&self) -> Style {
         if self.spins == 0 {
             Style::default()
         } else {
@@ -1468,6 +1480,7 @@ impl Skater {
             self.panel.entries[n - 1].spins = self.spins;
         }
         self.refresh_spins();
+        self.text_events.push(TextEvent::Restart(self.shown()));
     }
 
     /// Landing rounds the half spins into the last gap and moves the combo total to the panel.
@@ -1478,6 +1491,7 @@ impl Skater {
         if stacked == 0 || (self.previous_state == State::Vert && stacked == 1) {
             self.style = Style::default();
         }
+        self.text_events.push(TextEvent::Lines(self.shown()));
         let spin_ollie = self.spins != 0
             && self.panel.entries.last().is_none_or(|e| e.kind != 0)
             && (self.previous_state != State::Vert || self.spins > 1);
@@ -1495,6 +1509,7 @@ impl Skater {
         }
         self.trick_landed = false;
         (self.spin_angle, self.spins, self.combo) = (0, 0, false);
+        self.text_events.push(TextEvent::Committed);
         Ok(())
     }
 
@@ -1794,6 +1809,7 @@ impl Skater {
         (self.combo, self.grind_gap) = (false, None);
         (self.spins, self.spin_angle) = (0, 0);
         self.panel.entries.clear();
+        self.text_events.push(TextEvent::Bailed);
         (self.special, self.trick_landed) = (Special::default(), false);
         self.bailing = true;
         self.set_state(State::Air);
@@ -3245,6 +3261,7 @@ impl Run {
 
     pub fn frame(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
         self.ticks += 2;
+        self.skater.text_events.clear();
         if self.skater.session.ended {
             let retry = self.skater.session.end_screens(pad);
             return Ok(if retry {

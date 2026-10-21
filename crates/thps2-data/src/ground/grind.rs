@@ -261,6 +261,7 @@ impl Skater {
             if let Some(last) = self.panel.entries.last_mut() {
                 last.points += self.points_rate;
                 self.refresh_spins();
+                self.text_events.push(TextEvent::Lines(self.shown()));
             }
             self.grind.counted_from = self.position;
         }

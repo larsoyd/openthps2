@@ -92,6 +92,49 @@ pub struct Style {
     pub sloppy: bool,
 }
 
+/// The combo as the trick lines show it: its entries and the landing style of the prefix.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Shown {
+    pub entries: Vec<Entry>,
+    pub style: Style,
+}
+
+/// What a frame did to the combo text, in order, for the panel pass after it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TextEvent {
+    /// A combo opened, so spins count from zero again.
+    Opened,
+    /// The lines were laid out again, an empty combo clears them.
+    Lines(Shown),
+    /// An entry joined the combo and the text grows in again.
+    Restart(Shown),
+    Bailed,
+    Committed,
+}
+
+/// Half spins of the group holding entry i, up to and including the next kind one entry.
+pub fn spin_group(e: &[Entry], i: usize) -> i32 {
+    let mut start = i;
+    while start > 0 && e[start - 1].kind != 1 {
+        start -= 1;
+    }
+    let mut sum = 0;
+    let mut p = start;
+    while p < e.len() && e[p].kind != 1 {
+        sum += e[p].spins;
+        p += 1;
+    }
+    if p < e.len() {
+        sum += e[p].spins;
+    }
+    sum
+}
+
+/// The landing multiplier in halves: the entry count, half a step per entry past fourteen.
+pub fn multiplier(n: i32) -> i32 {
+    if n < 15 { 2 * n } else { n + 14 }
+}
+
 /// Score panel: the counted score, landed points still counting up, and the open combo.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Panel {
@@ -119,23 +162,8 @@ impl Panel {
         self.entries.iter().map(|e| e.spins).sum()
     }
 
-    /// Half spins of the group holding entry i, up to and including the next kind one entry.
     pub fn spin_group(&self, i: usize) -> i32 {
-        let e = &self.entries;
-        let mut start = i;
-        while start > 0 && e[start - 1].kind != 1 {
-            start -= 1;
-        }
-        let mut sum = 0;
-        let mut p = start;
-        while p < e.len() && e[p].kind != 1 {
-            sum += e[p].spins;
-            p += 1;
-        }
-        if p < e.len() {
-            sum += e[p].spins;
-        }
-        sum
+        spin_group(&self.entries, i)
     }
 
     /// Perfect landings add half, sloppy ones lose a quarter.
@@ -163,11 +191,8 @@ impl Panel {
         sum
     }
 
-    /// The sum times the entry count, half a step per entry past fourteen.
     pub fn total(&self, style: Style) -> i32 {
-        let n = self.entries.len() as i32;
-        let multiplier = if n < 15 { 2 * n } else { n + 14 };
-        self.sum(style) * multiplier / 2
+        self.sum(style) * multiplier(self.entries.len() as i32) / 2
     }
 
     /// The first entry of a new combo counts the last landing straight into the score.

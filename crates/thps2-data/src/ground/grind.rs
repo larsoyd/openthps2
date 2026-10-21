@@ -96,7 +96,7 @@ impl Skater {
             self.grind.last_balanced = Some(hit.start);
             self.grind.rate = 0;
         }
-        let r = rules.stat(STAT_RAIL, self.switched);
+        let r = rules.stat(STAT_RAIL, self.stance());
         self.trick_running = true;
         self.grind.rate = (((300000 - 1800 * r) / 10000) * self.grind.rate / 100)
             * ((self.grind.heat >> 12) + 60)
@@ -125,7 +125,7 @@ impl Skater {
         self.run_script(level.table, level.tricks)?;
         self.set_state(State::Grind);
         let along = dot_q12(travel, self.velocity);
-        let k = ((rules.stat(STAT_SPEED, self.switched) + 100) * 5000) / 10000;
+        let k = ((rules.stat(STAT_SPEED, self.stance()) + 100) * 5000) / 10000;
         self.velocity = std::array::from_fn(|i| mul_q12(travel[i], along) + travel[i] * k / 10);
         (self.grind.start, self.grind.segment) = (hit.start, hit.segment);
         (self.grind.kind, self.grind.direction) = (hit.kind, hit.direction);
@@ -277,7 +277,7 @@ impl Skater {
         frame: FrameScale,
         pad: Pad,
     ) -> Result<(), String> {
-        let r = rules.stat(STAT_RAIL, self.switched);
+        let r = rules.stat(STAT_RAIL, self.stance());
         let g = &mut self.grind;
         let heat = (g.heat >> 12) + 60;
         let damp = ((r + 350) * 2000) / 10000;

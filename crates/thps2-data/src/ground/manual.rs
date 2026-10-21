@@ -71,9 +71,8 @@ impl Skater {
         let newest = self.presses.newest();
         for entry in &level.keys.entries {
             let ground = entry.flags & GROUND_MOVE != 0;
-            // the special meter is not modelled so moves that need it never match
             if !ground && !matches!(self.state, State::Air | State::Vert)
-                || entry.flags & NEEDS_SPECIAL != 0
+                || entry.flags & NEEDS_SPECIAL != 0 && !self.special.full()
             {
                 continue;
             }
@@ -222,7 +221,7 @@ impl Skater {
         if self.manual == 0 {
             return Ok(());
         }
-        let s = rules.stat(STAT_MANUAL, self.switched);
+        let s = rules.stat(STAT_MANUAL, self.stance());
         let b = &mut self.balance;
         b.armed = false;
         b.rate = if self.manual == 1 {
@@ -248,7 +247,7 @@ impl Skater {
         if self.manual == 0 {
             return Ok(());
         }
-        let s = rules.stat(STAT_MANUAL, self.switched);
+        let s = rules.stat(STAT_MANUAL, self.stance());
         self.add_held_points(self.points_rate);
         let b = &mut self.balance;
         if b.kick != 0 {

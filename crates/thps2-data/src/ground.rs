@@ -54,6 +54,7 @@ pub const STAT_SWITCH: usize = 6;
 pub const TONY_HAWK_STATS: [i32; 11] = [7, 5, 2, 6, 8, 5, 3, 3, 6, 5, 0];
 const SWITCH_WEIGHT: [i32; 11] = [50, 50, 100, 20, 50, 100, 100, 80, 100, 100, 30];
 const STAT_CAP: [i32; 11] = [100, 100, 130, 110, 100, 130, 100, 130, 130, 130, 100];
+const SPECIAL_BONUS: [i32; 11] = [30, 10, 100, 50, 20, 100, 100, 100, 100, 100, 100];
 
 pub const ANIM_IDLE: u16 = 0;
 pub const ANIM_PUSH_START: u16 = 1;
@@ -116,6 +117,66 @@ pub struct Pad {
     pub spin_right: bool,
 }
 
+const SPECIAL_FILL: i32 = 3000 << 12;
+const SPECIAL_FULL: i32 = 750 << 12;
+
+/// Special meter in Q12: landed points fill it until 3000 have gone in, a full meter then drains
+/// and tops up by a fifth of each landing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Special {
+    pub fill: i32,
+    pub meter: i32,
+}
+
+impl Special {
+    pub fn full(self) -> bool {
+        self.meter & !0xfff != 0
+    }
+
+    fn drain(&mut self, hold_delta: i32) {
+        for v in [&mut self.fill, &mut self.meter] {
+            if *v & !0xfff != 0 {
+                *v -= 2 * hold_delta;
+                if *v & !0xfff <= 0 {
+                    *v = 0;
+                }
+            }
+        }
+    }
+
+    fn land(&mut self, pending: i32) {
+        if self.full() {
+            let meter = self.meter + ((pending as u32 / 5) << 12) as i32;
+            self.meter = if meter & !0xfff > SPECIAL_FULL {
+                SPECIAL_FULL
+            } else {
+                meter
+            };
+            return;
+        }
+        self.fill += pending << 12;
+        if self.fill & !0xfff >= SPECIAL_FILL {
+            (self.fill, self.meter) = (0, SPECIAL_FULL);
+        }
+    }
+}
+
+/// How the skater rides for stat reads: switch stance, and the special meter full.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stance {
+    pub switched: bool,
+    pub special: bool,
+}
+
+impl From<bool> for Stance {
+    fn from(switched: bool) -> Self {
+        Self {
+            switched,
+            special: false,
+        }
+    }
+}
+
 /// Skater stat bytes in native order: air, hangtime, ollie, speed, spin, landing, switch, rail, lip, manual.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rules {
@@ -128,32 +189,39 @@ pub struct Rules {
 }
 
 impl Rules {
-    /// Stat as ten per point, multiplayer adds two plus the handicap and floors at 30, then the cap
-    /// and the switch scaling apply.
-    pub fn stat(self, index: usize, switched: bool) -> i32 {
-        let mut value = match self.handicap {
+    /// Stat as ten per point, multiplayer adds two plus the handicap and floors at 30, a full
+    /// special meter adds its bonus, then the cap and the switch scaling apply.
+    pub fn stat(self, index: usize, stance: impl Into<Stance>) -> i32 {
+        let stance = stance.into();
+        let base = match self.handicap {
             None => self.stats[index] * 10,
             Some(h) => ((self.stats[index] + 2 + h) * 10).max(0x1e),
-        }
-        .min(STAT_CAP[index]);
+        };
+        let bonus = if stance.special {
+            SPECIAL_BONUS[index] * 30 / 100
+        } else {
+            0
+        };
+        let mut value = (base + bonus).min(STAT_CAP[index]);
         if index == STAT_SWITCH {
             return value.min(100);
         }
-        if switched {
-            let switch = self.stat(STAT_SWITCH, switched);
+        if stance.switched {
+            let switch = self.stat(STAT_SWITCH, stance);
             value += SWITCH_WEIGHT[index] * ((switch + 100) * value * 0x32 / 10000 - value) / 100;
         }
         value
     }
 
     /// Big drop limit in units from the landing stat scaled base.
-    pub fn big_drop_limit(self, switched: bool) -> i32 {
-        BIG_DROP_BASE * (self.stat(STAT_LANDING, switched) * 0x46 + 10000) / 10000
+    pub fn big_drop_limit(self, stance: impl Into<Stance>) -> i32 {
+        BIG_DROP_BASE * (self.stat(STAT_LANDING, stance) * 0x46 + 10000) / 10000
     }
 
     /// Frames an ollie can charge, from the ollie and air stats.
-    pub fn max_charge(self, switched: bool) -> i32 {
-        0xf - (self.stat(STAT_OLLIE, switched) + self.stat(STAT_AIR, switched)) / 0x14
+    pub fn max_charge(self, stance: impl Into<Stance>) -> i32 {
+        let stance = stance.into();
+        0xf - (self.stat(STAT_OLLIE, stance) + self.stat(STAT_AIR, stance)) / 0x14
     }
 }
 
@@ -334,6 +402,9 @@ pub struct Skater {
     pub unjudged: bool,
     /// Frames of landing push left, each one about a unit along the velocity.
     pub boost: i32,
+    pub special: Special,
+    /// A trick or gap went on the stack since the last landing, so the landing feeds the meter.
+    pub trick_landed: bool,
     /// Trigger checksums the last sweep touched, they fire again only after a sweep without them.
     pub touching: Vec<u32>,
     /// Pulses left per command point node, set by the first run of its script.
@@ -592,11 +663,11 @@ fn stat_speed(stat: i32, bonus: i32) -> i32 {
 pub fn clamp_speed(
     mut v: V3,
     rules: Rules,
-    switched: bool,
+    stance: impl Into<Stance>,
     frame: FrameScale,
 ) -> Result<V3, String> {
     let mut speed = speed_of(v)?;
-    let speed_stat = rules.stat(STAT_SPEED, switched);
+    let speed_stat = rules.stat(STAT_SPEED, stance);
     let cap = stat_speed(speed_stat, 500);
     if speed > cap && speed & !0xfff != 0 {
         let shifted = speed >> 12;
@@ -691,6 +762,8 @@ impl Skater {
             style: Style::default(),
             unjudged: false,
             boost: 0,
+            special: Special::default(),
+            trick_landed: false,
             touching: Vec::new(),
             pulses: Vec::new(),
             grind: Grind::default(),
@@ -724,6 +797,13 @@ impl Skater {
             frame: DESIGN_FRAME,
             frame_start: position_fixed,
             last_start: position_fixed,
+        }
+    }
+
+    pub fn stance(&self) -> Stance {
+        Stance {
+            switched: self.switched,
+            special: self.special.full(),
         }
     }
 
@@ -841,7 +921,7 @@ impl Skater {
             self.charge = 0;
             return Ok(());
         }
-        self.charge = (self.charge + 1).min(rules.max_charge(self.switched));
+        self.charge = (self.charge + 1).min(rules.max_charge(self.stance()));
         if self.on_ground() {
             self.armed = true;
             if !self.crouching && self.turn.abs() < 0xa000 {
@@ -927,15 +1007,15 @@ impl Skater {
             return Err("vert ollie impulse unsupported".into());
         }
         let impulse = ollie_impulse(
-            rules.stat(STAT_OLLIE, self.switched),
-            rules.stat(STAT_AIR, self.switched),
+            rules.stat(STAT_OLLIE, self.stance()),
+            rules.stat(STAT_AIR, self.stance()),
             self.charge,
         );
         self.velocity[1] = self.velocity[1]
             .checked_add(impulse)
             .ok_or("ollie impulse overflow")?;
         self.ollies += 1;
-        if self.charge < rules.max_charge(self.switched) {
+        if self.charge < rules.max_charge(self.stance()) {
             self.short_ollies += 1;
         }
         self.spin_angle = 0;
@@ -997,6 +1077,7 @@ impl Skater {
             switched: self.switched,
             ..Entry::new(name, points, 0, 0)
         });
+        self.trick_landed = true;
     }
 
     /// Riding backwards turns the board round to fakie.
@@ -1193,7 +1274,7 @@ impl Skater {
     /// Spin rate from the turn rate, scaled by the spin stat and cut nine percent per half turn in
     /// the top trick's spin group, or per loose half turn with nothing stacked.
     fn spin_amount(&self, rules: Rules) -> i32 {
-        let stat = rules.stat(STAT_SPIN, self.switched);
+        let stat = rules.stat(STAT_SPIN, self.stance());
         let n = match self.panel.entries.len() {
             0 => self.spins,
             len => self.panel.spin_group(len - 1),
@@ -1296,8 +1377,13 @@ impl Skater {
                 switched: self.switched,
                 ..Entry::new("OLLIE", SPIN_OLLIE_POINTS * self.spins, 0, 0)
             });
+            self.trick_landed = true;
         }
         self.panel.commit(self.landed_style());
+        if self.trick_landed {
+            self.special.land(self.panel.pending);
+        }
+        self.trick_landed = false;
         (self.spin_angle, self.spins, self.combo) = (0, 0, false);
         Ok(())
     }
@@ -1448,14 +1534,16 @@ impl Skater {
                 self.grind_gap = Some(g.id);
                 continue;
             }
-            if self.state == State::Ground {
+            let rolling = self.state == State::Ground && self.manual == 0;
+            if rolling {
                 self.open_combo();
             }
             self.push_entry(Entry {
                 gap: Some(g.id),
                 ..Entry::new(gap.name, i32::from(gap.points), 0, 0)
             });
-            if self.on_ground() {
+            self.trick_landed = true;
+            if rolling {
                 self.commit_combo()?;
             }
         }
@@ -1486,7 +1574,7 @@ impl Skater {
     /// Air gravity for the frame from the state it starts in, cut by the hangtime stat on a lip.
     fn air_gravity(&self, rules: Rules) -> i32 {
         if self.state == State::Vert {
-            (500 - rules.stat(STAT_HANGTIME, self.switched)) * AIR_GRAVITY * 20 / 10000
+            (500 - rules.stat(STAT_HANGTIME, self.stance())) * AIR_GRAVITY * 20 / 10000
         } else {
             AIR_GRAVITY * self.gravity_percent / 100
         }
@@ -1505,6 +1593,7 @@ impl Skater {
         (self.combo, self.grind_gap) = (false, None);
         (self.spins, self.spin_angle) = (0, 0);
         self.panel.entries.clear();
+        (self.special, self.trick_landed) = (Special::default(), false);
         self.bailing = true;
         self.set_state(State::Air);
         let kind = if kind == 0 && speed_of(self.velocity)? < BAIL_SLOW_SPEED {
@@ -1623,6 +1712,7 @@ impl Skater {
             switched: self.switched,
             ..Entry::new(&self.trick_name, self.trick_points, 0, kind)
         });
+        self.trick_landed = true;
     }
 
     /// Frame a script wait targets, counted back from the end frame when negative.
@@ -1918,7 +2008,7 @@ impl Skater {
         bonus: i32,
     ) -> Result<(), String> {
         self.push_cooldown = PUSH_COOLDOWN;
-        self.push_target = stat_speed(rules.stat(STAT_SPEED, self.switched), bonus);
+        self.push_target = stat_speed(rules.stat(STAT_SPEED, self.stance()), bonus);
         self.run_anim(table, ANIM_PUSH_START, 0, -1, -1)?;
         self.anim.speed = PUSH_SPEED;
         Ok(())
@@ -2101,7 +2191,7 @@ impl Skater {
 
     /// The push target decays by one per frame and resets to the kick target while crouching.
     fn decay_push_target(&mut self, rules: Rules) {
-        let stat = rules.stat(STAT_SPEED, self.switched);
+        let stat = rules.stat(STAT_SPEED, self.stance());
         if self.crouching {
             self.push_target = stat_speed(stat, 0xdc);
         } else if stat_speed(stat, 0xaa) < self.push_target {
@@ -2171,7 +2261,7 @@ impl Skater {
     fn alignment_strength(&self, rules: Rules, extra: i32) -> Result<i32, String> {
         let g = self.slope_gravity;
         let magnitude = sqrt_int(dot_q12(g, g));
-        let limit = stat_speed(rules.stat(STAT_SPEED, self.switched), 0x186);
+        let limit = stat_speed(rules.stat(STAT_SPEED, self.stance()), 0x186);
         let speed = speed_of(self.velocity)?.min(limit);
         let pull = magnitude * 0xc80 / 13000 * magnitude * 0x40 / 13000;
         Ok((limit + extra * 0x1000 - speed) * pull / limit)
@@ -2427,7 +2517,7 @@ impl Skater {
     /// The frame's accel reaches the velocity only after the rail check and the trigger sweep.
     fn integrate(&mut self, rules: Rules, frame: FrameScale) -> Result<(), String> {
         self.velocity = add(self.velocity, frame_part(self.frame_accel, frame.scale)?)?;
-        self.velocity = clamp_speed(self.velocity, rules, self.switched, frame)?;
+        self.velocity = clamp_speed(self.velocity, rules, self.stance(), frame)?;
         Ok(())
     }
 }
@@ -2553,7 +2643,7 @@ pub fn ground_step(
     if let Some(contact) = contact {
         s.wall_branch(world, table, &contact, length, frame)?;
     }
-    s.fast = speed_of(s.velocity)? > stat_speed(rules.stat(STAT_SPEED, s.switched), 0x186);
+    s.fast = speed_of(s.velocity)? > stat_speed(rules.stat(STAT_SPEED, s.stance()), 0x186);
     let ignore_lips = s.state == State::Ground && (s.velocity[1] > 0 || s.forward[1] < 1);
     let start = add(s.position, scaled(s.up, 0x46)?)?;
     let end = add(start, scaled(s.up, -0x100)?)?;
@@ -2730,7 +2820,7 @@ fn landing_bails(level: &Level, s: &mut Skater, rules: Rules, normal: V3) -> Res
         }
     }
     let height = (s.clearance + s.fall) >> 12;
-    let base = rules.big_drop_limit(s.switched);
+    let base = rules.big_drop_limit(s.stance());
     let mut limit = base;
     if s.charge != 0 {
         limit += (0xb - s.charge) * 0x3c;
@@ -2885,6 +2975,7 @@ pub fn step(
     let table = level.table;
     s.panel.count_up();
     s.gravity = s.air_gravity(rules);
+    s.special.drain(frame.hold_delta);
     s.track_up_hold(pad, frame);
     s.now += 1;
     s.frame_time = frame.time;

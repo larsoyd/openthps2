@@ -86,6 +86,8 @@ const UP_SECOND_WINDOW: i32 = 35;
 const BONELESS_POP: i32 = 0x5000;
 const BONELESS_POINTS: i32 = 250;
 const NO_COMPLY_POINTS: i32 = 200;
+const WALLIE_POINTS: i32 = 200;
+const WALLIE_POP: i32 = 0xf000;
 /// An animation during which riding backwards does not turn the board round.
 const ANIM_NO_FAKIE: u16 = 0x22;
 const CROUCH_END: i32 = 0x1a;
@@ -107,6 +109,8 @@ const UNLIMITED_PULSES: u16 = 0xffff;
 const PULSE_DEPTH: u32 = 8;
 // moving objects are not part of the rewrite world, so pulsing or killing them changes nothing
 const MOVING_OBJECT: i16 = 1;
+/// The other node kind a signal reaches besides moving objects.
+const SIGNALLED_OBJECT: i16 = 7;
 
 /// Digital pad state for one frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1030,9 +1034,6 @@ impl Skater {
     }
 
     fn ollie(&mut self, table: &AnimationTable, rules: Rules) -> Result<(), String> {
-        if self.state == State::Wall {
-            return Err("wallie unsupported".into());
-        }
         if self.manual != 0 {
             if self.ollie_script.is_some() {
                 return Err("ollie out of a manual into a queued move unsupported".into());
@@ -1044,6 +1045,10 @@ impl Skater {
         self.jumped = true;
         self.vert_jump = self.vert;
         self.pop_speed = speed_of(self.velocity)?;
+        let wallie = self.state == State::Wall;
+        if wallie {
+            self.wallie(rules)?;
+        }
         let (ollie, air) = (
             rules.stat(STAT_OLLIE, self.stance()),
             rules.stat(STAT_AIR, self.stance()),
@@ -1075,7 +1080,7 @@ impl Skater {
         }
         self.open_combo();
         self.landing_timer = LANDING_TIMER;
-        let ups = if self.manual == 0 {
+        let ups = if self.manual == 0 && !wallie {
             self.up_presses()
         } else {
             0
@@ -1097,6 +1102,19 @@ impl Skater {
                 Ok(())
             }
         }
+    }
+
+    /// Popping off a wall scores, takes the full charge and kicks away from the face.
+    fn wallie(&mut self, rules: Rules) -> Result<(), String> {
+        self.push_entry(Entry {
+            trick: true,
+            switched: self.switched,
+            ..Entry::new("WALLIE", WALLIE_POINTS, 0, 1)
+        });
+        self.charge = rules.max_charge(self.stance());
+        self.accel = add(self.accel, self.ground_normal.map(|c| c * 2))?;
+        self.velocity[1] -= WALLIE_POP;
+        Ok(())
     }
 
     /// A fast pop high up a steep face goes up to 2.4 times as far.
@@ -1568,6 +1586,15 @@ impl Skater {
                             "command point node={node} kills node={link} kind={}",
                             triggers.kind(link)
                         ));
+                    }
+                }
+                Command::Signal => {
+                    if let Some(link) = triggers
+                        .links(node)
+                        .into_iter()
+                        .find(|&l| triggers.kind(l) == SIGNALLED_OBJECT)
+                    {
+                        return Err(format!("command point node={node} signals node={link}"));
                     }
                 }
                 Command::Regions => {}

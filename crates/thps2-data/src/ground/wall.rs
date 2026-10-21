@@ -57,6 +57,13 @@ impl Skater {
         self.set_anim(table, id)
     }
 
+    fn land_from_wall(&mut self, n: V3) {
+        self.set_state(State::Ground);
+        self.fit_basis(n);
+        (self.last_normal, self.smoothed_up, self.same_normal_time) = (n, n, 0);
+        self.velocity = project_onto_plane(self.velocity, n);
+    }
+
     /// Forward along the face, up out of it.
     fn fit_basis(&mut self, n: V3) {
         self.forward = normalize(project_onto_plane(self.forward, n));
@@ -126,10 +133,10 @@ pub fn wall_step(
     {
         s.snap_to(world, &hit, frame)?;
         if hit.flags & 0x1000000 == 0 {
-            return Err(format!(
-                "wall floor exit unsupported item={} face={}",
-                hit.item_index, hit.face_index
-            ));
+            s.commit_combo()?;
+            s.land_from_wall(hit.normal.map(i32::from));
+            s.set_anim(level.table, ANIM_LAND)?;
+            s.jumped = false;
         }
     }
     let start = add(s.position, scaled(s.up, 70)?)?;
@@ -154,10 +161,7 @@ pub fn wall_step(
         s.vert = hit.flags & VERT_FACE != 0;
         s.snap_to(world, &hit, frame)?;
         if hit.flags & 0x1000000 == 0 {
-            s.set_state(State::Ground);
-            s.fit_basis(n);
-            (s.last_normal, s.smoothed_up, s.same_normal_time) = (n, n, 0);
-            s.velocity = project_onto_plane(s.velocity, n);
+            s.land_from_wall(n);
         } else if n[1] > OVERHANG {
             return Err(format!(
                 "wall overhang exit unsupported item={} face={}",

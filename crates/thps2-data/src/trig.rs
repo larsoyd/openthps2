@@ -41,6 +41,8 @@ pub enum Command {
     Regions,
     /// Kills the objects, skaters or rails the node links to.
     Kill,
+    /// Signals the moving objects the node links to.
+    Signal,
 }
 
 const COMMAND_POINT: i16 = 6;
@@ -109,6 +111,7 @@ impl Triggers {
                 }
                 0x03 => commands.push(Command::SendPulse),
                 0x0c => commands.push(Command::Kill),
+                0x0a => commands.push(Command::Signal),
                 0x8d => {
                     at += 4;
                     while half(at)? != 0xff {

@@ -144,6 +144,7 @@ impl Skater {
         frame: FrameScale,
         pad: Pad,
     ) -> Result<(), String> {
+        self.grind_time = self.now;
         let rails = level.rails;
         let mut accel = [0; 3];
         self.count_rail_points();

@@ -54,18 +54,43 @@ impl Light {
     }
 }
 
-/// The matrix the skater is drawn with: the physics basis tilted by the manual balance, its up
-/// column turned over.
-pub fn object_matrix(basis: [i32; 9], balance: i32) -> [i16; 9] {
-    let mut m = basis.map(|v| v as i16);
-    if balance != 0 {
-        let a = ((balance / 10) * 80 / 100) & 0xfff;
-        m = mvmva(&m, &crate::pose::euler([a as i16, 0, 0]));
+/// The physics basis tilted by the manual balance, as the skater is drawn.
+pub fn tilted_basis(basis: [i32; 9], balance: i32) -> [i16; 9] {
+    let m = basis.map(|v| v as i16);
+    if balance == 0 {
+        return m;
     }
+    let a = ((balance / 10) * 80 / 100) & 0xfff;
+    mvmva(&m, &crate::pose::euler([a as i16, 0, 0]))
+}
+
+/// The drawing matrix of a basis: its up column turned over.
+pub fn object_matrix(basis: [i16; 9]) -> [i16; 9] {
+    let mut m = basis;
     for k in [1, 4, 7] {
         m[k] = m[k].wrapping_neg();
     }
     m
+}
+
+/// The basis pressed flat onto the ground plane: every height comes from the plane through the
+/// ground point instead. A level normal without height counts as one unit.
+pub fn shadow_matrix(basis: [i16; 9], normal: [i16; 3]) -> [i16; 9] {
+    let ny = if normal[1] == 0 {
+        1
+    } else {
+        i32::from(normal[1])
+    };
+    let a = ((-i32::from(normal[0]) << 12) / ny) as i16;
+    let b = ((-i32::from(normal[2]) << 12) / ny) as i16;
+    object_matrix(mvmva(&[4096, 0, 0, a, 0, b, 0, 0, 4096], &basis))
+}
+
+/// The grey the shadow draws in, darker the brighter the ground light.
+pub fn shadow_colour(brightness: i32) -> u32 {
+    let f = (f64::from(brightness) * f64::from(1.0f32 / 255.0)).clamp(0.0, 1.0);
+    let v = ((1.0 - f) as f32 * 10.2f32) as u32;
+    0xff00_0000 | (v * 0x0001_0101)
 }
 
 /// Part names of a model header file, as the defines list them, without the skater prefix.
@@ -210,6 +235,8 @@ pub struct Placement<'a> {
     pub light: Light,
     pub mirrored: bool,
     pub hidden: u32,
+    /// The shadow pass: one flat colour, no light and no textures.
+    pub shadow: Option<u32>,
 }
 
 impl View {
@@ -288,7 +315,16 @@ impl View {
                 projected.push(p);
             }
             let mut lights = Vec::with_capacity(model.normals_raw.len());
-            for (k, raw) in model.normals_raw.iter().enumerate() {
+            for (k, raw) in model
+                .normals_raw
+                .iter()
+                .enumerate()
+                .take(if place.shadow.is_some() {
+                    0
+                } else {
+                    usize::MAX
+                })
+            {
                 let normal = [0, 2, 4].map(|at| i16::from_le_bytes([raw[at], raw[at + 1]]));
                 let flags = model.vertices.get(k).map_or(0, |v| v.flags);
                 let value = match flags {
@@ -308,9 +344,11 @@ impl View {
                 bias: 0.0,
                 figure: true,
                 mirrored,
+                flat: place.shadow,
             };
+            let invisible = u16::from_le_bytes([model.header[0], model.header[1]]) & 0x20 != 0;
             // a hidden part still hands its vertices and lights on, it only draws no faces
-            if hidden >> part & 1 != 0 {
+            if hidden >> part & 1 != 0 || (place.shadow.is_some() && invisible) {
                 continue;
             }
             for (fi, face) in model.faces.iter().enumerate() {

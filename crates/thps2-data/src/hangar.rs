@@ -2,7 +2,10 @@ use crate::{
     anim::AnimationTable,
     camera::{Camera, Moment, Tripod},
     collision::CollisionWorld,
-    figure::{Figure, HANGAR_LIGHT, HANGAR_LIGHT_SCALE, Placement, Shared, object_matrix},
+    figure::{
+        Figure, HANGAR_LIGHT, HANGAR_LIGHT_SCALE, Placement, Shared, object_matrix, shadow_colour,
+        shadow_matrix, tilted_basis,
+    },
     fixes::Fixes,
     font::Font,
     ground::{Level, Outcome, Pad, Rules, Run, TONY_HAWK_STATS},
@@ -383,9 +386,10 @@ impl Session {
         })?;
         let pose = hangar.figure.rig.pose(frame);
         let view = View::new(self.camera.eye, &self.camera.matrix, HANGAR_VIEWPORT);
+        let basis = tilted_basis(s.basis_matrix(), s.balance.angle);
         let place = Placement {
             pose: &pose,
-            orientation: object_matrix(s.basis_matrix(), s.balance.angle),
+            orientation: object_matrix(basis),
             position: s.position,
             light: HANGAR_LIGHT.scaled(HANGAR_LIGHT_SCALE, s.brightness),
             mirrored: s.switched,
@@ -394,8 +398,18 @@ impl Session {
             } else {
                 0
             },
+            shadow: None,
         };
         let mut polys = view.figure(&hangar.figure, &place, &mut self.shared)?;
+        if s.shadow {
+            let shadow = Placement {
+                orientation: shadow_matrix(basis, s.shadow_normal),
+                position: s.shadow_point,
+                shadow: Some(shadow_colour(s.brightness)),
+                ..place
+            };
+            polys.extend(view.figure(&hangar.figure, &shadow, &mut self.shared)?);
+        }
         for p in &mut polys {
             p.texture = p.texture.map(|t| t + hangar.figure_textures as u32);
         }

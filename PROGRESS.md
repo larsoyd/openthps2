@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 250 (5.3%) | 170,049 (17.7%) |
-| Recovered | 215 (4.6%) | 83,858 (8.7%) |
-| Open | 4255 | 705,832 |
+| Implemented | 252 (5.3%) | 170,965 (17.8%) |
+| Recovered | 214 (4.5%) | 83,442 (8.7%) |
+| Open | 4254 | 705,332 |
 
-`████░░░░░░░░░░░░░░░░` 17.7% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 17.8% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 88 | 99 | `█░░░░░░░░░` 9% |
+| unattributed | 2977 | 354,046 | 89 | 98 | `█░░░░░░░░░` 10% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -41,7 +41,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | EquipSel.cpp | 44 | 8,492 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickwin.cpp | 17 | 8,388 | 0 | 0 | `░░░░░░░░░░` 0% |
 | camera.cpp | 22 | 8,285 | 3 | 0 | `███████░░░` 74% |
-| m3d.cpp | 16 | 7,875 | 7 | 0 | `███████░░░` 66% |
+| m3d.cpp | 16 | 7,875 | 8 | 0 | `███████░░░` 73% |
 | camera.h | 1 | 7,297 | 1 | 0 | `██████████` 100% |
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -170,7 +170,8 @@ Implemented routines and the Rust module that holds them.
 | 00457420 | 244 | Image.cpp | sprite.rs |
 | 0045e8e0 | 1690 | unattributed | render.rs |
 | 0045f530 | 4024 | unattributed | render.rs |
-| 004604f0 | 1429 | m3d.cpp | draw.rs |
+| 004604f0 | 1429 | m3d.cpp | figure.rs |
+| 00460a90 | 500 | m3d.cpp | figure.rs |
 | 00460ca0 | 1092 | m3d.cpp | draw.rs |
 | 004610f0 | 2388 | m3d.cpp | draw.rs |
 | 00461a90 | 50 | m3d.cpp | projection.rs |
@@ -201,6 +202,7 @@ Implemented routines and the Rust module that holds them.
 | 0046d1d0 | 77 | unattributed | collision.rs |
 | 0046d220 | 189 | unattributed | collision.rs |
 | 0046d2e0 | 938 | unattributed | collision.rs |
+| 0046d7a0 | 416 | unattributed | ground.rs |
 | 0046d970 | 252 | unattributed | ground.rs |
 | 0047b400 | 730 | mmu.cpp | rec.rs |
 | 004801d0 | 31 | ob.cpp | ground.rs |
@@ -442,7 +444,6 @@ Implemented routines and the Rust module that holds them.
 | 0046c720 | 1212 | mech.cpp |
 | 0046d040 | 285 | unattributed |
 | 0046d6e0 | 58 | unattributed |
-| 0046d7a0 | 416 | unattributed |
 | 0046dd20 | 61 | unattributed |
 | 0046e080 | 333 | unattributed |
 | 0046e1d0 | 106 | unattributed |

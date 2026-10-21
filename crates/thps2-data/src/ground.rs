@@ -26,6 +26,7 @@ pub const BOUNCE_REACH: i32 = 10;
 const BOUNCE_REACH_BAILING: i32 = 70;
 pub const HEAD_REACH: i32 = 0x3c;
 pub const UNSTICK_SPAN: i32 = 8000;
+const SHADOW_REACH: i32 = 4000;
 pub const NORMAL_HOLD_LIMIT: i32 = 0x18000;
 pub const FAKIE_DOT: i32 = 0x5000;
 pub const BIG_DROP_BASE: i32 = 0x3c3;
@@ -460,6 +461,15 @@ pub struct Skater {
     pub brightness_target: i32,
     /// A bail script took the board off the skater, it comes back when the bail ends.
     pub board_hidden: bool,
+    /// Where the frame's probe down met the ground and that face's normal, for the shadow.
+    pub shadow_point: [i32; 3],
+    pub shadow_normal: [i16; 3],
+    /// The shadow found steep enough ground under the skater after the frame.
+    pub shadow: bool,
+    /// Frame counter value of the last grind frame, the air shadow waits a little after a rail.
+    pub grind_time: i32,
+    /// Height the shadow was last probed from, small moves on the ground only slide it along.
+    pub shadow_from: i32,
     /// Pulses left per command point node, set by the first run of its script.
     pub pulses: Vec<(usize, u16)>,
     pub grind: Grind,
@@ -834,6 +844,11 @@ impl Skater {
             brightness: 0,
             brightness_target: 0,
             board_hidden: false,
+            shadow_point: [0; 3],
+            shadow_normal: [0; 3],
+            shadow: false,
+            grind_time: 0,
+            shadow_from: 0,
             jump_block: 0,
             pulses: Vec::new(),
             grind: Grind::default(),
@@ -2736,6 +2751,35 @@ impl Skater {
         Ok(())
     }
 
+    /// The ground under the skater for the shadow, kept only on ground steep enough for the state:
+    /// a flat floor everywhere, a little less flat in the air unless the slope just changed a lot.
+    fn probe_shadow(&mut self, world: &CollisionWorld) -> Result<(), String> {
+        if self.state == State::Ground && (self.position[1] - self.shadow_from).abs() <= 0x40 {
+            (self.shadow_point[0], self.shadow_point[2]) = (self.position[0], self.position[2]);
+            return Ok(());
+        }
+        self.shadow_from = self.position[1];
+        let below = add(self.position, [0, SHADOW_REACH * 4096, 0])?;
+        let hit = world.query_filtered(self.position, below, false)?;
+        let threshold = |ny: i16| match self.state {
+            State::Air if (ny - self.shadow_normal[1]).abs() <= 1000 => -1500,
+            State::Air => -4096,
+            State::Vert => -500,
+            _ => -1000,
+        };
+        let recent_rail = self.state == State::Air && self.now - self.grind_time <= 6;
+        self.shadow = false;
+        if let Some(hit) = hit
+            && i32::from(hit.normal[1]) < threshold(hit.normal[1])
+            && self.state != State::Grind
+            && !recent_rail
+        {
+            (self.shadow_point, self.shadow_normal) = (hit.position_fixed, hit.normal);
+            self.shadow = true;
+        }
+        Ok(())
+    }
+
     /// The light eases forty steps a frame toward twice the ground brightness, kept up on a vert.
     fn follow_light(&mut self, shade: i32) {
         let mut target = shade * 2;
@@ -3311,6 +3355,7 @@ impl Run {
         };
         let frame = self.clock.current();
         let outcome = step(&live, &mut self.skater, rules, frame, pad)?;
+        self.skater.probe_shadow(live.world)?;
         self.clock.end_frame(self.vb);
         self.apply_world_events(level)?;
         for object in &mut self.objects {

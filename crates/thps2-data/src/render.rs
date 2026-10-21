@@ -73,6 +73,8 @@ pub(crate) struct Faces<'a> {
     pub figure: bool,
     /// A mirrored model keeps the faces the others drop.
     pub mirrored: bool,
+    /// One colour for every corner of untextured faces, as the shadow draws.
+    pub flat: Option<u32>,
 }
 
 /// One polygon record as the 3D pass queues it, in its ordering table slot.
@@ -318,6 +320,7 @@ impl View {
                 bias: (level.bias)(item.model_index as usize) as f32,
                 figure: false,
                 mirrored: false,
+                flat: None,
             };
             for (fi, face) in model.faces.iter().enumerate() {
                 let at = polys.len();
@@ -346,6 +349,7 @@ impl View {
         } else {
             source ^ 0x80
         };
+        let f = if ctx.flat.is_some() { f & !1 } else { f };
         if f & 0xc0 == 0 {
             return Ok(());
         }
@@ -366,6 +370,9 @@ impl View {
                 .ok_or_else(|| format!("light={at} lights={}", lights.len()))
         };
         let colour = |k: usize| -> Result<u32, String> {
+            if let Some(c) = ctx.flat {
+                return Ok(c);
+            }
             let mut c = if f & 0x800 != 0 {
                 let e = colours
                     .get(raw[8 + k] as usize * 4..)

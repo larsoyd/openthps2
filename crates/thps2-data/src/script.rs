@@ -40,6 +40,11 @@ impl TrickScripts {
         self.offset(table + index * 2)
     }
 
+    /// Header word i, a table offset from the start of the file.
+    pub fn header(&self, i: usize) -> Result<usize, String> {
+        self.offset(i * 2)
+    }
+
     pub fn byte(&self, at: usize) -> Option<u8> {
         self.data.get(at).copied()
     }

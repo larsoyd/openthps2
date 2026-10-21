@@ -4,16 +4,18 @@ use crate::{
     collision::CollisionWorld,
     font::Font,
     ground::{Level, Outcome, Pad, Rules, Run, TONY_HAWK_STATS},
-    hud::{self, EndScreens},
+    hud::{self, EndScreens, FontId, ImageId, Overlay},
     input::KeyTable,
     materials::{TONY_HAWK_LOGOS, apply_logos, resolve_textures},
     pkr::Archive,
+    pre::Pre,
     psx::Scene,
     rail::Rails,
     raster::{BLEND_ZERO, DrawState, Raster, Texture},
     render::{self, HANGAR_VIEWPORT, TextureInfo, View},
     script::TrickScripts,
-    text::{Prim, ScreenQuad, gamma_table},
+    sprite::Sprite,
+    text::{ScreenQuad, gamma_table},
     trig::Triggers,
 };
 
@@ -45,6 +47,9 @@ pub struct Hangar {
     mess_font: Font,
     time_glyphs: Vec<Texture>,
     mess_glyphs: Vec<Texture>,
+    score_font: Font,
+    score_glyphs: Vec<Texture>,
+    sprites: Vec<(ImageId, Sprite)>,
 }
 
 fn glyphs(font: &Font) -> Vec<Texture> {
@@ -69,6 +74,20 @@ impl Hangar {
         let triggers = Triggers::parse(read("data/SKHAN_T.TRG")?)?;
         let time_font = Font::parse(read("data/TIME.FNT")?)?;
         let mess_font = Font::parse(read("data/INGAME1.FNT")?)?;
+        let score_font = Font::parse(read("data/SCORE.FNT")?)?;
+        let panel = Pre::parse(read("data/PANEL.PRE")?)?;
+        let sprites = ImageId::ALL
+            .iter()
+            .map(|&(id, name)| {
+                let bytes = panel
+                    .get(name)
+                    .ok_or_else(|| format!("[panel] missing={name}"))?;
+                Ok((
+                    id,
+                    Sprite::from_bmp(bytes).map_err(|e| format!("[panel] image={name} {e}"))?,
+                ))
+            })
+            .collect::<Result<_, String>>()?;
         let scripts = TrickScripts::parse(read("data/TRICKS.BIN")?.to_vec())?;
         Ok(Self {
             world: CollisionWorld::from_scene(&scene)?,
@@ -96,6 +115,9 @@ impl Hangar {
             mess_glyphs: glyphs(&mess_font),
             time_font,
             mess_font,
+            score_glyphs: glyphs(&score_font),
+            score_font,
+            sprites,
             scene,
             triggers,
             scripts,
@@ -119,7 +141,7 @@ pub struct Session {
     pub run: Run,
     pub camera: Camera,
     screens: EndScreens,
-    overlay: Vec<(Prim, bool)>,
+    overlay: Vec<Overlay>,
 }
 
 impl Session {
@@ -156,20 +178,13 @@ impl Session {
         };
         let world = self.run.world.as_ref().unwrap_or(level.world);
         self.camera.update(&Tripod::of(s), world, moment)?;
-        let clock = hud::clock(
-            &hangar.time_font,
-            &s.session,
-            self.run.clock.current().time,
-            self.run.vb,
-        )?;
+        let time = self.run.clock.current().time;
+        self.overlay = hud::panels(&hangar.time_font, &hangar.score_font, s, time, self.run.vb)?;
         let screens = self
             .screens
             .pass(&hangar.mess_font, &self.run, HIGH_SCORE)?;
-        self.overlay = clock
-            .into_iter()
-            .map(|p| (p, true))
-            .chain(screens.into_iter().map(|p| (p, false)))
-            .collect();
+        self.overlay
+            .extend(screens.into_iter().map(|p| Overlay::Glyph(FontId::Mess, p)));
         Ok(())
     }
 
@@ -200,19 +215,72 @@ impl Session {
                 vertices: d.vertices,
             })
             .collect();
-        for (prim, clock) in self.overlay.iter().rev() {
-            let (font, glyphs) = if *clock {
-                (&hangar.time_font, &hangar.time_glyphs)
-            } else {
-                (&hangar.mess_font, &hangar.mess_glyphs)
-            };
-            let texture = &glyphs[prim.glyph as usize];
-            let size = [HANGAR_VIEWPORT.width as u32, HANGAR_VIEWPORT.height as u32];
-            let quad = ScreenQuad::new(prim, font, size, &gamma);
-            draws.push(FrameDraw {
-                vertices: quad.vertices([texture.width, texture.height]).to_vec(),
-                state: overlay_state(prim.shadow),
-                texture: Some(texture),
+        let size = [HANGAR_VIEWPORT.width as u32, HANGAR_VIEWPORT.height as u32];
+        for overlay in self.overlay.iter().rev() {
+            draws.push(match *overlay {
+                Overlay::Glyph(id, prim) => {
+                    let (font, glyphs) = match id {
+                        FontId::Time => (&hangar.time_font, &hangar.time_glyphs),
+                        FontId::Score => (&hangar.score_font, &hangar.score_glyphs),
+                        FontId::Mess => (&hangar.mess_font, &hangar.mess_glyphs),
+                    };
+                    let texture = &glyphs[prim.glyph as usize];
+                    let quad = ScreenQuad::new(&prim, font, size, &gamma);
+                    FrameDraw {
+                        vertices: quad.vertices([texture.width, texture.height]).to_vec(),
+                        state: overlay_state(prim.shadow),
+                        texture: Some(texture),
+                    }
+                }
+                Overlay::Image {
+                    image,
+                    at: [x, y],
+                    raw,
+                } => {
+                    let sprite = &hangar
+                        .sprites
+                        .iter()
+                        .find(|(id, _)| *id == image)
+                        .ok_or("[panel] image not loaded")?
+                        .1;
+                    let (w, h) = (i32::from(sprite.width), i32::from(sprite.height));
+                    let level = if raw { 0xff } else { u32::from(gamma[0x80]) };
+                    let diffuse = 0xff00_0000 | (level * 0x0001_0101);
+                    let uv = [(w - 1) as u8, (h - 1) as u8];
+                    let quad = ScreenQuad::rect([x, y, x + w, y + h], uv, diffuse, size);
+                    FrameDraw {
+                        vertices: quad.vertices(sprite.logical).to_vec(),
+                        state: overlay_state(false),
+                        texture: Some(&sprite.texture),
+                    }
+                }
+                Overlay::Bar {
+                    at: [x, y],
+                    len,
+                    height,
+                    left,
+                    right,
+                } => {
+                    let colour = |c: [u8; 3]| {
+                        0xff00_0000
+                            | c.iter()
+                                .fold(0, |a, &k| a << 8 | u32::from(gamma[k as usize]))
+                    };
+                    let quad = ScreenQuad::rect([x, y, x + len, y + height], [0, 0], 0, size);
+                    let mut vertices = quad.vertices([1, 1]);
+                    for (v, c) in vertices.iter_mut().zip([left, right, right, left]) {
+                        (v.diffuse, v.uv) = (colour(c), [0.0; 2]);
+                    }
+                    FrameDraw {
+                        vertices: vertices.to_vec(),
+                        state: DrawState {
+                            colour_op: 3,
+                            alpha_op: 3,
+                            ..overlay_state(false)
+                        },
+                        texture: None,
+                    }
+                }
             });
         }
         Ok(draws)

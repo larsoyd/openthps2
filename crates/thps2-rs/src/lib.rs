@@ -5,9 +5,9 @@ use thps2_data::draw::{DrawFace, FaceOverride, PreparedVertex, prepare_face, pre
 use thps2_data::materials::{Surface1555, Texture, TextureSource, resolve_textures};
 use thps2_data::pkr::Archive;
 use thps2_data::psx::Scene;
+pub mod play;
 #[cfg(feature = "viewer")]
 pub mod renderer;
-pub mod play;
 pub mod spawn;
 pub mod view;
 use spawn::{

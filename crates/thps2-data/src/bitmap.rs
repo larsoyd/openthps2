@@ -4,6 +4,8 @@ pub struct Bitmap {
     pub height: u16,
     // Top-to-bottom RGB bytes, before native surface quantization.
     pub rgb: Vec<u8>,
+    /// RGB palette of an 8-bit bitmap, empty for 24-bit ones.
+    pub palette: Vec<[u8; 3]>,
 }
 
 impl Bitmap {
@@ -74,6 +76,12 @@ impl Bitmap {
             width: width as u16,
             height: height as u16,
             rgb,
+            palette: palette
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| [c[2], c[1], c[0]])
+                .collect(),
         })
     }
 }

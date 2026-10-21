@@ -1,6 +1,6 @@
 use crate::{
     font::Font,
-    ground::{Run, Session},
+    ground::{Run, Session, Skater},
     text::{CharMap, Prim, Text},
 };
 
@@ -208,4 +208,127 @@ impl EndScreens {
         }
         Ok(prims)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FontId {
+    Time,
+    Score,
+    Mess,
+}
+
+/// Panel images of PANEL.PRE.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageId {
+    Score,
+    Special,
+    Switch,
+}
+
+impl ImageId {
+    pub const ALL: [(Self, &'static str); 3] = [
+        (Self::Score, "scorep.bmp"),
+        (Self::Special, "spec_bar.bmp"),
+        (Self::Switch, "s2switch.bmp"),
+    ];
+}
+
+/// One overlay primitive in submission order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Overlay {
+    Glyph(FontId, Prim),
+    /// An image at its top left corner, raw images skip the colour modulation.
+    Image {
+        image: ImageId,
+        at: [i32; 2],
+        raw: bool,
+    },
+    /// A horizontal gradient strip, left colour at x and right colour len pixels along.
+    Bar {
+        at: [i32; 2],
+        len: i32,
+        height: i32,
+        left: [u8; 3],
+        right: [u8; 3],
+    },
+}
+
+const SCORE_AT: [i32; 2] = [25, 45];
+const STANCE_AT: [i32; 2] = [430, 5];
+
+pub const SCORE: Text = Text {
+    hjust: 2,
+    vjust: 3,
+    spacing: 4,
+    colour: [0x80, 0x80, 0x80],
+    shadow: Some([2, 2]),
+    fixed_pitch: false,
+    scale: 0x1000,
+    map: CharMap::Digits,
+};
+
+/// The special meter: the fill while charging, a flashing bar while the special is on.
+fn meter(skater: &Skater, vb: i32) -> Option<Overlay> {
+    let (fill, special) = (skater.special.fill, skater.special.meter);
+    let at = [SCORE_AT[0] - 1, SCORE_AT[1] + 10];
+    if special >= 0x1000 {
+        let c = ((vb as u32 % 40) * 6) as u8;
+        let len = (special >> 12) * 120 / 750;
+        return Some(Overlay::Bar {
+            at,
+            len,
+            height: 3,
+            left: [c, c, 0x32],
+            right: [c, c, 0x32],
+        });
+    }
+    (fill >= 0x1000).then(|| Overlay::Bar {
+        at,
+        len: (fill >> 12) * 120 / 3000,
+        height: 3,
+        left: [0, 0x96, 0x32],
+        right: [0, 0x96, 0],
+    })
+}
+
+/// The single player panels in submission order: stance icon, clock, then the score panel with
+/// its meter, labels and digits. Nothing is drawn while the end screens pause the game.
+pub fn panels(
+    time_font: &Font,
+    score_font: &Font,
+    skater: &Skater,
+    time: i32,
+    vb: i32,
+) -> Result<Vec<Overlay>, String> {
+    let mut out = Vec::new();
+    if skater.session.ended {
+        return Ok(out);
+    }
+    if skater.switch_bonus {
+        out.push(Overlay::Image {
+            image: ImageId::Switch,
+            at: STANCE_AT,
+            raw: true,
+        });
+    }
+    out.extend(
+        clock(time_font, &skater.session, time, vb)?
+            .into_iter()
+            .map(|p| Overlay::Glyph(FontId::Time, p)),
+    );
+    out.extend(meter(skater, vb));
+    let [x, y] = SCORE_AT;
+    out.push(Overlay::Image {
+        image: ImageId::Score,
+        at: [x, y - 20],
+        raw: false,
+    });
+    out.push(Overlay::Image {
+        image: ImageId::Special,
+        at: [x - 4, y],
+        raw: false,
+    });
+    let digits = SCORE.draw(score_font, x + 125, y - 4, &skater.panel.score.to_string())?;
+    out.extend(digits.into_iter().map(|p| Overlay::Glyph(FontId::Score, p)));
+    Ok(out)
 }

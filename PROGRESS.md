@@ -8,11 +8,11 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 218 (4.6%) | 155,999 (16.3%) |
-| Recovered | 221 (4.7%) | 87,711 (9.1%) |
-| Open | 4281 | 716,029 |
+| Implemented | 223 (4.7%) | 160,571 (16.7%) |
+| Recovered | 219 (4.6%) | 85,219 (8.9%) |
+| Open | 4278 | 713,949 |
 
-`███░░░░░░░░░░░░░░░░░` 16.3% implemented by bytes
+`███░░░░░░░░░░░░░░░░░` 16.7% implemented by bytes
 
 ## By original source file
 
@@ -28,7 +28,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
 | create.cpp | 54 | 18,174 | 0 | 0 | `░░░░░░░░░░` 0% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
-| panel.cpp | 37 | 14,181 | 8 | 5 | `██░░░░░░░░` 20% |
+| panel.cpp | 37 | 14,181 | 11 | 3 | `████░░░░░░` 40% |
 | career.cpp | 81 | 13,988 | 0 | 5 | `░░░░░░░░░░` 0% |
 | trig.cpp | 30 | 13,716 | 10 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
@@ -37,7 +37,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | competition.cpp | 30 | 10,871 | 0 | 2 | `░░░░░░░░░░` 0% |
 | playsel.cpp | 37 | 10,008 | 0 | 0 | `░░░░░░░░░░` 0% |
 | video.cpp | 28 | 10,005 | 4 | 14 | `██░░░░░░░░` 23% |
-| d3dtex.cpp | 20 | 9,174 | 7 | 0 | `████░░░░░░` 41% |
+| d3dtex.cpp | 20 | 9,174 | 8 | 0 | `██████░░░░` 57% |
 | EquipSel.cpp | 44 | 8,492 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickwin.cpp | 17 | 8,388 | 0 | 0 | `░░░░░░░░░░` 0% |
 | camera.cpp | 22 | 8,285 | 3 | 0 | `███████░░░` 74% |
@@ -57,7 +57,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | create_stitch.cpp | 15 | 4,319 | 0 | 0 | `░░░░░░░░░░` 0% |
 | ob.cpp | 29 | 4,297 | 3 | 3 | `███░░░░░░░` 25% |
 | soundlib.cpp | 14 | 4,264 | 0 | 0 | `░░░░░░░░░░` 0% |
-| Image.cpp | 32 | 4,213 | 1 | 0 | `█░░░░░░░░░` 15% |
+| Image.cpp | 32 | 4,213 | 2 | 0 | `██░░░░░░░░` 21% |
 | powerup.cpp | 14 | 4,208 | 0 | 0 | `░░░░░░░░░░` 0% |
 | statwin.cpp | 13 | 4,153 | 0 | 0 | `░░░░░░░░░░` 0% |
 | FontTools.cpp | 20 | 4,086 | 4 | 1 | `█████░░░░░` 49% |
@@ -161,6 +161,7 @@ Implemented routines and the Rust module that holds them.
 | 0044ca60 | 4737 | front.cpp | hud.rs |
 | 0044e3f0 | 41 | front.cpp | hud.rs |
 | 00457160 | 628 | Image.cpp | text.rs |
+| 00457420 | 244 | Image.cpp | sprite.rs |
 | 0045e8e0 | 1690 | unattributed | render.rs |
 | 0045f530 | 4024 | unattributed | render.rs |
 | 004604f0 | 1429 | m3d.cpp | draw.rs |
@@ -193,11 +194,14 @@ Implemented routines and the Rust module that holds them.
 | 00480730 | 340 | ob.cpp | anim.rs |
 | 00480950 | 709 | ob.cpp | anim.rs |
 | 0048a7e0 | 749 | pal.cpp | materials.rs |
-| 0048bef0 | 447 | panel.cpp | ground.rs |
+| 0048b760 | 371 | panel.cpp | hud.rs |
+| 0048bae0 | 1037 | panel.cpp | hud.rs |
+| 0048bef0 | 447 | panel.cpp | hud.rs |
 | 0048c520 | 562 | panel.cpp | hud.rs |
 | 0048cb60 | 94 | panel.cpp | score.rs |
 | 0048cbc0 | 374 | panel.cpp | score.rs |
 | 0048cd40 | 59 | panel.cpp | score.rs |
+| 0048d090 | 1455 | panel.cpp | hud.rs |
 | 0048d710 | 135 | panel.cpp | manual.rs |
 | 0048e3b0 | 623 | panel.cpp | score.rs |
 | 0048e680 | 538 | panel.cpp | score.rs |
@@ -330,6 +334,7 @@ Implemented routines and the Rust module that holds them.
 | 004d8f10 | 1010 | d3dtex.cpp | bitmap.rs |
 | 004d9310 | 794 | d3dtex.cpp | materials.rs |
 | 004d9630 | 592 | d3dtex.cpp | font.rs |
+| 004d9950 | 1465 | d3dtex.cpp | sprite.rs |
 | 004d9f50 | 770 | d3dtex.cpp | materials.rs |
 | 004da3e0 | 23 | d3dtex.cpp | materials.rs |
 | 004da680 | 242 | unattributed | bitmap.rs |
@@ -430,9 +435,7 @@ Implemented routines and the Rust module that holds them.
 | 00489930 | 88 | unattributed |
 | 00489990 | 127 | unattributed |
 | 00489a10 | 674 | unattributed |
-| 0048bae0 | 1037 | panel.cpp |
 | 0048c1a0 | 887 | panel.cpp |
-| 0048d090 | 1455 | panel.cpp |
 | 0048d6d0 | 58 | panel.cpp |
 | 0048ddc0 | 1346 | panel.cpp |
 | 0048f5f0 | 129 | physics.cpp |

@@ -219,17 +219,26 @@ pub struct ScreenQuad {
 
 impl ScreenQuad {
     pub fn new(prim: &Prim, font: &Font, screen: [u32; 2], gamma: &[u8; 256]) -> Self {
-        let [x0, y0, x1, y1] = prim.rect;
+        let glyph = &font.glyphs[prim.glyph as usize];
+        let [r, g, b] = prim.colour.map(|c| u32::from(gamma[c as usize]));
+        // the shadow is subtractive, its diffuse alpha is zero
+        let alpha = if prim.shadow { 0 } else { 0xff };
+        let uv = [glyph.width - 1, glyph.height - 1];
+        Self::rect(prim.rect, uv, alpha << 24 | r << 16 | g << 8 | b, screen)
+    }
+
+    /// A box of the virtual screen on the real one, with its far texel corner.
+    pub fn rect(
+        [x0, y0, x1, y1]: [i32; 4],
+        [u, v]: [u8; 2],
+        diffuse: u32,
+        screen: [u32; 2],
+    ) -> Self {
         // the products wrap and the y divide is unsigned like the original's
         let sx = |x: i32| (x.wrapping_mul(screen[0] as i32) >> VIRTUAL_WIDTH_SHIFT) as i16 as i32;
         let sy = |y: i32| {
             (y.wrapping_mul(screen[1] as i32) as u32 / VIRTUAL_HEIGHT) as u16 as i16 as i32
         };
-        let glyph = &font.glyphs[prim.glyph as usize];
-        let (u, v) = (glyph.width - 1, glyph.height - 1);
-        let [r, g, b] = prim.colour.map(|c| u32::from(gamma[c as usize]));
-        // the shadow is subtractive, its diffuse alpha is zero
-        let alpha = if prim.shadow { 0 } else { 0xff };
         Self {
             corners: [
                 [sx(x0), sy(y0)],
@@ -238,7 +247,7 @@ impl ScreenQuad {
                 [sx(x0), sy(y1)],
             ],
             uv: [[0, 0], [u, 0], [u, v], [0, v]],
-            diffuse: alpha << 24 | r << 16 | g << 8 | b,
+            diffuse,
         }
     }
 }

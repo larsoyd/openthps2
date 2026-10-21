@@ -8,5 +8,6 @@ pub mod pkr;
 pub mod projection;
 pub mod psx;
 pub mod rec;
+pub mod script;
 pub mod skater;
 pub mod trig;

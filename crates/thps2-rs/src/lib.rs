@@ -48,13 +48,14 @@ pub struct SessionAssets {
     pub error: Option<String>,
 }
 
-pub const HANGAR_FILES: [&str; 6] = [
+pub const HANGAR_FILES: [&str; 7] = [
     "data/SKHAN.PSX",
     "data/SKHAN_T.TRG",
     "data/HAWK.PSX",
     "data/HAWK.PSH",
     "data/SKHAN_L.PSX",
     "data/SK2ANIM.PSX",
+    "data/TRICKS.BIN",
 ];
 
 pub fn load_hangar(

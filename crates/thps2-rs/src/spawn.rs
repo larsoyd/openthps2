@@ -4,6 +4,7 @@ use thps2_data::{
     collision::{CollisionWorld, Hit},
     ground::{Outcome, Pad, Rules, Run},
     psx::Scene,
+    script::TrickScripts,
     skater::GROUND_STICK_DISTANCE,
     trig::{Restart, Triggers},
 };
@@ -19,6 +20,9 @@ pub struct SessionTriggers(pub Triggers);
 /// Skater bank animation table from SK2ANIM.PSX.
 #[derive(Resource)]
 pub struct SessionAnimations(pub AnimationTable);
+
+#[derive(Resource)]
+pub struct SessionScripts(pub TrickScripts);
 
 #[derive(Resource, Clone, Copy)]
 pub struct SessionRules(pub Rules);
@@ -105,6 +109,13 @@ pub fn initialize_spawn(
             .ok_or("spawn missing skater animation bank")?
             .1;
         let table = AnimationTable::from_scene(&Scene::parse(bank)?)?;
+        let tricks = &assets
+            .files
+            .iter()
+            .find(|(name, _)| *name == "data/TRICKS.BIN")
+            .ok_or("spawn missing trick scripts")?
+            .1;
+        let scripts = TrickScripts::parse(tricks.clone())?;
         let collision = CollisionWorld::from_scene(&scene.0)?;
         let restart = triggers.restart_named("Start")?;
         let placement = place(restart, &collision)?;
@@ -114,12 +125,13 @@ pub fn initialize_spawn(
             last_ground: None,
             halted: None,
         };
-        Ok::<_, String>((triggers, table, collision, placement, motion))
+        Ok::<_, String>((triggers, table, scripts, collision, placement, motion))
     })();
     match result {
-        Ok((triggers, table, collision, placement, motion)) => {
+        Ok((triggers, table, scripts, collision, placement, motion)) => {
             commands.insert_resource(SessionTriggers(triggers));
             commands.insert_resource(SessionAnimations(table));
+            commands.insert_resource(SessionScripts(scripts));
             commands.insert_resource(SessionCollision(collision));
             commands.spawn((placement, motion));
         }
@@ -131,11 +143,13 @@ pub fn initialize_spawn(
 pub fn advance_ground(
     collision: Option<Res<SessionCollision>>,
     animations: Option<Res<SessionAnimations>>,
+    scripts: Option<Res<SessionScripts>>,
     rules: Res<SessionRules>,
     pad: Res<SessionPad>,
     mut motions: Query<&mut SkaterMotion>,
 ) {
-    let (Some(collision), Some(animations)) = (collision, animations) else {
+    let (Some(collision), Some(animations), Some(scripts)) = (collision, animations, scripts)
+    else {
         return;
     };
     for mut motion in &mut motions {
@@ -143,10 +157,13 @@ pub fn advance_ground(
             continue;
         }
         let frame = motion.frames + 1;
-        match motion
-            .run
-            .frame(&collision.0, &animations.0, rules.0, pad.at(frame))
-        {
+        match motion.run.frame(
+            &collision.0,
+            &animations.0,
+            &scripts.0,
+            rules.0,
+            pad.at(frame),
+        ) {
             Ok(Outcome::Grounded(hit) | Outcome::Landed(hit)) => {
                 motion.frames = frame;
                 motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));

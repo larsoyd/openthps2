@@ -118,6 +118,8 @@ impl Default for AnimState {
 }
 
 const FALLBACK_ANIM: u16 = 0x2e;
+/// Grind animations swing between their ends for as long as the rail lasts.
+pub const RAIL_MODE: u8 = 4;
 
 impl AnimState {
     /// Runs an animation from start to end at one design frame per frame, minus one meaning the last frame.
@@ -159,7 +161,7 @@ impl AnimState {
     /// Plays the animation back from the current frame to its start frame.
     pub fn reverse(&mut self) {
         self.finished = false;
-        self.direction = -1;
+        self.direction = -self.direction;
         (self.end, self.start) = (self.start as i8, i16::from(self.end));
     }
 
@@ -170,10 +172,10 @@ impl AnimState {
 
     /// Advances by speed times the Q8 frame scale, flipping at a pingpong end or finishing.
     pub fn tick(&mut self, scale: i32) -> Result<(), String> {
-        if self.mode != 0 {
+        if self.mode != 0 && self.mode != RAIL_MODE {
             return Err(format!("animation mode={} unsupported", self.mode));
         }
-        if self.at_end() {
+        if self.mode == 0 && self.at_end() {
             if self.pingpong < 1 {
                 self.finished = true;
             } else {
@@ -191,7 +193,12 @@ impl AnimState {
         self.fraction = cursor as u16;
         self.frame = (cursor >> 16) as i16;
         if self.at_end() {
-            self.frame = i16::from(self.end);
+            let end = i16::from(self.end);
+            self.frame = end;
+            if self.mode == RAIL_MODE {
+                self.direction = -self.direction;
+                (self.end, self.start) = (self.start as i8, end);
+            }
         }
         Ok(())
     }

@@ -9,6 +9,7 @@ pub mod projection;
 pub mod psx;
 pub mod rail;
 pub mod rec;
+pub mod rng;
 pub mod score;
 pub mod script;
 pub mod skater;

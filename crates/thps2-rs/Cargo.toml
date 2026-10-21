@@ -7,7 +7,7 @@ publish.workspace = true
 license.workspace = true
 
 [features]
-viewer = ["bevy/bevy_asset", "bevy/bevy_core_pipeline", "bevy/bevy_pbr", "bevy/bevy_render", "bevy/bevy_log", "bevy/bevy_winit", "bevy/png", "bevy/x11"]
+viewer = ["bevy/bevy_asset", "bevy/bevy_core_pipeline", "bevy/bevy_pbr", "bevy/bevy_render", "bevy/bevy_sprite", "bevy/bevy_sprite_render", "bevy/bevy_log", "bevy/bevy_winit", "bevy/png", "bevy/x11"]
 
 [dependencies]
 thps2-data = { path = "../thps2-data" }

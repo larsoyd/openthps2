@@ -38,9 +38,14 @@ frame count, position, velocity, animation and the reason it stopped early, if a
 | `--view FILE` | Project the Hangar through a captured original camera (format below). |
 | `--render` | With `--view` and the `viewer` feature, open a fixed-camera window of the static Hangar. |
 | `--capture PNG` | With `--render`, save an image after 120 frames and exit. |
+| `--play` | With the `viewer` feature, skate a Hangar single session with Tony Hawk in a 640x480 window. Arrows move, Z ollies (Enter in the end menus), X flips, C grabs, V grinds, A and S spin. |
+| `--frames N --capture PPM` | With `--play`, run N frames without input and save the last one without opening a window. |
 
-The simulation stops with an explicit reason at the first situation it does not cover yet, such as a lip, a wallride, a
-head-on wall hit or a bail. It never guesses.
+The simulation stops with an explicit reason at the first situation it does not cover yet. It never guesses.
+
+In `--play` the level, camera, clock, statistics screen and end menu are drawn like the original by a software renderer.
+The skater, its shadow, the score and special panels and particles are not drawn yet, and the keys are stand-ins until
+the original bindings are rebuilt.
 
 ## Captured camera format
 

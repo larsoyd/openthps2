@@ -7,6 +7,7 @@ use thps2_data::pkr::Archive;
 use thps2_data::psx::Scene;
 #[cfg(feature = "viewer")]
 pub mod renderer;
+pub mod play;
 pub mod spawn;
 pub mod view;
 use spawn::{
@@ -155,6 +156,28 @@ fn prepare_hangar_draws(scene: &Scene, textures: &[Texture]) -> Result<Vec<Vec<D
             Ok(draws)
         })
         .collect()
+}
+
+#[cfg(feature = "viewer")]
+fn play_window(archive: &Archive) -> Result<(), Box<dyn Error>> {
+    play::run(archive)
+}
+
+#[cfg(not(feature = "viewer"))]
+fn play_window(_: &Archive) -> Result<(), Box<dyn Error>> {
+    Err("--play without --capture requires cargo feature viewer".into())
+}
+
+/// Reads ALL.PKR and refuses any archive but the supported release.
+fn open_archive(root: &std::path::Path) -> Result<Archive, Box<dyn Error>> {
+    let path = root.join("ALL.PKR");
+    let bytes =
+        std::fs::read(&path).map_err(|error| format!("archive={} {error}", path.display()))?;
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    if hash != "7e2ae173577c41598dc644824b52f7eaf9664ea478e177a8703f77c0185207da" {
+        return Err(format!("archive={} unsupported sha256={hash}", path.display()).into());
+    }
+    Ok(Archive::parse(bytes).map_err(|error| format!("archive={} {error}", path.display()))?)
 }
 
 pub fn inspect(
@@ -374,6 +397,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut simulate_frames = 120;
     let mut pad = Pad::default();
     let mut release_after = None;
+    let mut play = false;
+    let mut play_frames = None;
     while let Some(arg) = args.next() {
         if arg == "--data-root" {
             root = Some(PathBuf::from(
@@ -414,6 +439,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     other => return Err(format!("--hold unknown key={other}").into()),
                 }
             }
+        } else if arg == "--play" {
+            play = true;
+        } else if arg == "--frames" {
+            play_frames = Some(
+                args.next()
+                    .and_then(|v| v.to_str()?.parse::<u32>().ok())
+                    .ok_or("--frames requires a frame count")?,
+            );
         } else if arg == "--release-after" {
             release_after = Some(
                 args.next()
@@ -428,6 +461,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         } else {
             return Err(format!("unknown argument={arg:?}").into());
         }
+    }
+    if play {
+        let root = root.ok_or("--data-root is required (directory containing ALL.PKR)")?;
+        let archive = open_archive(&root)?;
+        return match (play_frames, capture) {
+            (Some(frames), Some(path)) => play::capture(&archive, frames, &path),
+            (None, None) => play_window(&archive),
+            _ => Err("--play takes --frames N and --capture FILE together or neither".into()),
+        };
+    }
+    if play_frames.is_some() {
+        return Err("--frames requires --play".into());
     }
     if manifest && captured.is_some() {
         return Err("--manifest and --view are mutually exclusive".into());

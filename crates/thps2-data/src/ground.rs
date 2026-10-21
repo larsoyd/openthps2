@@ -911,6 +911,7 @@ impl Skater {
     pub fn jump_input(
         &mut self,
         table: &AnimationTable,
+        scripts: &TrickScripts,
         rules: Rules,
         held: bool,
     ) -> Result<(), String> {
@@ -941,11 +942,13 @@ impl Skater {
                 } else {
                     self.set_anim(table, ANIM_LAND)?;
                 }
-                self.landed_trick()?;
+                self.landed_trick(table, scripts)?;
             }
-            self.boost += (self.panel.total(self.landed_style()) / 100).min(BOOST_MAX);
-            if self.manual == 0 {
-                self.commit_combo()?;
+            if !self.bailing {
+                self.boost += (self.panel.total(self.landed_style()) / 100).min(BOOST_MAX);
+                if self.manual == 0 {
+                    self.commit_combo()?;
+                }
             }
             self.trick_running = false;
         }
@@ -1795,9 +1798,16 @@ impl Skater {
     }
 
     /// Landing in the middle of a trick move bails.
-    fn landed_trick(&self) -> Result<(), String> {
+    fn landed_trick(
+        &mut self,
+        table: &AnimationTable,
+        scripts: &TrickScripts,
+    ) -> Result<(), String> {
         if !self.bailing && self.trick_running && !self.script_ended {
-            return Err("landing during a trick move bail unsupported".into());
+            let kind = usize::try_from(self.landing_bail)
+                .map_err(|_| format!("landing bail kind={} out of range", self.landing_bail))?;
+            self.start_bail(table, scripts, kind, false)?;
+            self.landing_bail = 0;
         }
         Ok(())
     }
@@ -2896,7 +2906,7 @@ fn land(level: &Level, s: &mut Skater, rules: Rules, pad: Pad, hit: &Hit) -> Res
         if tipped && !s.bailing {
             return s.tilt_bail(table, scripts);
         }
-        s.landed_trick()?;
+        s.landed_trick(table, scripts)?;
         s.start_manual(level, rules, false)?;
     }
     if s.state != State::Air {
@@ -3163,7 +3173,7 @@ pub fn step(
     s.accel = [0; 3];
     s.push(table, rules, pad)?;
     if !s.bailing {
-        s.jump_input(table, rules, pad.jump)?;
+        s.jump_input(table, level.tricks, rules, pad.jump)?;
     }
     s.trick_input(level, rules, pad, frame.time)?;
     if !s.bailing {

@@ -146,3 +146,49 @@ impl Texture {
         }
     }
 }
+
+/// Level textures the loader swaps for sponsor logos, in the order it fills them.
+pub const LOGO_PLACEHOLDERS: [u32; 12] = [
+    0x608d2937, 0x1151121a, 0xe80d5664, 0x80ae04a6, 0x5f5b1ae8, 0x8f9c07c3, 0x72f76064, 0xf207a90c,
+    0xf210cc10, 0x177367bf, 0x477b70c5, 0x2cbc3cd0,
+];
+pub const TONY_HAWK_LOGOS: [&str; 4] = ["DAAdio", "D_BIRD", "D_FURY", "DaQUIC"];
+
+/// Puts the skater's sponsor logos on the level's logo placeholders, the next sponsor for each,
+/// after skipping start places like the loader's random pick. Width picks the file size 01 to 04.
+pub fn apply_logos(
+    textures: &mut [Texture],
+    archive: &Archive,
+    sponsors: &[&str],
+    start: usize,
+) -> Result<(), String> {
+    let mut cursor = start % sponsors.len();
+    for checksum in LOGO_PLACEHOLDERS {
+        let Some(texture) = textures.iter_mut().find(|t| t.checksum == checksum) else {
+            continue;
+        };
+        let size = match texture.logical_size[0] {
+            32 => 1,
+            64 => 2,
+            96 => 3,
+            128 => 4,
+            w => {
+                return Err(format!(
+                    "[logo] checksum={checksum:08X} width={w} has no logo size"
+                ));
+            }
+        };
+        cursor = (cursor + 1) % sponsors.len();
+        let path = format!("data/logos/{}0{size}.BMP", sponsors[cursor]);
+        let entry = archive
+            .entries()
+            .iter()
+            .find(|e| e.path().eq_ignore_ascii_case(&path))
+            .ok_or_else(|| format!("[logo] checksum={checksum:08X} missing={path}"))?;
+        let image = Bitmap::parse(archive.read(entry.path()).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("[logo] entry={path} {e}"))?;
+        texture.logical_size = [image.width, image.height];
+        texture.source = TextureSource::Bitmap { path, image };
+    }
+    Ok(())
+}

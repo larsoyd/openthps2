@@ -8,11 +8,11 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 215 (4.6%) | 154,823 (16.1%) |
+| Implemented | 218 (4.6%) | 155,999 (16.3%) |
 | Recovered | 221 (4.7%) | 87,711 (9.1%) |
-| Open | 4284 | 717,205 |
+| Open | 4281 | 716,029 |
 
-`███░░░░░░░░░░░░░░░░░` 16.1% implemented by bytes
+`███░░░░░░░░░░░░░░░░░` 16.3% implemented by bytes
 
 ## By original source file
 
@@ -31,7 +31,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | panel.cpp | 37 | 14,181 | 8 | 5 | `██░░░░░░░░` 20% |
 | career.cpp | 81 | 13,988 | 0 | 5 | `░░░░░░░░░░` 0% |
 | trig.cpp | 30 | 13,716 | 10 | 2 | `███████░░░` 73% |
-| main.cpp | 29 | 13,255 | 6 | 9 | `██░░░░░░░░` 19% |
+| main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
 | Menu.cpp | 51 | 10,954 | 0 | 0 | `░░░░░░░░░░` 0% |
 | competition.cpp | 30 | 10,871 | 0 | 2 | `░░░░░░░░░░` 0% |
@@ -98,7 +98,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | bit2.cpp | 8 | 1,144 | 0 | 0 | `░░░░░░░░░░` 0% |
 | m3dinit.cpp | 3 | 1,138 | 1 | 0 | `██████░░░░` 62% |
 | db.cpp | 3 | 1,116 | 0 | 0 | `░░░░░░░░░░` 0% |
-| DynamicLogo.cpp | 3 | 1,088 | 0 | 0 | `░░░░░░░░░░` 0% |
+| DynamicLogo.cpp | 3 | 1,088 | 2 | 0 | `████████░░` 80% |
 | pad.cpp | 8 | 1,043 | 0 | 1 | `░░░░░░░░░░` 0% |
 | carsel.cpp | 5 | 1,032 | 0 | 0 | `░░░░░░░░░░` 0% |
 | perwin.cpp | 4 | 995 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -148,6 +148,8 @@ Implemented routines and the Rust module that holds them.
 | 0040c370 | 7297 | camera.h | camera.rs |
 | 0040e090 | 3294 | camera.cpp | camera.rs |
 | 00410610 | 1431 | camera.cpp | camera.rs |
+| 004321d0 | 117 | DynamicLogo.cpp | materials.rs |
+| 00432330 | 752 | DynamicLogo.cpp | materials.rs |
 | 00448860 | 289 | exp.cpp | collision.rs |
 | 00449cd0 | 906 | unattributed | font.rs |
 | 0044a070 | 1100 | FontTools.cpp | text.rs |
@@ -175,6 +177,7 @@ Implemented routines and the Rust module that holds them.
 | 00466090 | 21 | unattributed | collision.rs |
 | 004660b0 | 1827 | m3dzone.cpp | collision.rs |
 | 00466c10 | 455 | unattributed | session.rs |
+| 004674d0 | 307 | main.cpp | materials.rs |
 | 00468b00 | 35 | main.cpp | ground.rs |
 | 00468b30 | 444 | main.cpp | ground.rs |
 | 00469a30 | 764 | main.cpp | session.rs |

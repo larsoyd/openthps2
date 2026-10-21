@@ -8,20 +8,20 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 186 (3.9%) | 127,192 (13.3%) |
+| Implemented | 191 (4.0%) | 132,393 (13.8%) |
 | Recovered | 225 (4.8%) | 88,197 (9.2%) |
-| Open | 4309 | 744,350 |
+| Open | 4304 | 739,149 |
 
-`███░░░░░░░░░░░░░░░░░` 13.3% implemented by bytes
+`███░░░░░░░░░░░░░░░░░` 13.8% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 60 | 104 | `█░░░░░░░░░` 6% |
+| unattributed | 2977 | 354,046 | 61 | 104 | `█░░░░░░░░░` 6% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
-| front.cpp | 42 | 29,072 | 0 | 4 | `░░░░░░░░░░` 0% |
+| front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
 | bit.cpp | 123 | 25,393 | 0 | 5 | `░░░░░░░░░░` 0% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -149,6 +149,10 @@ Implemented routines and the Rust module that holds them.
 | 0044a620 | 574 | FontTools.cpp | text.rs |
 | 0044a860 | 119 | FontTools.cpp | text.rs |
 | 0044aaa0 | 199 | FontTools.cpp | text.rs |
+| 0044b720 | 67 | front.cpp | hud.rs |
+| 0044ba90 | 296 | front.cpp | hud.rs |
+| 0044ca60 | 4737 | front.cpp | hud.rs |
+| 0044e3f0 | 41 | front.cpp | hud.rs |
 | 00457160 | 628 | Image.cpp | text.rs |
 | 0045f530 | 4024 | unattributed | projection.rs |
 | 004604f0 | 1429 | m3d.cpp | draw.rs |
@@ -277,7 +281,7 @@ Implemented routines and the Rust module that holds them.
 | 004c8650 | 316 | trig.cpp | trig.rs |
 | 004c9320 | 30 | unattributed | rng.rs |
 | 004c9f50 | 95 | unattributed | trig.rs |
-| 004ca0a0 | 32 | unattributed | ground.rs |
+| 004ca0a0 | 32 | unattributed | camera.rs |
 | 004ca2d0 | 846 | unattributed | collision.rs |
 | 004ca9f0 | 41 | unattributed | skater.rs |
 | 004caa20 | 41 | unattributed | skater.rs |
@@ -309,6 +313,7 @@ Implemented routines and the Rust module that holds them.
 | 004da3e0 | 23 | d3dtex.cpp | materials.rs |
 | 004da680 | 242 | unattributed | bitmap.rs |
 | 004da840 | 666 | unattributed | materials.rs |
+| 004dc0c0 | 60 | unattributed | hud.rs |
 | 004e2f80 | 104 | unattributed | rail.rs |
 | 004e2ff0 | 113 | unattributed | skater.rs |
 | 004e3130 | 160 | unattributed | skater.rs |

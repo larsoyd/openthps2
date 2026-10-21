@@ -101,6 +101,17 @@ pub struct Panel {
     pub entries: Vec<Entry>,
     /// Session counts per name and variant, the variant being the switch flag plus twice the spins.
     pub history: Vec<(String, i32, i32)>,
+    /// Tricks the run has landed, shown on the statistics screen.
+    pub landed: i32,
+    pub best: Option<BestCombo>,
+}
+
+/// The run's highest scoring combo: its trick count, points and the trick lines listed under it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BestCombo {
+    pub tricks: i32,
+    pub points: i32,
+    pub lines: [String; 3],
 }
 
 impl Panel {

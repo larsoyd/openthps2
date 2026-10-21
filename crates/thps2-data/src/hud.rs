@@ -1,6 +1,6 @@
 use crate::{
     font::Font,
-    ground::Session,
+    ground::{Run, Session},
     text::{CharMap, Prim, Text},
 };
 
@@ -26,4 +26,186 @@ pub fn clock(font: &Font, session: &Session, time: i32, vb: i32) -> Result<Vec<P
         return Ok(Vec::new());
     }
     CLOCK.draw(font, CLOCK_AT[0], CLOCK_AT[1], &session.clock_text(time))
+}
+
+const CENTRE_X: i32 = 256;
+const TITLE: [u8; 3] = [0xb6, 0x84, 0x24];
+const GREY: [u8; 3] = [0x7a, 0x7a, 0x7a];
+const PROMPT: [u8; 3] = [0x96, 0x64, 0x19];
+const SLIDE_STEP: i32 = 30;
+const LABEL_STOP: i32 = 90;
+const VALUE_STOP: i32 = 410;
+const ROWS: [(usize, i32); 3] = [(0, 60), (1, 78), (3, 96)];
+const MENU_ITEMS: [&str; 5] = [
+    "Update save file",
+    "Retry",
+    "Level Select",
+    "Watch replay",
+    "Quit",
+];
+const MENU_RETRY: usize = 1;
+const MENU_SPACING: i32 = 22;
+const MENU_SELECTED_SCALE: i32 = 0x14f;
+const MENU_SCALE: i32 = 0x100;
+const MENU_SCALE_STEP: i32 = 0x28;
+
+/// The message font text object, one style for every front end line.
+fn mess(hjust: u8, colour: [u8; 3], scale: i32) -> Text {
+    Text {
+        hjust,
+        vjust: 1,
+        spacing: 2,
+        colour,
+        shadow: Some([2, 2]),
+        fixed_pitch: false,
+        scale: scale << 4,
+        map: CharMap::Letters,
+    }
+}
+
+/// Labels slide in from the left and values from the right, one step per pass.
+#[derive(Clone, Debug)]
+struct Slides {
+    labels: [i32; 8],
+    values: [i32; 8],
+}
+
+impl Slides {
+    fn new() -> Self {
+        Self {
+            labels: std::array::from_fn(|i| -220 + SLIDE_STEP * i as i32),
+            values: std::array::from_fn(|i| 732 - SLIDE_STEP * i as i32),
+        }
+    }
+
+    fn step(&mut self) {
+        for i in 0..5 {
+            self.labels[i] = (self.labels[i] + SLIDE_STEP).min(LABEL_STOP);
+            self.values[i] = (self.values[i] - SLIDE_STEP).max(VALUE_STOP);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct EndMenu {
+    selected: usize,
+    scales: [i32; 5],
+}
+
+impl EndMenu {
+    fn new() -> Self {
+        Self {
+            selected: MENU_RETRY,
+            scales: std::array::from_fn(|i| Self::target(i, MENU_RETRY)),
+        }
+    }
+
+    fn target(item: usize, selected: usize) -> i32 {
+        if item == selected {
+            MENU_SELECTED_SCALE
+        } else {
+            MENU_SCALE
+        }
+    }
+
+    fn step(&mut self) {
+        for (i, scale) in self.scales.iter_mut().enumerate() {
+            let target = Self::target(i, self.selected);
+            *scale += (target - *scale).clamp(-MENU_SCALE_STEP, MENU_SCALE_STEP);
+        }
+    }
+
+    /// The selected item pulses toward orange on the VB tick count.
+    fn draw(&self, font: &Font, ticks: i32) -> Result<Vec<Prim>, String> {
+        let top = (240 - (MENU_ITEMS.len() as i32 - 1) * MENU_SPACING) / 2;
+        let d = ((2 * ticks) as u32 % 60) as u8;
+        let d = if d > 30 { 60 - d } else { d };
+        let mut prims = Vec::new();
+        for (i, item) in MENU_ITEMS.iter().enumerate() {
+            let colour = if i == self.selected {
+                [TITLE[0].wrapping_add(d), TITLE[1].wrapping_sub(d), TITLE[2]]
+            } else {
+                GREY
+            };
+            let y = top + MENU_SPACING * i as i32;
+            prims.extend(mess(1, colour, self.scales[i]).draw(font, CENTRE_X, y, item)?);
+        }
+        Ok(prims)
+    }
+}
+
+/// The statistics screen after the run and the end menu after it, drawn once per pass from the
+/// pass the run ends on.
+#[derive(Clone, Debug, Default)]
+pub struct EndScreens {
+    slides: Option<Slides>,
+    menu: Option<EndMenu>,
+}
+
+impl EndScreens {
+    pub fn pass(&mut self, font: &Font, run: &Run, high_score: i32) -> Result<Vec<Prim>, String> {
+        let session = &run.skater.session;
+        if !session.ended {
+            *self = Self::default();
+            return Ok(Vec::new());
+        }
+        if session.menu {
+            let menu = self.menu.get_or_insert_with(EndMenu::new);
+            menu.step();
+            return menu.draw(font, run.ticks);
+        }
+        let slides = self.slides.get_or_insert_with(Slides::new);
+        slides.step();
+        let panel = &run.skater.panel;
+        if !panel.history.is_empty() {
+            return Err(format!(
+                "[hud] statistics after scored tricks unsupported tricks={} landed and best combo are not counted",
+                panel.history.len()
+            ));
+        }
+        let mut prims =
+            mess(1, PROMPT, 0xc0).draw(font, CENTRE_X, 222, "Press ENTER to continue")?;
+        prims.extend(mess(1, TITLE, 0x100).draw(font, CENTRE_X, 40, "Statistics")?);
+        let values = [panel.score, high_score, panel.landed];
+        for ((index, y), label) in ROWS
+            .iter()
+            .zip(["Total Score", "High Score", "Tricks Landed"])
+        {
+            prims.extend(mess(0, GREY, 0x100).draw(font, slides.labels[*index], *y, label)?);
+        }
+        for ((index, y), value) in ROWS.iter().zip(values) {
+            prims.extend(mess(2, GREY, 0x100).draw(
+                font,
+                slides.values[*index],
+                *y,
+                &value.to_string(),
+            )?);
+        }
+        if slides.labels[0] != LABEL_STOP {
+            return Ok(prims);
+        }
+        match &panel.best {
+            None => {
+                prims.extend(mess(1, GREY, 0xdc).draw(font, CENTRE_X, 115, "Best Combo")?);
+                prims.extend(mess(1, GREY, 0x100).draw(font, CENTRE_X, 140, "None")?);
+            }
+            Some(best) => {
+                let plural = if best.tricks == 1 { "Trick" } else { "Tricks" };
+                let line = format!(
+                    "Best Combo - {} {plural} - {} Points",
+                    best.tricks, best.points
+                );
+                prims.extend(mess(1, GREY, 0xdc).draw(font, CENTRE_X, 115, &line)?);
+                for (k, text) in best.lines.iter().enumerate() {
+                    prims.extend(mess(1, GREY, 0xbc).draw(
+                        font,
+                        CENTRE_X,
+                        138 + 14 * k as i32,
+                        text,
+                    )?);
+                }
+            }
+        }
+        Ok(prims)
+    }
 }

@@ -566,7 +566,7 @@ type V3 = [i32; 3];
 /// The executable scales by the single precision constants 2^-12 and 6.2831854820251465.
 const TWO_PI_F32: f64 = 6.283_185_482_025_146_5;
 
-fn trig_q12(angle: i32) -> (i32, i32) {
+pub(crate) fn trig_q12(angle: i32) -> (i32, i32) {
     let radians = f64::from(angle & 0xfff) * (1.0 / 4096.0) * TWO_PI_F32;
     (
         (radians.cos() * 4096.0) as i32,
@@ -3215,6 +3215,8 @@ pub struct Run {
     pub skater: Skater,
     pub clock: FrameClock,
     pub vb: i32,
+    /// VB ticks including the end screens, which keep running after the run's own clock stops.
+    pub ticks: i32,
     /// The level world once a script has broken or hidden something in it.
     pub world: Option<CollisionWorld>,
     /// Script objects, the newest first like the original's object list.
@@ -3235,6 +3237,7 @@ impl Run {
             skater,
             clock,
             vb: 0,
+            ticks: 0,
             world: None,
             objects: Vec::new(),
         };
@@ -3243,6 +3246,7 @@ impl Run {
     }
 
     pub fn frame(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
+        self.ticks += 2;
         if self.skater.session.ended {
             let retry = self.skater.session.end_screens(pad);
             return Ok(if retry {

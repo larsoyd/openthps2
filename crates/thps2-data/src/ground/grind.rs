@@ -1,6 +1,9 @@
 use super::*;
 use crate::rail::{Sweep, norm};
 
+/// The ledge probes run across the rail forty units above and below the skater.
+const LEDGE_PROBE: i32 = 0x28000;
+
 const RAIL_STAND: i32 = 0x19000;
 const RAIL_GRAVITY: i32 = 13000;
 const HEAT_STEP: i32 = 0x28000;
@@ -235,7 +238,10 @@ impl Skater {
         }
         self.forward = self.grind.direction.map(|c| c * self.grind.board);
         self.rail_basis();
-        self.balance(level.table, rules, frame, pad)?;
+        if self.balance(level, rules, frame, pad)? {
+            self.frame_accel = accel;
+            return Ok(());
+        }
         let lean = (self.grind.angle / 10) & 0xfff;
         self.set_basis(mat_mul_cols(self.basis_matrix(), rot_z_matrix(lean)));
         (self.lateral, self.up, self.forward) =
@@ -270,13 +276,14 @@ impl Skater {
     }
 
     /// The balance angle swings with the rate, the rate drifts at random and follows left and right.
+    /// Returns true when the skater fell off the rail onto a ledge, which ends the frame.
     fn balance(
         &mut self,
-        table: &AnimationTable,
+        level: &Level,
         rules: Rules,
         frame: FrameScale,
         pad: Pad,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let r = rules.stat(STAT_RAIL, self.stance());
         let g = &mut self.grind;
         let heat = (g.heat >> 12) + 60;
@@ -297,16 +304,65 @@ impl Skater {
         } else if g.rate.abs() < ((200 - r) * 1000) / 10000 {
             g.rate = self.rng.next((800000 - 0xce4 * r) / 10000) + (0xce4 * r - 800000) / 20000;
         }
-        if self.grind.angle.abs() > BALANCE_FALL {
-            if self.grind.side != 0 {
-                return Err("rail ledge drop unsupported".into());
-            }
-            return Err(format!(
-                "rail balance bail unsupported angle={}",
-                self.grind.angle
-            ));
+        if self.grind.angle.abs() <= BALANCE_FALL {
+            return Ok(false);
         }
-        let _ = table;
+        let angle = self.grind.angle;
+        let bail = || {
+            format!(
+                "rail balance bail unsupported angle={angle} side={}",
+                self.grind.side
+            )
+        };
+        let seg = self.grind.segment;
+        let next = level
+            .rails
+            .next(seg)
+            .ok_or_else(|| format!("rail node={seg} without a next segment"))?;
+        let along = dot_q12(
+            norm(sub(level.rails.position(next), level.rails.position(seg))),
+            self.velocity,
+        );
+        if self.grind.side == 0 || (i32::from(self.grind.side) - 2) ^ angle ^ along >= 0 {
+            return Err(bail());
+        }
+        let across = self
+            .lateral
+            .map(|c| c * 20 * if angle >= 0 { -1 } else { 1 });
+        let probe = |y: i32| {
+            let p = self.position;
+            (
+                [p[0] + across[0], p[1] + y, p[2] + across[2]],
+                [p[0] - across[0], p[1] + y, p[2] - across[2]],
+            )
+        };
+        let (start, end) = probe(-LEDGE_PROBE);
+        let Some(above) = level.world.query_filtered(start, end, false)? else {
+            return Err(bail());
+        };
+        let (start, end) = probe(LEDGE_PROBE);
+        let hit = level
+            .world
+            .query_filtered(start, end, false)?
+            .unwrap_or(above);
+        self.ledge_drop(level.table, angle, hit)?;
+        Ok(true)
+    }
+
+    /// Turned an eighth toward the ledge, fitted to the face the probes found and sent back along
+    /// the new heading at the same speed.
+    fn ledge_drop(&mut self, table: &AnimationTable, angle: i32, hit: Hit) -> Result<(), String> {
+        let yaw = if angle >= 0 { 0x200 } else { 0xe00 };
+        self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(yaw)));
+        let n = hit.normal.map(i32::from);
+        (self.last_normal, self.smoothed_up, self.same_normal_time) = (n, n, 0);
+        self.smooth_basis();
+        let speed = speed_of(self.velocity)?;
+        self.velocity = self.forward.map(|f| -mul_q12(f, speed));
+        self.position = add(hit.position_fixed, self.up.map(|c| c * 30))?;
+        self.exit_script = None;
+        self.leave_rail(table)?;
+        self.set_state(State::Ground);
         Ok(())
     }
 

@@ -8,9 +8,9 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 209 (4.4%) | 149,252 (15.6%) |
+| Implemented | 210 (4.4%) | 149,436 (15.6%) |
 | Recovered | 221 (4.7%) | 87,711 (9.1%) |
-| Open | 4290 | 722,776 |
+| Open | 4289 | 722,592 |
 
 `███░░░░░░░░░░░░░░░░░` 15.6% implemented by bytes
 
@@ -18,7 +18,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 75 | 100 | `█░░░░░░░░░` 7% |
+| unattributed | 2977 | 354,046 | 76 | 100 | `█░░░░░░░░░` 7% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -322,10 +322,11 @@ Implemented routines and the Rust module that holds them.
 | 004d8df0 | 273 | d3dtex.cpp | materials.rs |
 | 004d8f10 | 1010 | d3dtex.cpp | bitmap.rs |
 | 004d9310 | 794 | d3dtex.cpp | materials.rs |
-| 004d9630 | 592 | d3dtex.cpp | bitmap.rs |
+| 004d9630 | 592 | d3dtex.cpp | font.rs |
 | 004d9f50 | 770 | d3dtex.cpp | materials.rs |
 | 004da3e0 | 23 | d3dtex.cpp | materials.rs |
 | 004da680 | 242 | unattributed | bitmap.rs |
+| 004da780 | 184 | unattributed | font.rs |
 | 004da840 | 666 | unattributed | materials.rs |
 | 004dc0c0 | 60 | unattributed | hud.rs |
 | 004e2f80 | 104 | unattributed | camera.rs |

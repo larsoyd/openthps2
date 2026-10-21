@@ -1,4 +1,4 @@
-use crate::font::Font;
+use crate::{font::Font, raster::ScreenVertex};
 
 /// Text positions are in a 512 by 240 screen, 20.12 fixed point while laying out.
 const VIRTUAL_WIDTH_SHIFT: u32 = 9;
@@ -240,6 +240,30 @@ impl ScreenQuad {
             uv: [[0, 0], [u, 0], [u, v], [0, v]],
             diffuse: alpha << 24 | r << 16 | g << 8 | b,
         }
+    }
+}
+
+impl ScreenQuad {
+    /// The vertices handed to the device: texel corners over the surface size less one.
+    pub fn vertices(&self, [width, height]: [usize; 2]) -> [ScreenVertex; 4] {
+        let scale = |size: usize| {
+            if size > 1 {
+                1.0 / (size - 1) as f32
+            } else {
+                1.0 / size as f32
+            }
+        };
+        std::array::from_fn(|i| ScreenVertex {
+            x: self.corners[i][0] as f32,
+            y: self.corners[i][1] as f32,
+            z: 1.0,
+            rhw: 1.0,
+            diffuse: self.diffuse,
+            uv: [
+                f32::from(self.uv[i][0]) * scale(width),
+                f32::from(self.uv[i][1]) * scale(height),
+            ],
+        })
     }
 }
 

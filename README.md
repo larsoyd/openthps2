@@ -7,7 +7,7 @@ copy of the game, with the freedom to fix bugs and to add widescreen and native 
 **Status: not playable yet.** A Hangar single session with Tony Hawk is reconstructed from the executable and
 matches the original game frame by frame on recorded inputs: skating, ollies, flips, grabs, lips, grinds, wallrides,
 manuals, bails, specials, scoring and combos, the scripted level events, the two minute clock, the end of the run and
-Retry. Rendering is a static diagnostic. The HUD, camera, menus, audio, career mode and the other levels are open. <!-- progress --> 15.6% of the executable implemented by bytes (209 of 4720 functions), 9.1% more recovered. <!-- /progress --> The full map is in [PROGRESS.md](PROGRESS.md).
+Retry. Rendering is a static diagnostic. The HUD, camera, menus, audio, career mode and the other levels are open. <!-- progress --> 15.6% of the executable implemented by bytes (210 of 4720 functions), 9.1% more recovered. <!-- /progress --> The full map is in [PROGRESS.md](PROGRESS.md).
 
 ## Requirements
 

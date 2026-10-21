@@ -1,3 +1,5 @@
+use crate::raster::Texture;
+
 /// Map values from 0xf8 up are colour codes and the blank, so glyph numbers stay below.
 const MAX_GLYPHS: u32 = 0xf8;
 /// The blank glyph that unmapped characters draw is glyph 0's box filled with this byte.
@@ -75,6 +77,33 @@ impl Font {
         });
         Ok(Self { glyphs, clut })
     }
+}
+
+impl Font {
+    /// A glyph as the game uploads it: ARGB1555 with palette entry 0 clear, at the top left of a
+    /// power of two surface.
+    pub fn texture(&self, glyph: u8) -> Texture {
+        let g = &self.glyphs[glyph as usize];
+        let (w, h) = (usize::from(g.width), usize::from(g.height));
+        let (width, height) = (w.next_power_of_two(), h.next_power_of_two());
+        let mut texels = vec![0; width * height];
+        for (i, &index) in g.pixels.iter().enumerate() {
+            texels[i / w * width + i % w] = argb1555(self.clut[usize::from(index)]);
+        }
+        Texture {
+            width,
+            height,
+            texels,
+        }
+    }
+}
+
+/// PS1 BGR555 to ARGB1555, colour 0 clear and everything else opaque.
+fn argb1555(c: u16) -> u16 {
+    if c == 0 {
+        return 0;
+    }
+    0x8000 | (c & 0x1f) << 10 | (c & 0x3e0) | (c >> 10) & 0x1f
 }
 
 /// Low nibble first, rows cut to the glyph width.

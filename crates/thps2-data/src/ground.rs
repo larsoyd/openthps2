@@ -529,6 +529,7 @@ impl Skater {
     /// stored slope gravity along the heading.
     fn set_state(&mut self, state: State) {
         match (state, self.state) {
+            (new, old) if new == old => {}
             (State::Air, State::Vert) | (State::Vert, State::Air) => {}
             (State::Air | State::Vert, _) => self.airs += 1,
             _ => {}
@@ -1728,12 +1729,6 @@ fn land(world: &CollisionWorld, s: &mut Skater, rules: Rules, hit: &Hit) -> Resu
     let normal = hit.normal.map(i32::from);
     let target = add(hit.position_fixed, scaled(normal, STANDING_HEIGHT)?)?;
     s.position = world.move_retrying(s.position, target)?;
-    if hit.flags & 0x400000 != 0 {
-        return Err(format!(
-            "air lip landing unsupported item={} face={}",
-            hit.item_index, hit.face_index
-        ));
-    }
     s.terrain = (hit.flags >> 25) & 0xf;
     s.turn = 0;
     s.set_state(State::Ground);
@@ -1778,9 +1773,11 @@ fn landing_bails(s: &Skater, rules: Rules, normal: V3) -> Result<(), String> {
 /// The air handler after the input phase, stopping at wall bounces, lips, wallrides and bails.
 pub fn air_step(
     world: &CollisionWorld,
+    table: &AnimationTable,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
+    pad: Pad,
     gravity: i32,
 ) -> Result<Outcome, String> {
     s.begin_frame(world)?;
@@ -1806,14 +1803,48 @@ pub fn air_step(
                 hit.item_index, hit.face_index
             ));
         }
+        Some(hit) if hit.flags & 0x400000 != 0 => land_on_lip(world, table, s, pad, &hit)?,
         Some(hit) => land(world, s, rules, &hit)?,
         None => accel = add(accel, [0, gravity, 0])?,
     }
     s.finish_frame(world, accel, rules, frame, false)?;
     Ok(match hit {
-        Some(hit) => Outcome::Landed(hit),
-        None => Outcome::Airborne,
+        Some(hit) if s.state != State::Air => Outcome::Landed(hit),
+        _ => Outcome::Airborne,
     })
+}
+
+/// A lip hit from the air goes back onto the lip after a jump from a vert face, otherwise the skater
+/// stays airborne against it for the frame without gravity.
+fn land_on_lip(
+    world: &CollisionWorld,
+    table: &AnimationTable,
+    s: &mut Skater,
+    pad: Pad,
+    hit: &Hit,
+) -> Result<(), String> {
+    let normal = hit.normal.map(i32::from);
+    let target = add(hit.position_fixed, scaled(normal, STANDING_HEIGHT)?)?;
+    s.position = world.move_retrying(s.position, target)?;
+    if s.vert_jump {
+        s.set_state(State::Vert);
+        s.velocity = project_onto_plane(s.velocity, normal);
+        s.last_normal = normal;
+        s.same_normal_time = 0;
+        s.smooth_basis();
+        return Ok(());
+    }
+    if pad.up {
+        return Err(format!(
+            "lip pop unsupported item={} face={}",
+            hit.item_index, hit.face_index
+        ));
+    }
+    s.vert = false;
+    s.landing_timer = LANDING_TIMER;
+    s.set_anim(table, ANIM_AIR)?;
+    s.jumped = true;
+    Ok(())
 }
 
 /// One single session run: the skater, the frame clock and the unpaused VB counter.
@@ -1891,7 +1922,7 @@ pub fn step(
         State::Ground | State::Stopped | State::Vert => {
             ground_step(world, table, s, rules, frame, pad, gravity)
         }
-        State::Air => air_step(world, s, rules, frame, gravity),
+        State::Air => air_step(world, table, s, rules, frame, pad, gravity),
     }?;
     if s.on_ground() {
         s.air_since = 0;

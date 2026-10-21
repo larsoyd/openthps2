@@ -19,6 +19,7 @@ pub const AIR_GRAVITY: i32 = 13000;
 pub const WALL_REACH: i32 = 0x1e;
 const WALL_REACH_BAILING: i32 = 100;
 pub const BOUNCE_REACH: i32 = 10;
+const BOUNCE_REACH_BAILING: i32 = 70;
 pub const HEAD_REACH: i32 = 0x3c;
 pub const UNSTICK_SPAN: i32 = 8000;
 pub const NORMAL_HOLD_LIMIT: i32 = 0x18000;
@@ -2542,8 +2543,13 @@ impl Skater {
         table: &AnimationTable,
         direction: i32,
     ) -> Result<bool, String> {
+        let reach = if self.bailing {
+            BOUNCE_REACH_BAILING
+        } else {
+            BOUNCE_REACH
+        };
         let shoulder = add(self.position, scaled(self.up, STANDING_HEIGHT)?)?;
-        let end = add(shoulder, scaled(self.lateral, direction * BOUNCE_REACH)?)?;
+        let end = add(shoulder, scaled(self.lateral, direction * reach)?)?;
         let Some(hit) = world.query_filtered(shoulder, end, false)? else {
             return Ok(false);
         };
@@ -2554,7 +2560,7 @@ impl Skater {
         self.position = self.old_position;
         self.wall_contact(table, normal, true)?;
         let away_start = add(self.position, normal)?;
-        let away_end = add(self.position, scaled(normal, BOUNCE_REACH)?)?;
+        let away_end = add(self.position, scaled(normal, reach)?)?;
         if world.query_filtered(away_start, away_end, false)?.is_none() {
             self.position = away_end;
             return Ok(true);

@@ -257,7 +257,7 @@ impl Skater {
         let length = sqrt_int(gap.iter().map(|&c| c * c).sum());
         if length > RAIL_POINT_SPAN {
             if let Some(last) = self.panel.entries.last_mut() {
-                last.points += self.rail_points;
+                last.points += self.points_rate;
                 self.refresh_spins();
             }
             self.grind.counted_from = self.position;

@@ -283,7 +283,7 @@ pub fn is_direction(code: u8) -> bool {
     (1..=8).contains(&code)
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Press {
     code: u8,
     down: bool,
@@ -291,7 +291,7 @@ struct Press {
 }
 
 /// The last 32 press and release edges of the pad codes the trick matcher reads.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Presses {
     ring: [Press; RING],
     next: usize,
@@ -385,6 +385,19 @@ impl Presses {
                 p.code = 0;
             }
         }
+    }
+
+    /// Distinct edge times among the live records newer than the span before now.
+    pub fn edges_since(&self, now: i32, span: i32) -> i32 {
+        let (mut i, mut last, mut count) = (self.newest(), 0, 0);
+        while ((now - span) as u32) < self.ring[i].time as u32 && i != self.next {
+            let p = self.ring[i];
+            if p.time != last && p.code != 0 {
+                (count, last) = (count + 1, p.time);
+            }
+            i = (i + RING - 1) % RING;
+        }
+        count
     }
 
     pub fn clear(&mut self) {

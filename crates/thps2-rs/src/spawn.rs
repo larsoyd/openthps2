@@ -3,6 +3,7 @@ use thps2_data::{
     anim::AnimationTable,
     collision::{CollisionWorld, Hit},
     ground::{Level, Outcome, Pad, Rules, Run},
+    input::KeyTable,
     psx::Scene,
     rail::Rails,
     script::TrickScripts,
@@ -11,6 +12,9 @@ use thps2_data::{
 };
 
 use crate::{OriginalScene, SessionAssets};
+
+/// Skater index of Tony Hawk in the game's skater and key list tables.
+const TONY_HAWK: usize = 0;
 
 #[derive(Resource)]
 pub struct SessionCollision(pub CollisionWorld);
@@ -27,6 +31,9 @@ pub struct SessionScripts(pub TrickScripts);
 
 #[derive(Resource)]
 pub struct SessionRails(pub Rails);
+
+#[derive(Resource)]
+pub struct SessionKeys(pub KeyTable);
 
 #[derive(Resource, Clone, Copy)]
 pub struct SessionRules(pub Rules);
@@ -120,6 +127,7 @@ pub fn initialize_spawn(
             .ok_or("spawn missing trick scripts")?
             .1;
         let scripts = TrickScripts::parse(tricks.clone())?;
+        let keys = KeyTable::build(&scripts, TONY_HAWK)?;
         let collision = CollisionWorld::from_scene(&scene.0)?;
         let restart = triggers.restart_named("Start")?;
         let rails = Rails::from_triggers(&triggers, 1)?;
@@ -131,15 +139,16 @@ pub fn initialize_spawn(
             halted: None,
         };
         Ok::<_, String>((
-            triggers, rails, table, scripts, collision, placement, motion,
+            triggers, rails, table, scripts, keys, collision, placement, motion,
         ))
     })();
     match result {
-        Ok((triggers, rails, table, scripts, collision, placement, motion)) => {
+        Ok((triggers, rails, table, scripts, keys, collision, placement, motion)) => {
             commands.insert_resource(SessionTriggers(triggers));
             commands.insert_resource(SessionAnimations(table));
             commands.insert_resource(SessionScripts(scripts));
             commands.insert_resource(SessionRails(rails));
+            commands.insert_resource(SessionKeys(keys));
             commands.insert_resource(SessionCollision(collision));
             commands.spawn((placement, motion));
         }
@@ -155,6 +164,7 @@ pub struct SessionLevel<'w> {
     scripts: Option<Res<'w, SessionScripts>>,
     triggers: Option<Res<'w, SessionTriggers>>,
     rails: Option<Res<'w, SessionRails>>,
+    keys: Option<Res<'w, SessionKeys>>,
 }
 
 /// One run frame per fixed tick with the held pad, stopping at the first unsupported contact.
@@ -164,12 +174,13 @@ pub fn advance_ground(
     pad: Res<SessionPad>,
     mut motions: Query<&mut SkaterMotion>,
 ) {
-    let (Some(collision), Some(animations), Some(scripts), Some(triggers), Some(rails)) = (
+    let (Some(collision), Some(animations), Some(scripts), Some(triggers), Some(rails), Some(keys)) = (
         &session.collision,
         &session.animations,
         &session.scripts,
         &session.triggers,
         &session.rails,
+        &session.keys,
     ) else {
         return;
     };
@@ -179,6 +190,7 @@ pub fn advance_ground(
         tricks: &scripts.0,
         triggers: &triggers.0,
         rails: &rails.0,
+        keys: &keys.0,
     };
     for mut motion in &mut motions {
         if motion.halted.is_some() {

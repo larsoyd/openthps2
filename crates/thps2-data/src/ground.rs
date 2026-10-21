@@ -1,5 +1,6 @@
 use crate::anim::{AnimState, AnimationTable};
 use crate::collision::{CollisionWorld, Hit};
+use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
 use crate::rng::Rng;
 use crate::score::{Entry, Panel, Style, hangar_gap};
@@ -8,6 +9,9 @@ use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
 use crate::trig::{Command, Triggers};
 
 mod grind;
+mod manual;
+
+pub use manual::{Balance, QueuedTrick};
 
 pub const GRAVITY: i32 = 0x1964;
 pub const AIR_GRAVITY: i32 = 13000;
@@ -76,6 +80,9 @@ const SCRIPT_LAST_FRAME: i16 = 0x2711;
 const GAP_SLOTS: usize = 20;
 const LEVEL_SEED: u32 = 0x12a6cc58;
 const DEFAULT_TRICK_POINTS: i32 = 0x7b;
+const MASH_SPAN: i32 = 20;
+/// Points per half spin left over at a landing with no gap to take them.
+const SPIN_OLLIE_POINTS: i32 = 50;
 const GRIND_UP_FRAMES: i32 = 0x13;
 const WALLRIDE_GAP: i32 = 0x29;
 const BOOST_MAX: i32 = 20;
@@ -329,8 +336,8 @@ pub struct Skater {
     pub trick_name: String,
     pub trick_points: i32,
     pub exit_script: Option<usize>,
-    /// Points each thirty units of rail add to the trick on top of the stack.
-    pub rail_points: i32,
+    /// Points the trick on top of the stack gains per thirty units of rail or per manual frame.
+    pub points_rate: i32,
     /// A trick script is running a move, a rail start then bails unless the script ended it.
     pub trick_running: bool,
     pub script_ended: bool,
@@ -346,6 +353,17 @@ pub struct Skater {
     /// Bail kinds the script sets for falling off a rail and for landing mid move.
     pub rail_bail: i16,
     pub landing_bail: i16,
+    pub presses: Presses,
+    pub air_queue: std::collections::VecDeque<QueuedTrick>,
+    /// Manual kind, 1 on the tail and 2 on the nose, the move waiting to start one, whether it
+    /// started from rolling, its friction and its balance.
+    pub manual: u8,
+    pub manual_pending: Option<usize>,
+    pub from_ground: bool,
+    pub manual_friction: i32,
+    pub balance: Balance,
+    /// Move the script queues for an ollie out of a manual or off a rail.
+    pub ollie_script: Option<usize>,
 }
 
 /// The skater's rail state: the candidate the search found, the rail ridden and its balance.
@@ -391,6 +409,7 @@ pub struct Level<'a> {
     pub tricks: &'a TrickScripts,
     pub triggers: &'a Triggers,
     pub rails: &'a Rails,
+    pub keys: &'a KeyTable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -662,7 +681,7 @@ impl Skater {
             trick_name: String::new(),
             trick_points: 0,
             exit_script: None,
-            rail_points: 0,
+            points_rate: 0,
             trick_running: false,
             script_ended: false,
             script_return: None,
@@ -673,6 +692,14 @@ impl Skater {
             wall_time: 0,
             rail_bail: 0,
             landing_bail: 0,
+            presses: Presses::default(),
+            air_queue: Default::default(),
+            manual: 0,
+            manual_pending: None,
+            from_ground: false,
+            manual_friction: 0,
+            balance: Balance::default(),
+            ollie_script: None,
         }
     }
 
@@ -723,6 +750,12 @@ impl Skater {
         self.landing_timer = LANDING_TIMER;
         (self.spin_angle, self.spins) = (0, 0);
         self.jumped = true;
+        self.trick_running = false;
+        if self.bailing {
+            self.manual = 0;
+            return Ok(());
+        }
+        (self.script, self.manual) = (None, 0);
         let id = if self.crouching {
             ANIM_CROUCH_FALL
         } else {
@@ -758,15 +791,20 @@ impl Skater {
         if self.jumped && self.previous_state != State::Ground && self.on_ground() {
             self.jumped = false;
             self.vert_jump = false;
-            if self.crouching {
-                self.run_anim(table, ANIM_CROUCH_LAND, 3, -1, -1)?;
-            } else {
-                self.set_anim(table, ANIM_LAND)?;
+            if self.manual == 0 {
+                self.script = None;
+                if self.crouching {
+                    self.run_anim(table, ANIM_CROUCH_LAND, 3, -1, -1)?;
+                } else {
+                    self.set_anim(table, ANIM_LAND)?;
+                }
+                self.landed_trick()?;
             }
-            self.script = None;
-            self.landed_trick()?;
             self.boost += (self.panel.total(self.landed_style()) / 100).min(BOOST_MAX);
-            self.commit_combo()?;
+            if self.manual == 0 {
+                self.commit_combo()?;
+            }
+            self.trick_running = false;
         }
         if !held {
             self.crouching = false;
@@ -784,7 +822,9 @@ impl Skater {
             self.armed = true;
             if !self.crouching && self.turn.abs() < 0xa000 {
                 self.turn = 0;
-                self.run_anim(table, ANIM_CROUCH, 0, CROUCH_END, CROUCH_PINGPONG)?;
+                if self.manual == 0 {
+                    self.run_anim(table, ANIM_CROUCH, 0, CROUCH_END, CROUCH_PINGPONG)?;
+                }
             }
         }
         self.crouching = true;
@@ -849,6 +889,13 @@ impl Skater {
     }
 
     fn ollie(&mut self, table: &AnimationTable, rules: Rules) -> Result<(), String> {
+        if self.manual != 0 {
+            if self.ollie_script.is_some() {
+                return Err("ollie out of a manual into a queued move unsupported".into());
+            }
+            (self.trick_running, self.script, self.manual_pending) = (false, None, None);
+            self.balance.kick = 0;
+        }
         self.armed = false;
         self.jumped = true;
         self.vert_jump = self.vert;
@@ -1071,9 +1118,9 @@ impl Skater {
         }
     }
 
-    /// Half spins so far, a turn past 1500 units rounding up to the next.
+    /// Half spins so far, a turn past 1500 units rounding up to the next outside a manual.
     fn round_spins(&mut self) -> i32 {
-        if self.spin_angle.abs() > 1500 {
+        if self.manual == 0 && self.spin_angle.abs() > 1500 {
             self.spin_angle = 0;
             return self.spins + 1;
         }
@@ -1098,6 +1145,11 @@ impl Skater {
     fn push_entry(&mut self, mut entry: Entry) {
         if !self.combo {
             return;
+        }
+        if self.manual != 0 {
+            self.balance.kick = manual::MANUAL_KICK;
+            self.manual_pending = None;
+            self.presses.clear();
         }
         if self.switch_bonus {
             entry.points = entry.points * 120 / 100;
@@ -1128,7 +1180,11 @@ impl Skater {
             && self.panel.entries.last().is_none_or(|e| e.kind != 0)
             && (self.previous_state != State::Vert || self.spins > 1);
         if spin_ollie {
-            return Err(format!("spin ollie entry unsupported spins={}", self.spins));
+            self.push_entry(Entry {
+                trick: true,
+                switched: self.switched,
+                ..Entry::new("OLLIE", SPIN_OLLIE_POINTS * self.spins, 0, 0)
+            });
         }
         self.panel.commit(self.landed_style());
         (self.spin_angle, self.spins, self.combo) = (0, 0, false);
@@ -1362,6 +1418,7 @@ impl Skater {
         self.anim.speed = 0x10000;
         self.script_return = None;
         (self.rail_bail, self.landing_bail) = (0, 0);
+        (self.manual_pending, self.ollie_script) = (None, None);
     }
 
     /// Landing tipped over: the board turns onto its back and the skater slides off along the old up.
@@ -1386,11 +1443,12 @@ impl Skater {
         Ok(())
     }
 
-    /// Bailing kills the horizontal push, upward motion unless the bail lifts, and drags velocity.
-    fn bail_drag(&mut self, accel: &mut V3, frame: FrameScale) {
-        accel[0] = 0;
-        accel[2] = 0;
-        self.jumped = false;
+    /// Bailing kills the horizontal push, upward motion unless the bail lifts, and drags velocity,
+    /// and mashing buttons speeds up the bail animation.
+    fn bail_drag(&mut self, frame: FrameScale) {
+        self.frame_accel[0] = 0;
+        self.frame_accel[2] = 0;
+        (self.jumped, self.armed) = (false, false);
         if (!self.bail_lift || self.state == State::Vert) && self.velocity[1] < 0 {
             self.velocity[1] = 0;
         }
@@ -1398,6 +1456,7 @@ impl Skater {
             let d = self.bail_drag;
             self.velocity = self.velocity.map(|c| c - (((c / d) * frame.scale) >> 8));
         }
+        self.anim.speed = self.presses.edges_since(frame.time, MASH_SPAN) * 0x5555 / 3 + 0x10000;
     }
 
     /// A wall in the air pushes the board off with a quarter of its normal and at times a random kick.
@@ -1445,7 +1504,7 @@ impl Skater {
             1
         } else {
             self.open_combo();
-            0
+            u8::from(self.manual != 0)
         };
         self.push_entry(Entry {
             trick: true,
@@ -1491,6 +1550,7 @@ impl Skater {
                 0x07 => {
                     self.script = None;
                     self.script_ended = true;
+                    self.trick_running = false;
                     return Ok(());
                 }
                 0x0d => {
@@ -1567,11 +1627,33 @@ impl Skater {
                 }
                 0x20 => self.trick_running = false,
                 0x23 => {
-                    self.rail_points = i32::from(short(pc)?);
+                    self.points_rate = i32::from(short(pc)?);
                     pc += 2;
                 }
-                // grind sound variant and a second queued move nothing here plays
-                0x29 | 0x2a => pc += 2,
+                // grind sound variant
+                0x29 => pc += 2,
+                0x2a => {
+                    self.ollie_script = Some(scripts.offset(pc)?);
+                    pc += 2;
+                }
+                0x52 => {
+                    self.manual = scripts
+                        .byte(pc)
+                        .ok_or("trick script manual kind truncated")?;
+                    pc += 1;
+                }
+                0x47 if speed_of(self.velocity)? >> 12 > i32::from(short(pc)?) => {
+                    pc = scripts.offset(pc + 2)?
+                }
+                0x47 => pc += 4,
+                0x53 if self.from_ground => pc = scripts.offset(pc)?,
+                0x53 => pc += 2,
+                0x54 => {
+                    self.manual_friction = i32::from(short(pc)?);
+                    pc += 2;
+                }
+                // shows the balance meter
+                0x59 => pc += 1,
                 0x0f => {
                     for a in 0..3 {
                         self.velocity[a] = i32::from(short(pc + a * 2)?) << 12;
@@ -1704,7 +1786,7 @@ impl Skater {
 
     /// Kick button and auto kick: the push animation chain, the glide toward the target and the bursts.
     fn push(&mut self, table: &AnimationTable, rules: Rules, pad: Pad) -> Result<(), String> {
-        if self.brake_mode != 0 {
+        if self.manual != 0 || self.brake_mode != 0 {
             return Ok(());
         }
         if self.anim.finished {
@@ -1762,7 +1844,10 @@ impl Skater {
 
     /// Down alone brakes: a sixteenth of the velocity per frame, then a stop under the threshold.
     fn brake(&mut self, table: &AnimationTable, pad: Pad, frame: FrameScale) -> Result<(), String> {
-        if !self.on_ground() {
+        if self.script.is_some() || self.manual != 0 || !self.on_ground() {
+            if self.state == State::Stopped {
+                self.set_state(State::Ground);
+            }
             self.brake_mode = 0;
             return Ok(());
         }
@@ -2168,13 +2253,9 @@ impl Skater {
     fn finish_frame(
         &mut self,
         world: &CollisionWorld,
-        mut accel: V3,
-        frame: FrameScale,
+        accel: V3,
         free_move: bool,
     ) -> Result<(), String> {
-        if self.bailing {
-            self.bail_drag(&mut accel, frame);
-        }
         if !free_move {
             self.position = world.move_retrying(self.old_position, self.position)?;
         }
@@ -2319,10 +2400,13 @@ pub fn ground_step(
     let half_push = frame_part(accel, frame.scale_squared)?.map(|c| c / 2);
     let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
     s.position = add(s.position, travel)?;
-    if !vert && dot_q12(s.forward, s.velocity) > FAKIE_DOT {
+    if !vert && !s.bailing && dot_q12(s.forward, s.velocity) > FAKIE_DOT {
         s.forward = s.forward.map(|c| -c);
         s.lateral = s.lateral.map(|c| -c);
         s.switched = !s.switched;
+        if s.state == State::Ground && frame.time - s.landed_at > (5 * frame.scale) >> 8 {
+            s.manual_fakie(table)?;
+        }
     }
     let mut turn_units = if vert {
         s.spin_amount(rules)
@@ -2444,6 +2528,9 @@ pub fn ground_step(
             if s.terrain == 3 {
                 frictions.push(0xb4);
             }
+            if s.manual != 0 {
+                frictions.push(s.manual_friction);
+            }
             for k in frictions {
                 let drag = frame_part(rolling.map(|c| mul_q12(k, c)), frame.scale)?;
                 accel = std::array::from_fn(|a| accel[a] - drag[a]);
@@ -2460,7 +2547,7 @@ pub fn ground_step(
     if !grounded && s.state != State::Air {
         s.leave_ground(table)?;
     }
-    s.finish_frame(world, accel, frame, free_move)?;
+    s.finish_frame(world, accel, free_move)?;
     Ok(if grounded {
         Outcome::Grounded(hit.unwrap())
     } else {
@@ -2488,6 +2575,7 @@ fn land(level: &Level, s: &mut Skater, rules: Rules, pad: Pad, hit: &Hit) -> Res
             return s.tilt_bail(table, scripts);
         }
         s.landed_trick()?;
+        s.start_manual(level, rules, false)?;
     }
     s.velocity = project_onto_plane(s.velocity, normal);
     s.last_normal = normal;
@@ -2576,7 +2664,7 @@ pub fn air_step(
         Some(hit) => land(level, s, rules, pad, &hit)?,
         None => accel = add(accel, [0, s.gravity, 0])?,
     }
-    s.finish_frame(world, accel, frame, false)?;
+    s.finish_frame(world, accel, false)?;
     Ok(match hit {
         Some(hit) if s.state != State::Air => Outcome::Landed(hit),
         _ => Outcome::Airborne,
@@ -2658,7 +2746,7 @@ pub fn step(
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
-    let (world, table, scripts) = (level.world, level.table, level.tricks);
+    let (world, table) = (level.world, level.table);
     s.panel.count_up();
     s.gravity = s.air_gravity(rules);
     s.track_up_hold(pad, frame);
@@ -2681,7 +2769,7 @@ pub fn step(
     if !s.bailing {
         s.jump_input(table, rules, pad.jump)?;
     }
-    s.run_script(table, scripts)?;
+    s.trick_input(level, rules, pad, frame.time)?;
     if !s.bailing {
         s.brake(table, pad, frame)?;
     }
@@ -2689,6 +2777,10 @@ pub fn step(
     s.decay_push_target(rules);
     s.apply_boost()?;
     s.cancel_gaps()?;
+    let dispatched = s.state;
+    if dispatched == State::Ground && frame.time - s.landed_at > (20 * frame.scale) >> 8 {
+        s.start_manual(level, rules, true)?;
+    }
     let outcome = match s.state {
         State::Ground | State::Stopped | State::Vert => {
             ground_step(world, table, s, rules, frame, pad)
@@ -2701,6 +2793,13 @@ pub fn step(
             Ok(Outcome::Grinding)
         }
     }?;
+    if dispatched == State::Ground {
+        s.balance_frame(level, rules, pad, frame)?;
+    }
+    if s.bailing {
+        s.bail_drag(frame);
+    }
+    s.settle_manual();
     s.try_grind(level, rules, pad)?;
     s.sweep_triggers(level)?;
     s.integrate(rules, frame)?;

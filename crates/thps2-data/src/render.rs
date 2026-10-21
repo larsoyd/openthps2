@@ -598,7 +598,37 @@ pub struct Draw {
     pub texture: Option<u32>,
     /// Blend mode of the ordering table walker: 1 alpha, 2 add, 4 subtract.
     pub blend: u32,
+    pub translucent: bool,
     pub wrap: bool,
+}
+
+impl Draw {
+    /// The device state the polygon handler sets: blend factors from the mode, depth writes only
+    /// for opaque faces on opaque textures, texture and diffuse modulated or diffuse alone.
+    pub fn state(&self, textures: &[TextureInfo]) -> crate::raster::DrawState {
+        use crate::raster::{BLEND_ONE, DrawState};
+        let (src, dst) = match self.blend {
+            1 => (5, 6),
+            2 => (5, BLEND_ONE),
+            _ => (1, 4),
+        };
+        let opaque_texture = self
+            .texture
+            .is_none_or(|t| textures.get(t as usize).is_some_and(|t| t.opaque));
+        let op = if self.texture.is_some() { 4 } else { 3 };
+        DrawState {
+            blend: true,
+            src,
+            dst,
+            depth_test: true,
+            depth_write: !self.translucent && opaque_texture,
+            depth_func: 7,
+            colour_op: op,
+            alpha_op: op,
+            wrap: self.wrap,
+            gouraud: true,
+        }
+    }
 }
 
 /// Distance fog: the start as a fraction of the far plane and the colour it fades to.
@@ -672,6 +702,7 @@ impl View {
                     vertices,
                     texture: p.texture,
                     blend,
+                    translucent: p.flags & 0x40 != 0,
                     wrap: p.flags & 0x20 != 0,
                 })
             })

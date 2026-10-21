@@ -20,7 +20,7 @@ pub struct Texture {
 
 /// The fixed function state the game sets, with Direct3D 7 numbering for blend factors, the depth
 /// test and the texture stage operations.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DrawState {
     pub blend: bool,
     pub src: u32,

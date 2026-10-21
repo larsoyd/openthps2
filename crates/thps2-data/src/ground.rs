@@ -71,6 +71,14 @@ pub const ANIM_CROUCH_LAND: u16 = 0x19;
 pub const ANIM_CROUCH_FALL: u16 = 0x1a;
 pub const ANIM_FALL: u16 = 0x1b;
 pub const ANIM_NOLLIE: u16 = 0xaf;
+const ANIM_BONELESS: u16 = 0x91;
+const ANIM_NO_COMPLY: u16 = 0xd8;
+const UP: u8 = 1;
+const UP_FIRST_WINDOW: i32 = 20;
+const UP_SECOND_WINDOW: i32 = 35;
+const BONELESS_POP: i32 = 0x5000;
+const BONELESS_POINTS: i32 = 250;
+const NO_COMPLY_POINTS: i32 = 200;
 /// An animation during which riding backwards does not turn the board round.
 const ANIM_NO_FAKIE: u16 = 0x22;
 const CROUCH_END: i32 = 0x1a;
@@ -935,9 +943,60 @@ impl Skater {
             return Err("vert air state unsupported".into());
         }
         self.set_state(State::Air);
+        if self.script.is_some() {
+            return Ok(());
+        }
         self.open_combo();
         self.landing_timer = LANDING_TIMER;
-        self.set_anim(table, ANIM_OLLIE)
+        let ups = if self.manual == 0 {
+            self.up_presses()
+        } else {
+            0
+        };
+        match ups {
+            0 => self.set_anim(table, ANIM_OLLIE),
+            1 => {
+                self.push_ollie_trick("NO COMPLY", NO_COMPLY_POINTS);
+                self.anim.speed = 0x10000;
+                self.set_anim(table, ANIM_NO_COMPLY)
+            }
+            _ => {
+                self.velocity[1] -= BONELESS_POP;
+                self.push_ollie_trick("BONELESS", BONELESS_POINTS);
+                self.anim.speed = 0x10000;
+                self.run_anim(table, ANIM_BONELESS, 5, -1, -1)?;
+                self.presses.consume(UP);
+                self.presses.consume(UP);
+                Ok(())
+            }
+        }
+    }
+
+    /// Up presses just before the pop, the newest within 20 time units and one more within 35.
+    fn up_presses(&self) -> usize {
+        let p = &self.presses;
+        let newest = p.newest();
+        let (mut window, mut ups) = (UP_FIRST_WINDOW, 0);
+        let mut at = p.search(newest, 0, window, newest, false, self.frame_time);
+        while let Some(i) = at {
+            if p.code(i) == UP {
+                ups += 1;
+                if ups == 2 {
+                    break;
+                }
+                window = UP_SECOND_WINDOW;
+            }
+            at = p.search(i, 1, window, newest, false, self.frame_time);
+        }
+        ups
+    }
+
+    fn push_ollie_trick(&mut self, name: &str, points: i32) {
+        self.push_entry(Entry {
+            trick: true,
+            switched: self.switched,
+            ..Entry::new(name, points, 0, 0)
+        });
     }
 
     /// Riding backwards turns the board round to fakie.
@@ -1131,10 +1190,15 @@ impl Skater {
         self.set_basis(mat_mul_cols(self.basis_matrix(), rot_z_matrix(angle)));
     }
 
-    /// Spin rate from the turn rate, scaled by the spin stat and cut nine percent per half turn done.
+    /// Spin rate from the turn rate, scaled by the spin stat and cut nine percent per half turn in
+    /// the top trick's spin group, or per loose half turn with nothing stacked.
     fn spin_amount(&self, rules: Rules) -> i32 {
         let stat = rules.stat(STAT_SPIN, self.switched);
-        (stat + 300) * (self.turn >> 12) * 25 / 10000 * (100 - 9 * self.spins) / 100
+        let n = match self.panel.entries.len() {
+            0 => self.spins,
+            len => self.panel.spin_group(len - 1),
+        };
+        (stat + 300) * (self.turn >> 12) * 25 / 10000 * (100 - 9 * n) / 100
     }
 
     fn count_spin(&mut self, angle: i32) {

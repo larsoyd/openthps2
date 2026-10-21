@@ -109,7 +109,7 @@ impl Panel {
     }
 
     /// Half spins of the group holding entry i, up to and including the next kind one entry.
-    fn spin_group(&self, i: usize) -> i32 {
+    pub fn spin_group(&self, i: usize) -> i32 {
         let e = &self.entries;
         let mut start = i;
         while start > 0 && e[start - 1].kind != 1 {

@@ -269,6 +269,8 @@ pub struct Skater {
     pub turning: bool,
     /// Push acceleration for the current frame, consumed by the ground handler.
     pub accel: [i32; 3],
+    /// Everything the frame adds to the velocity once the handler has moved the skater.
+    pub frame_accel: [i32; 3],
     pub push_cooldown: i32,
     /// Speed in Q12 units per frame that pushes stop accelerating toward.
     pub push_target: i32,
@@ -564,6 +566,7 @@ impl Skater {
             align_time: 0,
             turning: false,
             accel: [0; 3],
+            frame_accel: [0; 3],
             push_cooldown: 0,
             push_target: PUSH_TARGET_INIT,
             brake_mode: 0,
@@ -1934,7 +1937,6 @@ impl Skater {
         &mut self,
         world: &CollisionWorld,
         mut accel: V3,
-        rules: Rules,
         frame: FrameScale,
         free_move: bool,
     ) -> Result<(), String> {
@@ -1951,7 +1953,13 @@ impl Skater {
         } else {
             self.fall = 0;
         }
-        self.velocity = add(self.velocity, frame_part(accel, frame.scale)?)?;
+        self.frame_accel = accel;
+        Ok(())
+    }
+
+    /// The frame's accel reaches the velocity only after the rail check and the trigger sweep.
+    fn integrate(&mut self, rules: Rules, frame: FrameScale) -> Result<(), String> {
+        self.velocity = add(self.velocity, frame_part(self.frame_accel, frame.scale)?)?;
         self.velocity = clamp_speed(self.velocity, rules, self.switched, frame)?;
         Ok(())
     }
@@ -2219,7 +2227,7 @@ pub fn ground_step(
     if !grounded && s.state != State::Air {
         s.leave_ground(table)?;
     }
-    s.finish_frame(world, accel, rules, frame, free_move)?;
+    s.finish_frame(world, accel, frame, free_move)?;
     Ok(if grounded {
         Outcome::Grounded(hit.unwrap())
     } else {
@@ -2332,7 +2340,7 @@ pub fn air_step(
         Some(hit) => land(world, table, scripts, s, rules, &hit)?,
         None => accel = add(accel, [0, s.gravity, 0])?,
     }
-    s.finish_frame(world, accel, rules, frame, false)?;
+    s.finish_frame(world, accel, frame, false)?;
     Ok(match hit {
         Some(hit) if s.state != State::Air => Outcome::Landed(hit),
         _ => Outcome::Airborne,
@@ -2445,6 +2453,7 @@ pub fn step(
         State::Air => air_step(world, table, scripts, s, rules, frame, pad),
     }?;
     s.sweep_triggers(level)?;
+    s.integrate(rules, frame)?;
     if s.on_ground() {
         s.air_since = 0;
     } else if s.air_since == 0 {

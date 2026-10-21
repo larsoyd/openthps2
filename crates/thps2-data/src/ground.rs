@@ -373,6 +373,13 @@ pub fn rot_x_matrix(angle: i32) -> [i32; 9] {
     mat_mul_cols(identity, [0x1000, 0, 0, 0, c, -s, 0, s, c])
 }
 
+/// Identity right multiplied by the native Z rotation builder.
+pub fn rot_z_matrix(angle: i32) -> [i32; 9] {
+    let (c, s) = trig_q12(angle);
+    let identity = [0x1000, 0, 0, 0, 0x1000, 0, 0, 0, 0x1000];
+    mat_mul_cols(identity, [c, -s, 0, s, c, 0, 0, 0, 0x1000])
+}
+
 /// Identity right multiplied by the native Y rotation builder.
 pub fn rot_y_matrix(angle: i32) -> [i32; 9] {
     let (c, s) = trig_q12(angle);
@@ -836,6 +843,18 @@ impl Skater {
         let (before, after) = (pivot(m), pivot(turned));
         self.set_basis(turned);
         self.position = std::array::from_fn(|a| self.position[a] + before[a] - after[a]);
+    }
+
+    /// Rolls a step toward upright when the up axis leans across the heading. The original reads its
+    /// vector copies here, which still hold the basis from the start of the frame.
+    fn upright_roll(&mut self, up: V3, forward: V3) {
+        let lean = dot_q12(up, cross_q12(short(forward), WORLD_UP));
+        let angle = match lean {
+            l if l > 0x29 => 0xb,
+            l if l < -0x29 => 0xff5,
+            _ => return,
+        };
+        self.set_basis(mat_mul_cols(self.basis_matrix(), rot_z_matrix(angle)));
     }
 
     /// Air spin from the turn rate, scaled by the spin stat and cut nine percent per half turn done.
@@ -1628,16 +1647,14 @@ pub fn air_step(
     frame: FrameScale,
 ) -> Result<Outcome, String> {
     s.begin_frame(world)?;
+    let (start_up, start_forward) = (s.up, s.forward);
     let mut accel = [0; 3];
     let half_push = frame_part(s.accel, frame.scale_squared)?.map(|c| c / 2);
     let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
     s.position = add(s.position, travel)?;
     s.air_pitch();
     s.air_spin(rules, frame)?;
-    let roll_axis = cross_q12(short(s.forward), WORLD_UP);
-    if dot_q12(s.up, roll_axis).abs() > 0x29 {
-        return Err("air upright roll unsupported".into());
-    }
+    s.upright_roll(start_up, start_forward);
     let mut hit = world.query_filtered(s.old_position, s.position, false)?;
     if let Some(found) = hit
         && found.flags & 0x400000 != 0

@@ -7,6 +7,7 @@ pub mod materials;
 pub mod pkr;
 pub mod projection;
 pub mod psx;
+pub mod rail;
 pub mod rec;
 pub mod score;
 pub mod script;

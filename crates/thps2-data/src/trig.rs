@@ -133,6 +133,23 @@ impl Triggers {
             .collect()
     }
 
+    /// World position and flags of a rail node, flags 0xffff reading as none.
+    pub fn rail_point(&self, node: usize) -> Option<([i32; 3], u16)> {
+        let n = self.nodes.get(node)?;
+        if n.kind != 10 && n.kind != 11 {
+            return None;
+        }
+        let at = n.after_links();
+        let word = |k: usize| {
+            Some(i32::from_le_bytes(
+                n.raw.get(at + k * 4..at + k * 4 + 4)?.try_into().ok()?,
+            ))
+        };
+        let position = [word(0)? << 12, word(1)? << 12, word(2)? << 12];
+        let flags = u16::from_le_bytes(n.raw.get(at + 12..at + 14)?.try_into().ok()?);
+        Some((position, if flags == 0xffff { 0 } else { flags }))
+    }
+
     pub fn kind(&self, node: usize) -> i16 {
         self.nodes[node].kind
     }

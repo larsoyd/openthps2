@@ -201,8 +201,8 @@ pub fn inspect(
         .insert_resource(Time::<Fixed>::from_hz(30.0))
         .insert_resource(SessionRules(Rules {
             stats: TONY_HAWK_STATS,
-            bonus: 0,
-            auto_kick: false,
+            handicap: None,
+            auto_kick: true,
         }))
         .insert_resource(pad)
         .init_resource::<SessionAssets>()
@@ -327,26 +327,27 @@ pub fn inspect(
     let mut motions = app.world_mut().query::<&SkaterMotion>();
     for motion in motions.iter(app.world()) {
         println!(
-            "[ground] frames={} requested={simulate_frames} scale=256 stats={:?} bonus={} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} pad={:?} turn={} anim={}:{} charge={} ollies={} push_cooldown={} push_target={} brake_mode={}",
+            "[ground] frames={} requested={simulate_frames} scale={} stats={:?} handicap={:?} auto_kick={} state={:?} position_q12={:?} velocity_q12={:?} up_q12={:?} last_ground={:?} halted={:?} pad={:?} turn={} anim={}:{} charge={} ollies={} push_cooldown={} push_target={} brake_mode={}",
             motion.frames,
+            motion.run.clock.current().scale,
             rules.stats,
-            rules.bonus,
+            rules.handicap,
             rules.auto_kick,
-            motion.skater.state,
-            motion.skater.position,
-            motion.skater.velocity,
-            motion.skater.up,
+            motion.run.skater.state,
+            motion.run.skater.position,
+            motion.run.skater.velocity,
+            motion.run.skater.up,
             motion.last_ground,
             motion.halted,
             pad.held,
-            motion.skater.turn,
-            motion.skater.anim.id,
-            motion.skater.anim.frame,
-            motion.skater.charge,
-            motion.skater.ollies,
-            motion.skater.push_cooldown,
-            motion.skater.push_target,
-            motion.skater.brake_mode
+            motion.run.skater.turn,
+            motion.run.skater.anim.id,
+            motion.run.skater.anim.frame,
+            motion.run.skater.charge,
+            motion.run.skater.ollies,
+            motion.run.skater.push_cooldown,
+            motion.run.skater.push_target,
+            motion.run.skater.brake_mode
         );
     }
     if render {

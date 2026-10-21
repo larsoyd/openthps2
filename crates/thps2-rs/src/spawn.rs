@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use thps2_data::{
     anim::AnimationTable,
     collision::{CollisionWorld, Hit},
-    ground::{self, DESIGN_FRAME, Outcome, Pad, Rules, Skater},
+    ground::{Outcome, Pad, Rules, Run},
     psx::Scene,
     skater::GROUND_STICK_DISTANCE,
     trig::{Restart, Triggers},
@@ -41,7 +41,7 @@ impl SessionPad {
 
 #[derive(Component, Debug)]
 pub struct SkaterMotion {
-    pub skater: Skater,
+    pub run: Run,
     pub frames: u32,
     pub last_ground: Option<(usize, usize, i32)>,
     pub halted: Option<String>,
@@ -109,7 +109,7 @@ pub fn initialize_spawn(
         let restart = triggers.restart_named("Start")?;
         let placement = place(restart, &collision)?;
         let motion = SkaterMotion {
-            skater: Skater::at_restart(restart.position_fixed, restart.angles),
+            run: Run::start(&table, restart.position_fixed, restart.angles)?,
             frames: 0,
             last_ground: None,
             halted: None,
@@ -127,7 +127,7 @@ pub fn initialize_spawn(
     }
 }
 
-/// One design frame per fixed tick with the held pad, stopping at the first unsupported contact.
+/// One run frame per fixed tick with the held pad, stopping at the first unsupported contact.
 pub fn advance_ground(
     collision: Option<Res<SessionCollision>>,
     animations: Option<Res<SessionAnimations>>,
@@ -143,14 +143,10 @@ pub fn advance_ground(
             continue;
         }
         let frame = motion.frames + 1;
-        match ground::step(
-            &collision.0,
-            &animations.0,
-            &mut motion.skater,
-            rules.0,
-            DESIGN_FRAME,
-            pad.at(frame),
-        ) {
+        match motion
+            .run
+            .frame(&collision.0, &animations.0, rules.0, pad.at(frame))
+        {
             Ok(Outcome::Grounded(hit) | Outcome::Landed(hit)) => {
                 motion.frames = frame;
                 motion.last_ground = Some((hit.item_index, hit.face_index, hit.distance_units));

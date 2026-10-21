@@ -75,16 +75,20 @@ pub struct Pad {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rules {
     pub stats: [i32; 11],
-    pub bonus: i32,
+    /// Multiplayer handicap, single player reads the career record instead.
+    pub handicap: Option<i32>,
     pub auto_kick: bool,
 }
 
 impl Rules {
-    /// Stat as (byte + 2 + bonus) * 10 floored at 30 and capped, scaled by the switch stat while riding switch.
+    /// Stat as ten per point, multiplayer adds two plus the handicap and floors at 30, then the cap
+    /// and the switch scaling apply.
     pub fn stat(self, index: usize, switched: bool) -> i32 {
-        let mut value = ((self.stats[index] + 2 + self.bonus) * 10)
-            .max(0x1e)
-            .min(STAT_CAP[index]);
+        let mut value = match self.handicap {
+            None => self.stats[index] * 10,
+            Some(h) => ((self.stats[index] + 2 + h) * 10).max(0x1e),
+        }
+        .min(STAT_CAP[index]);
         if index == STAT_SWITCH {
             return value.min(100);
         }
@@ -140,6 +144,52 @@ impl FrameScale {
             scale_squared: (scale * scale) >> 8,
             hold_delta: deltas[2] * 0x800,
         }
+    }
+}
+
+/// Ring of the last three VB tick deltas that sets the frame scale at the end of each frame.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameClock {
+    ring: [i32; 3],
+    index: usize,
+    last: i32,
+    current: FrameScale,
+}
+
+impl Default for FrameClock {
+    fn default() -> Self {
+        Self {
+            ring: [2; 3],
+            index: 0,
+            last: 0,
+            current: DESIGN_FRAME,
+        }
+    }
+}
+
+impl FrameClock {
+    pub fn current(&self) -> FrameScale {
+        self.current
+    }
+
+    /// Run start refills the ring with two ticks and leaves the index where it was.
+    pub fn reset(&mut self, vb: i32) {
+        self.ring = [2; 3];
+        self.last = vb - 2;
+    }
+
+    pub fn end_frame(&mut self, vb: i32) {
+        let delta = vb - self.last;
+        self.ring[self.index] = delta;
+        self.index = (self.index + 1) % 3;
+        self.last = vb;
+        let sum = self.ring.iter().sum::<i32>();
+        let scale = (if sum == 0 { 1 } else { sum.min(15) } << 8) / 6;
+        self.current = FrameScale {
+            scale,
+            scale_squared: (scale * scale) >> 8,
+            hold_delta: delta * 0x800,
+        };
     }
 }
 
@@ -717,17 +767,17 @@ impl Skater {
     }
 
     /// Push animations accelerate along the heading on frames 11 to 15, doubled while the kick is held.
-    fn push_burst(&mut self, speed: i32, kick: bool) -> Result<bool, String> {
-        match self.anim.id {
-            ANIM_PUSH | ANIM_PUSH_ALT => {
-                if (11..=15).contains(&self.anim.frame) && speed < self.push_target {
-                    self.accel = self.forward.map(|c| -c * if kick { 8 } else { 4 });
-                }
-                Ok(true)
-            }
-            ANIM_PUSH_SPECIAL => Err("push animation 0x5e unsupported".into()),
-            _ => Ok(false),
+    /// The run start push gives eight times the heading on frames 16 to 19.
+    fn push_burst(&mut self, speed: i32, kick: bool) -> bool {
+        let (frames, k) = match self.anim.id {
+            ANIM_PUSH | ANIM_PUSH_ALT => (11..=15, if kick { 8 } else { 4 }),
+            ANIM_PUSH_SPECIAL => (16..=19, 8),
+            _ => return false,
+        };
+        if frames.contains(&self.anim.frame) && speed < self.push_target {
+            self.accel = self.forward.map(|c| -c * k);
         }
+        true
     }
 
     /// Kick button and auto kick: the push animation chain, the glide toward the target and the bursts.
@@ -768,7 +818,7 @@ impl Skater {
                         self.push_cooldown = PUSH_COOLDOWN;
                     }
                 }
-                if !self.push_burst(speed, pad.kick)?
+                if !self.push_burst(speed, pad.kick)
                     && (speed > 20000 || self.forward[1] < 500)
                     && speed < self.push_target
                 {
@@ -783,7 +833,7 @@ impl Skater {
             self.start_push(table, rules, 0xdc)?;
         }
         if matches!(self.anim.id, ANIM_PUSH | ANIM_PUSH_ALT) {
-            self.push_burst(speed, pad.kick)?;
+            self.push_burst(speed, pad.kick);
         }
         Ok(())
     }
@@ -1297,7 +1347,9 @@ pub fn ground_step(
     let old_matrix = s.basis_matrix();
     s.begin_frame(world)?;
     let mut accel = s.accel;
-    s.position = add(s.position, frame_part(s.velocity, frame.scale)?)?;
+    let half_push = frame_part(accel, frame.scale_squared)?.map(|c| c / 2);
+    let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
+    s.position = add(s.position, travel)?;
     if dot_q12(s.forward, s.velocity) > FAKIE_DOT {
         s.forward = s.forward.map(|c| -c);
         s.lateral = s.lateral.map(|c| -c);
@@ -1494,6 +1546,53 @@ pub fn air_step(
 }
 
 /// One frame: animation tick, pad input, ollie handling, the state handler and the airborne timer.
+/// One single session run: the skater, the frame clock and the unpaused VB counter.
+#[derive(Clone, Debug)]
+pub struct Run {
+    pub skater: Skater,
+    pub clock: FrameClock,
+    pub vb: i32,
+}
+
+impl Run {
+    /// Each run starts on the special push animation and a refilled clock ring.
+    pub fn start(
+        table: &AnimationTable,
+        position_fixed: V3,
+        angles: [i16; 3],
+    ) -> Result<Self, String> {
+        let mut skater = Skater::at_restart(position_fixed, angles);
+        skater.anim.run(table, ANIM_PUSH_SPECIAL, 0, -1, -1)?;
+        let mut clock = FrameClock::default();
+        clock.reset(0);
+        Ok(Self {
+            skater,
+            clock,
+            vb: 0,
+        })
+    }
+
+    pub fn frame(
+        &mut self,
+        world: &CollisionWorld,
+        table: &AnimationTable,
+        rules: Rules,
+        pad: Pad,
+    ) -> Result<Outcome, String> {
+        self.vb += 2;
+        let outcome = step(
+            world,
+            table,
+            &mut self.skater,
+            rules,
+            self.clock.current(),
+            pad,
+        )?;
+        self.clock.end_frame(self.vb);
+        Ok(outcome)
+    }
+}
+
 pub fn step(
     world: &CollisionWorld,
     table: &AnimationTable,

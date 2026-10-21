@@ -34,6 +34,7 @@ pub const PUSH_SPEED: i32 = 0x14000;
 pub const BRAKE_STOP: i32 = 0xa000;
 
 pub const STAT_AIR: usize = 0;
+pub const STAT_HANGTIME: usize = 1;
 pub const STAT_OLLIE: usize = 2;
 pub const STAT_SPEED: usize = 3;
 pub const STAT_SPIN: usize = 4;
@@ -203,6 +204,8 @@ pub enum State {
     Air,
     /// Braked to a halt, the ground handler runs but the position is restored each frame.
     Stopped,
+    /// Riding up or down a lip face past the coping, the ground handler keeps the skater on its plane.
+    Vert,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -229,8 +232,6 @@ pub struct Skater {
     pub turn: i32,
     pub lean: i32,
     pub anim: AnimState,
-    /// Accumulated turn angle in 4096 units per revolution.
-    pub spin: i32,
     pub crouch_lean: bool,
     pub crouching: bool,
     pub charge: i32,
@@ -262,9 +263,13 @@ pub struct Skater {
     pub pitch: i32,
     /// Frame time of the last air frame without a direction, held input waits eight units after it.
     pub quiet_since: i32,
-    /// Air spin within the current half turn, and the half turns completed.
+    /// Turn within the current half turn on the ground, a lip or in the air, and the half turns done.
     pub spin_angle: i32,
     pub spins: i32,
+    /// Frame time since up has been held alone, zero while it is not.
+    pub up_since: i32,
+    /// Angle between the velocity and the lip face summed while riding it, 1024 per quarter turn.
+    pub lip_angle: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -484,7 +489,6 @@ impl Skater {
             turn: 0,
             lean: 0,
             anim: AnimState::default(),
-            spin: 0,
             crouch_lean: false,
             crouching: false,
             charge: 0,
@@ -512,6 +516,8 @@ impl Skater {
             quiet_since: 0,
             spin_angle: 0,
             spins: 0,
+            up_since: 0,
+            lip_angle: 0,
         }
     }
 
@@ -519,9 +525,17 @@ impl Skater {
         matches!(self.state, State::Ground | State::Stopped)
     }
 
+    /// Air counts on entering the air or a lip from anything but the other, and a lip entry points the
+    /// stored slope gravity along the heading.
     fn set_state(&mut self, state: State) {
-        if state == State::Air {
-            self.airs += 1;
+        match (state, self.state) {
+            (State::Air, State::Vert) | (State::Vert, State::Air) => {}
+            (State::Air | State::Vert, _) => self.airs += 1,
+            _ => {}
+        }
+        if state == State::Vert && self.state != State::Vert {
+            let [x, y, z] = self.forward.map(|c| mul_q12(c, AIR_GRAVITY));
+            self.slope_gravity = [-x, y, -z];
         }
         self.previous_state = self.state;
         self.state = state;
@@ -544,9 +558,13 @@ impl Skater {
 
     /// Leaving a ground state enters the air with the fall animation and arms the landing timer.
     fn leave_ground(&mut self, table: &AnimationTable) -> Result<(), String> {
+        if self.state == State::Vert {
+            self.set_state(State::Air);
+            return Ok(());
+        }
         self.set_state(State::Air);
         self.landing_timer = LANDING_TIMER;
-        self.spin = 0;
+        (self.spin_angle, self.spins) = (0, 0);
         self.jumped = true;
         let id = if self.crouching {
             ANIM_CROUCH_FALL
@@ -588,7 +606,7 @@ impl Skater {
             } else {
                 self.set_anim(table, ANIM_LAND)?;
             }
-            self.spin = 0;
+            self.spin_angle = 0;
         }
         if !held {
             self.crouching = false;
@@ -662,7 +680,7 @@ impl Skater {
                 return Err(format!("finished animation id={} unsupported", anim.id));
             }
             _ => {
-                if self.state == State::Air {
+                if matches!(self.state, State::Air | State::Vert) {
                     self.set_anim(table, ANIM_AIR)?;
                 }
             }
@@ -689,7 +707,7 @@ impl Skater {
         if self.charge < rules.max_charge(self.switched) {
             self.short_ollies += 1;
         }
-        self.spin = 0;
+        self.spin_angle = 0;
         if self.vert_jump && self.on_ground() {
             return Err("vert air state unsupported".into());
         }
@@ -857,18 +875,13 @@ impl Skater {
         self.set_basis(mat_mul_cols(self.basis_matrix(), rot_z_matrix(angle)));
     }
 
-    /// Air spin from the turn rate, scaled by the spin stat and cut nine percent per half turn done.
-    fn air_spin(&mut self, rules: Rules, frame: FrameScale) -> Result<(), String> {
-        if self.vert_jump {
-            return Err("vert air spin unsupported".into());
-        }
+    /// Spin rate from the turn rate, scaled by the spin stat and cut nine percent per half turn done.
+    fn spin_amount(&self, rules: Rules) -> i32 {
         let stat = rules.stat(STAT_SPIN, self.switched);
-        let amount = (stat + 300) * (self.turn >> 12) * 25 / 10000 * (100 - 9 * self.spins) / 100;
-        if amount == 0 {
-            return Ok(());
-        }
-        let angle = (amount * frame.scale) >> 8;
-        self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(angle)));
+        (stat + 300) * (self.turn >> 12) * 25 / 10000 * (100 - 9 * self.spins) / 100
+    }
+
+    fn count_spin(&mut self, angle: i32) {
         self.spin_angle += angle;
         if self.spin_angle > 0x7ff {
             self.spin_angle -= 0x800;
@@ -878,7 +891,81 @@ impl Skater {
             self.spin_angle += 0x800;
             self.spins += 1;
         }
+    }
+
+    fn air_spin(&mut self, rules: Rules, frame: FrameScale) -> Result<(), String> {
+        if self.vert_jump {
+            return Err("vert air spin unsupported".into());
+        }
+        let amount = self.spin_amount(rules);
+        if amount == 0 {
+            return Ok(());
+        }
+        let angle = (amount * frame.scale) >> 8;
+        self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(angle)));
+        self.count_spin(angle);
         Ok(())
+    }
+
+    /// Air gravity for the frame from the state it starts in, cut by the hangtime stat on a lip.
+    fn air_gravity(&self, rules: Rules) -> i32 {
+        if self.state == State::Vert {
+            (500 - rules.stat(STAT_HANGTIME, self.switched)) * AIR_GRAVITY * 20 / 10000
+        } else {
+            AIR_GRAVITY
+        }
+    }
+
+    /// Up held without a direction starts a timer that decides between riding a lip and popping off it.
+    fn track_up_hold(&mut self, pad: Pad, frame: FrameScale) {
+        if !pad.up || pad.left || pad.right {
+            self.up_since = 0;
+        } else if self.up_since == 0 {
+            self.up_since = frame.time;
+        }
+    }
+
+    /// Lip contact from the ground starts the lip ride with the air animation and a fresh landing timer.
+    fn enter_lip(
+        &mut self,
+        table: &AnimationTable,
+        frame: FrameScale,
+        hit: &Hit,
+    ) -> Result<(), String> {
+        if self.state == State::Stopped {
+            return Err("stopped lip contact unsupported".into());
+        }
+        if self.up_since != 0 && frame.time - self.up_since >= 5 {
+            return Err(format!(
+                "lip pop unsupported item={} face={}",
+                hit.item_index, hit.face_index
+            ));
+        }
+        if !self.jumped {
+            self.set_anim(table, ANIM_AIR)?;
+            self.jumped = true;
+        }
+        self.landing_timer = LANDING_TIMER;
+        (self.spin_angle, self.spins) = (0, 0);
+        self.set_state(State::Vert);
+        Ok(())
+    }
+
+    /// Accumulates the angle between the velocity and the lip face, leaving the lip once it passes a
+    /// quarter turn back.
+    fn ride_lip(&mut self, normal: V3) {
+        let n = normalize(normal);
+        let v = normalize(self.velocity);
+        let cosine = f64::from(dot_q12(v, n)) * (1.0 / 4096.0);
+        let angle = (cosine.acos() * 4096.0 * (1.0 / std::f64::consts::TAU)) as i32 - 0x3ff;
+        if angle.abs() < 3 || (angle >= 0) == (self.lip_angle >= 0) {
+            self.lip_angle += angle;
+        } else {
+            self.lip_angle = angle;
+        }
+        if self.lip_angle < -0x400 {
+            self.set_state(State::Air);
+        }
     }
 
     fn pushable(&self) -> bool {
@@ -1474,20 +1561,30 @@ pub fn ground_step(
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
+    pad: Pad,
+    gravity: i32,
 ) -> Result<Outcome, String> {
     let stopped = s.state == State::Stopped;
+    let vert = s.state == State::Vert;
+    if s.state == State::Ground {
+        s.lip_angle = 0;
+    }
     let old_matrix = s.basis_matrix();
     s.begin_frame(world)?;
     let mut accel = s.accel;
     let half_push = frame_part(accel, frame.scale_squared)?.map(|c| c / 2);
     let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
     s.position = add(s.position, travel)?;
-    if dot_q12(s.forward, s.velocity) > FAKIE_DOT {
+    if !vert && dot_q12(s.forward, s.velocity) > FAKIE_DOT {
         s.forward = s.forward.map(|c| -c);
         s.lateral = s.lateral.map(|c| -c);
         s.switched = !s.switched;
     }
-    let mut turn_units = s.turn >> 12;
+    let mut turn_units = if vert {
+        s.spin_amount(rules)
+    } else {
+        s.turn >> 12
+    };
     if s.landing_timer != 0 {
         if turn_units == 0 {
             turn_units = s.fall_line_alignment(rules, ALIGN_EXTRA)?;
@@ -1496,14 +1593,18 @@ pub fn ground_step(
         }
     }
     let angle = (frame.scale * turn_units) >> 8;
-    s.rotate(old_matrix, angle)?;
-    s.spin += angle;
+    if vert {
+        s.set_basis(mat_mul_cols(s.basis_matrix(), rot_y_matrix(angle)));
+    } else {
+        s.rotate(old_matrix, angle)?;
+    }
+    s.count_spin(angle);
     let (contact, length) = wall_probe(world, s.old_position, s.position)?;
     if let Some(contact) = contact {
         s.wall_branch(world, table, &contact, length, frame)?;
     }
     s.fast = speed_of(s.velocity)? > stat_speed(rules.stat(STAT_SPEED, s.switched), 0x186);
-    let ignore_lips = !stopped && (s.velocity[1] > 0 || s.forward[1] < 1);
+    let ignore_lips = s.state == State::Ground && (s.velocity[1] > 0 || s.forward[1] < 1);
     let start = add(s.position, scaled(s.up, 0x46)?)?;
     let end = add(start, scaled(s.up, -0x100)?)?;
     let hit = world.query_filtered(start, end, ignore_lips)?;
@@ -1520,22 +1621,43 @@ pub fn ground_step(
         if !(bit23 && bit24 && !lip) {
             s.vert = flags & VERT_FACE != 0;
         }
-        if !(bit23 && bit24 && !lip) && hit.distance_units <= s.stick_slack + 0x74 {
+        let normal = hit.normal.map(i32::from);
+        let mut reach = if vert {
+            s.stick_slack = 20;
+            0xa0
+        } else {
+            s.stick_slack + 0x74
+        };
+        if hit.distance_units > reach
+            && pad.up
+            && (1..0xed8).contains(&dot_q12(s.last_normal, normal))
+        {
+            reach *= 2;
+        }
+        if !(bit23 && bit24 && !lip) && hit.distance_units <= reach {
             s.position = world.stand(s.position, s.up, &hit)?;
             if lip {
-                return Err(format!(
-                    "ground lip surface unsupported item={} face={}",
-                    hit.item_index, hit.face_index
-                ));
+                if vert {
+                    s.ride_lip(normal);
+                } else {
+                    s.enter_lip(table, frame, &hit)?;
+                }
+                grounded = s.state == State::Vert;
+            } else if bit24 {
+                grounded = false;
+            } else if vert {
+                landing_bails(s, rules, normal)?;
+                s.set_state(State::Ground);
+                grounded = true;
+            } else {
+                let convex_edge = dot_q12(s.forward, normal) < 0
+                    && s.velocity[1] <= 0
+                    && (1..3000).contains(&dot_q12(s.last_normal, normal));
+                if stopped {
+                    s.velocity = [0; 3];
+                }
+                grounded = stopped || !convex_edge;
             }
-            let normal = hit.normal.map(i32::from);
-            let convex_edge = dot_q12(s.forward, normal) < 0
-                && s.velocity[1] <= 0
-                && (1..3000).contains(&dot_q12(s.last_normal, normal));
-            if stopped && !bit24 {
-                s.velocity = [0; 3];
-            }
-            grounded = !bit24 && (stopped || !convex_edge);
             if grounded {
                 if normal == s.last_normal {
                     s.same_normal_time += frame.hold_delta;
@@ -1547,7 +1669,12 @@ pub fn ground_step(
             }
         }
     }
-    if grounded {
+    if grounded && s.state == State::Vert {
+        let normal = hit.unwrap().normal.map(i32::from);
+        accel = add(accel, project_onto_plane([0, gravity, 0], normal))?;
+        s.ground_normal = normal;
+        s.velocity = reproject(s.velocity, normal)?;
+    } else if grounded {
         let hit = hit.unwrap();
         let normal = hit.normal.map(i32::from);
         s.slope_gravity = project_onto_plane([0, GRAVITY, 0], normal);
@@ -1579,12 +1706,14 @@ pub fn ground_step(
             }
         }
         s.velocity = v;
-        free_move = post_contact_probes(world, table, s)?;
-        s.lean_probe(world)?;
     } else {
         accel = add(accel, [0, GRAVITY, 0])?;
     }
-    if !grounded {
+    if grounded && !vert {
+        free_move = post_contact_probes(world, table, s)?;
+        s.lean_probe(world)?;
+    }
+    if !grounded && s.state != State::Air {
         s.leave_ground(table)?;
     }
     s.finish_frame(world, accel, rules, frame, free_move)?;
@@ -1608,24 +1737,8 @@ fn land(world: &CollisionWorld, s: &mut Skater, rules: Rules, hit: &Hit) -> Resu
     s.terrain = (hit.flags >> 25) & 0xf;
     s.turn = 0;
     s.set_state(State::Ground);
+    landing_bails(s, rules, normal)?;
     let flat = project_onto_plane(s.velocity, normal);
-    if speed_of(flat)? > 0x1e000 {
-        let heading = normalize(flat);
-        let facing = normalize(project_onto_plane(s.forward, normal));
-        if dot_q12(heading, facing).abs() < 0x666 {
-            return Err("air sideways landing bail unsupported".into());
-        }
-    }
-    let height = (s.clearance + s.fall) >> 12;
-    let mut limit = rules.big_drop_limit(s.switched);
-    if s.charge != 0 {
-        limit += (0xb - s.charge) * 0x3c;
-    }
-    if height > limit {
-        return Err(format!(
-            "air big drop bail unsupported height={height} limit={limit}"
-        ));
-    }
     s.vert = hit.flags & VERT_FACE != 0;
     let tilt = dot_q12(s.up, normal);
     if tilt < 2000 && s.up[1] > -2000 && (s.velocity[1] > 150000 || tilt < 200) {
@@ -1639,12 +1752,36 @@ fn land(world: &CollisionWorld, s: &mut Skater, rules: Rules, hit: &Hit) -> Resu
     head_probe(world, s)
 }
 
+/// Fast sideways landings and drops past the landing stat limit bail.
+fn landing_bails(s: &Skater, rules: Rules, normal: V3) -> Result<(), String> {
+    let flat = project_onto_plane(s.velocity, normal);
+    if speed_of(flat)? > 0x1e000 {
+        let heading = normalize(flat);
+        let facing = normalize(project_onto_plane(s.forward, normal));
+        if dot_q12(heading, facing).abs() < 0x666 {
+            return Err("sideways landing bail unsupported".into());
+        }
+    }
+    let height = (s.clearance + s.fall) >> 12;
+    let mut limit = rules.big_drop_limit(s.switched);
+    if s.charge != 0 {
+        limit += (0xb - s.charge) * 0x3c;
+    }
+    if height > limit {
+        return Err(format!(
+            "big drop bail unsupported height={height} limit={limit}"
+        ));
+    }
+    Ok(())
+}
+
 /// The air handler after the input phase, stopping at wall bounces, lips, wallrides and bails.
 pub fn air_step(
     world: &CollisionWorld,
     s: &mut Skater,
     rules: Rules,
     frame: FrameScale,
+    gravity: i32,
 ) -> Result<Outcome, String> {
     s.begin_frame(world)?;
     let (start_up, start_forward) = (s.up, s.forward);
@@ -1670,7 +1807,7 @@ pub fn air_step(
             ));
         }
         Some(hit) => land(world, s, rules, &hit)?,
-        None => accel = add(accel, [0, AIR_GRAVITY, 0])?,
+        None => accel = add(accel, [0, gravity, 0])?,
     }
     s.finish_frame(world, accel, rules, frame, false)?;
     Ok(match hit {
@@ -1735,6 +1872,8 @@ pub fn step(
     frame: FrameScale,
     pad: Pad,
 ) -> Result<Outcome, String> {
+    let gravity = s.air_gravity(rules);
+    s.track_up_hold(pad, frame);
     s.now += 1;
     s.anim.tick(frame.scale)?;
     if s.on_ground() {
@@ -1749,8 +1888,10 @@ pub fn step(
     s.wall_hit_recovery(table)?;
     s.decay_push_target(rules);
     let outcome = match s.state {
-        State::Ground | State::Stopped => ground_step(world, table, s, rules, frame),
-        State::Air => air_step(world, s, rules, frame),
+        State::Ground | State::Stopped | State::Vert => {
+            ground_step(world, table, s, rules, frame, pad, gravity)
+        }
+        State::Air => air_step(world, s, rules, frame, gravity),
     }?;
     if s.on_ground() {
         s.air_since = 0;

@@ -7,7 +7,7 @@ pub const AIR_GRAVITY: i32 = 13000;
 pub const WALL_REACH: i32 = 0x1e;
 pub const BOUNCE_REACH: i32 = 10;
 pub const HEAD_REACH: i32 = 0x3c;
-pub const UNSTICK_SPAN: i32 = 500;
+pub const UNSTICK_SPAN: i32 = 8000;
 pub const NORMAL_HOLD_LIMIT: i32 = 0x18000;
 pub const FAKIE_DOT: i32 = 0x5000;
 pub const BIG_DROP_BASE: i32 = 0x3c3;
@@ -1235,7 +1235,7 @@ impl Skater {
         let below = add(self.position, [0, UNSTICK_SPAN * 4096, 0])?;
         let Some(hit) = world.query_filtered(self.position, below, false)? else {
             return Err(
-                "ground unstick fallback unsupported, nothing within 500 units below".into(),
+                "ground unstick fallback unsupported, nothing within 8000 units below".into(),
             );
         };
         self.clearance = hit.position_fixed[1] - self.position[1] - STANDING_HEIGHT * 4096;

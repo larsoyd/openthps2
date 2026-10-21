@@ -110,6 +110,7 @@ const SPIN_OLLIE_POINTS: i32 = 50;
 const GRIND_UP_FRAMES: i32 = 0x13;
 const WALLRIDE_GAP: i32 = 0x29;
 const BOOST_MAX: i32 = 20;
+const JUMP_BLOCK_TICKS: i32 = 10;
 const UNLIMITED_PULSES: u16 = 0xffff;
 const PULSE_DEPTH: u32 = 8;
 // objects a pulse creates are not part of the rewrite world, so pulsing or killing them changes nothing
@@ -448,6 +449,9 @@ pub struct Skater {
     pub trick_landed: bool,
     /// Trigger checksums the last sweep touched, they fire again only after a sweep without them.
     pub touching: Vec<u32>,
+    /// Run clock reading just after the run started, a held jump arms nothing until ten ticks
+    /// later or a release. Zero when clear.
+    pub jump_block: i32,
     /// Kills and visibility changes the frame's scripts made, applied to the world after the frame.
     pub world_events: Vec<WorldEvent>,
     /// Pulses left per command point node, set by the first run of its script.
@@ -553,6 +557,8 @@ pub enum Outcome {
     Landed(Hit),
     /// The run has ended and the world stands still.
     Ended,
+    /// The end menu picked Retry, the caller starts a new run.
+    Retry,
 }
 
 type V3 = [i32; 3];
@@ -818,6 +824,7 @@ impl Skater {
             trick_landed: false,
             touching: Vec::new(),
             world_events: Vec::new(),
+            jump_block: 0,
             pulses: Vec::new(),
             grind: Grind::default(),
             rng: Rng::seeded(LEVEL_SEED),
@@ -970,6 +977,7 @@ impl Skater {
             self.trick_running = false;
         }
         if !held {
+            self.jump_block = 0;
             self.crouching = false;
             if self.air_since > 0 && self.now - self.air_since > LATE_OLLIE_FRAMES {
                 self.armed = false;
@@ -987,6 +995,9 @@ impl Skater {
             return Ok(());
         }
         self.charge = (self.charge + 1).min(rules.max_charge(self.stance()));
+        if self.jump_block != 0 {
+            return Ok(());
+        }
         if self.state == State::Wall {
             self.armed = true;
         } else if self.on_ground() {
@@ -3216,6 +3227,7 @@ impl Run {
     pub fn start(level: &Level, restart: &Restart) -> Result<Self, String> {
         let mut skater = Skater::at_restart(restart.position_fixed, restart.angles);
         skater.anim.run(level.table, ANIM_PUSH_SPECIAL, 0, -1, -1)?;
+        skater.jump_block = 1;
         skater.pulse_links(level.triggers, restart.node_index, 0)?;
         let mut clock = FrameClock::default();
         clock.reset(0);
@@ -3232,7 +3244,12 @@ impl Run {
 
     pub fn frame(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
         if self.skater.session.ended {
-            return Ok(Outcome::Ended);
+            let retry = self.skater.session.end_screens(pad);
+            return Ok(if retry {
+                Outcome::Retry
+            } else {
+                Outcome::Ended
+            });
         }
         self.skater.wind_down(level.table, pad)?;
         // the end menu pauses the game before the skaters update
@@ -3303,6 +3320,9 @@ pub fn step(
     s.track_up_hold(pad, frame);
     s.now += 1;
     s.frame_time = frame.time;
+    if s.jump_block != 0 && frame.time - s.jump_block > JUMP_BLOCK_TICKS {
+        s.jump_block = 0;
+    }
     s.frame = frame;
     s.grind_up = if pad.grind { 0 } else { s.grind_up + 1 };
     if !matches!(s.state, State::Air | State::Vert)

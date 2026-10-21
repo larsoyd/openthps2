@@ -14,6 +14,9 @@ pub struct Session {
     pub time_up: bool,
     pub wind: i32,
     pub ended: bool,
+    /// Past the statistics screen, on the end menu with Retry picked.
+    pub menu: bool,
+    jump_held: bool,
 }
 
 impl Default for Session {
@@ -23,11 +26,28 @@ impl Default for Session {
             time_up: false,
             wind: 0,
             ended: false,
+            menu: false,
+            jump_held: false,
         }
     }
 }
 
 impl Session {
+    /// The statistics screen and then the end menu each take a fresh jump press, the second one
+    /// picks Retry. Other menu items are not part of the rewrite yet.
+    pub(super) fn end_screens(&mut self, pad: Pad) -> bool {
+        let pressed = pad.jump && !self.jump_held;
+        self.jump_held = pad.jump;
+        if !pressed {
+            return false;
+        }
+        if self.menu {
+            return true;
+        }
+        self.menu = true;
+        false
+    }
+
     /// Time is up once the run clock passes the limit, reaching it is not enough.
     pub fn runs_out(&self, time: i32) -> bool {
         self.limit - time < 0

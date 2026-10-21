@@ -10,12 +10,14 @@ use crate::trig::{Command, Triggers};
 
 mod grind;
 mod manual;
+mod wall;
 
 pub use manual::{Balance, QueuedTrick};
 
 pub const GRAVITY: i32 = 0x1964;
 pub const AIR_GRAVITY: i32 = 13000;
 pub const WALL_REACH: i32 = 0x1e;
+const WALL_REACH_BAILING: i32 = 100;
 pub const BOUNCE_REACH: i32 = 10;
 pub const HEAD_REACH: i32 = 0x3c;
 pub const UNSTICK_SPAN: i32 = 8000;
@@ -327,6 +329,8 @@ pub enum State {
     Vert,
     /// Just popped off a vert face: airborne, but the face can still catch the skater.
     VertPop,
+    /// Riding a wall face under its own gravity.
+    Wall,
     /// Sliding along a rail chain.
     Grind,
 }
@@ -848,6 +852,9 @@ impl Skater {
             (State::Air | State::Vert, _) => self.airs += 1,
             _ => {}
         }
+        if state == State::Air && self.state == State::Wall {
+            self.leave_wall_basis();
+        }
         if state == State::Vert && self.state != State::Vert {
             let [x, y, z] = self.forward.map(|c| mul_q12(c, AIR_GRAVITY));
             self.slope_gravity = [-x, y, -z];
@@ -950,7 +957,9 @@ impl Skater {
             return Ok(());
         }
         self.charge = (self.charge + 1).min(rules.max_charge(self.stance()));
-        if self.on_ground() {
+        if self.state == State::Wall {
+            self.armed = true;
+        } else if self.on_ground() {
             self.armed = true;
             if !self.crouching && self.turn.abs() < 0xa000 {
                 self.turn = 0;
@@ -1021,6 +1030,9 @@ impl Skater {
     }
 
     fn ollie(&mut self, table: &AnimationTable, rules: Rules) -> Result<(), String> {
+        if self.state == State::Wall {
+            return Err("wallie unsupported".into());
+        }
         if self.manual != 0 {
             if self.ollie_script.is_some() {
                 return Err("ollie out of a manual into a queued move unsupported".into());
@@ -1048,7 +1060,7 @@ impl Skater {
         if self.charge < rules.max_charge(self.stance()) {
             self.short_ollies += 1;
         }
-        self.spin_angle = 0;
+        (self.spin_angle, self.spins) = (0, 0);
         match self.state {
             State::Vert => {}
             State::Ground if self.vert_jump => {
@@ -1456,6 +1468,7 @@ impl Skater {
                 State::Ground => 1,
                 State::Air | State::Vert => 0x20,
                 State::Grind => 2,
+                State::Wall => 4,
                 State::Stopped | State::VertPop => 0,
             }
         };
@@ -2598,16 +2611,26 @@ impl Skater {
 }
 
 /// Probes the movement segment, extended to the wall reach when short, with lips included.
-fn wall_probe(world: &CollisionWorld, old: V3, new: V3) -> Result<(Option<Hit>, i32), String> {
+fn wall_probe(
+    world: &CollisionWorld,
+    old: V3,
+    new: V3,
+    bailing: bool,
+) -> Result<(Option<Hit>, i32), String> {
     if old == new {
         return Ok((None, 0));
     }
+    let reach = if bailing {
+        WALL_REACH_BAILING
+    } else {
+        WALL_REACH
+    };
     let delta = std::array::from_fn(|a| new[a] - old[a]);
     let length = speed_of(delta)?;
     let mut end = new;
-    if length < WALL_REACH * 4096 {
+    if length < reach * 4096 {
         let divisor = length.max(0x800);
-        end = std::array::from_fn(|a| WALL_REACH * delta[a] / divisor * 4096 + old[a]);
+        end = std::array::from_fn(|a| reach * delta[a] / divisor * 4096 + old[a]);
     }
     Ok((world.query_filtered(old, end, false)?, length))
 }
@@ -2696,7 +2719,7 @@ pub fn ground_step(
         s.manual_fakie(table)?;
     }
     s.vert_turn(rules, pad, frame, old_matrix)?;
-    let (contact, length) = wall_probe(world, s.old_position, s.position)?;
+    let (contact, length) = wall_probe(world, s.old_position, s.position, s.bailing)?;
     if let Some(contact) = contact {
         s.wall_branch(world, table, &contact, length, frame)?;
     }
@@ -2929,17 +2952,28 @@ pub fn air_step(
         hit = world.query_filtered(s.old_position, s.position, true)?;
     }
     let skims = popped && s.frame_time - s.pop_time <= POP_CATCH;
+    let rides = hit.as_ref().is_some_and(|h| {
+        let wall =
+            h.flags & 0x1000000 != 0 || (h.flags & LIP_FACE != 0 && h.face_flags & 0x80 != 0);
+        let reach = pad.grind || s.grind_up <= GRIND_UP_FRAMES;
+        wall && h.flags & 0x800000 == 0
+            && !s.bailing
+            && reach
+            && s.frame_time - s.wall_time >= WALLRIDE_GAP
+    });
     match hit {
         Some(hit) if hit.flags & 0x1000000 != 0 && !(popped && hit.flags & LIP_FACE != 0) => {
-            let low = hit.flags & 0x800000 == 0;
-            let reach = pad.grind || s.grind_up <= GRIND_UP_FRAMES;
-            if low && !s.bailing && reach && s.frame_time - s.wall_time >= WALLRIDE_GAP {
-                return Err(format!(
-                    "air wallride unsupported item={} face={}",
-                    hit.item_index, hit.face_index
-                ));
+            if rides {
+                s.enter_wall(level, &hit)?;
+                s.finish_frame(world, accel, false)?;
+                return Ok(Outcome::Airborne);
             }
             s.air_bounce(world, &hit)?;
+        }
+        Some(hit) if rides => {
+            s.enter_wall(level, &hit)?;
+            s.finish_frame(world, accel, false)?;
+            return Ok(Outcome::Airborne);
         }
         Some(hit) if hit.flags & LIP_FACE != 0 => land_on_lip(world, table, s, pad, &hit)?,
         Some(hit) if skims => skim_face(world, s, &hit)?,
@@ -3032,6 +3066,7 @@ pub fn native_state(state: State) -> u8 {
         State::Vert => 2,
         State::VertPop => 3,
         State::Grind => 4,
+        State::Wall => 5,
         State::Stopped => 7,
     }
 }
@@ -3118,12 +3153,14 @@ pub fn step(
     }
     match s.state {
         State::Ground | State::Grind => s.lip_spin = false,
+        State::Wall => (s.lip_spin, s.grind.last_rail) = (false, None),
         State::Vert => s.lip_spin = true,
         _ => {}
     }
     let outcome = match s.state {
         State::Ground | State::Stopped | State::Vert => ground_step(level, s, rules, frame, pad),
         State::Air => air_step(level, s, rules, frame, pad),
+        State::Wall => wall::wall_step(level, s, rules, frame),
         State::VertPop => {
             let outcome = air_step(level, s, rules, frame, pad)?;
             if s.state == State::VertPop && s.frame_time - s.pop_entered > POP_AIR {
@@ -3149,7 +3186,7 @@ pub fn step(
     s.sweep_triggers(level)?;
     s.integrate(rules, frame)?;
     if !matches!(s.state, State::Air | State::Vert | State::VertPop) {
-        s.air_since = 0;
+        (s.air_since, s.gravity_percent) = (0, 100);
     } else if s.air_since == 0 {
         s.air_since = s.now;
     }

@@ -4,10 +4,10 @@ Tony Hawk's Pro Skater 2 for Windows, rebuilt in Rust on Bevy from the original 
 reimplementation of the USA rerelease: the same levels, skaters, physics, tricks, scoring and modes, read from your own
 copy of the game, with the freedom to fix bugs and to add widescreen and native 64-bit support along the way.
 
-**Status: not playable yet.** The Hangar level, Tony Hawk's model and animation bank, the collision world and the
-skater's ground, air, steering and ollie physics are reconstructed from the executable and checked frame by frame
-against models of the recovered routines. Rendering is a static diagnostic. Tricks, scoring, the session timer, menus,
-audio and the other levels are open. <!-- progress --> 7.1% of the executable implemented by bytes (92 of 4720 functions), 4.4% more recovered. <!-- /progress --> The full map is in [PROGRESS.md](PROGRESS.md).
+**Status: not playable yet.** A Hangar single session with Tony Hawk is reconstructed from the executable and
+matches the original game frame by frame on recorded inputs: skating, ollies, flips, grabs, lips, grinds, wallrides,
+manuals, bails, specials, scoring and combos, the scripted level events, the two minute clock, the end of the run and
+Retry. Rendering is a static diagnostic. The HUD, camera, menus, audio, career mode and the other levels are open. <!-- progress --> 12.9% of the executable implemented by bytes (179 of 4720 functions), 9.2% more recovered. <!-- /progress --> The full map is in [PROGRESS.md](PROGRESS.md).
 
 ## Requirements
 

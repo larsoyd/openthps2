@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 193 (4.1%) | 132,477 (13.8%) |
-| Recovered | 223 (4.7%) | 88,113 (9.2%) |
-| Open | 4304 | 739,149 |
+| Implemented | 209 (4.4%) | 149,252 (15.6%) |
+| Recovered | 221 (4.7%) | 87,711 (9.1%) |
+| Open | 4290 | 722,776 |
 
-`███░░░░░░░░░░░░░░░░░` 13.8% implemented by bytes
+`███░░░░░░░░░░░░░░░░░` 15.6% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 63 | 102 | `█░░░░░░░░░` 6% |
+| unattributed | 2977 | 354,046 | 75 | 100 | `█░░░░░░░░░` 7% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -40,9 +40,9 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | d3dtex.cpp | 20 | 9,174 | 7 | 0 | `████░░░░░░` 41% |
 | EquipSel.cpp | 44 | 8,492 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickwin.cpp | 17 | 8,388 | 0 | 0 | `░░░░░░░░░░` 0% |
-| camera.cpp | 22 | 8,285 | 0 | 0 | `░░░░░░░░░░` 0% |
+| camera.cpp | 22 | 8,285 | 3 | 0 | `███████░░░` 74% |
 | m3d.cpp | 16 | 7,875 | 5 | 1 | `██████░░░░` 64% |
-| camera.h | 1 | 7,297 | 0 | 0 | `░░░░░░░░░░` 0% |
+| camera.h | 1 | 7,297 | 1 | 0 | `██████████` 100% |
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
 | baddy.cpp | 10 | 6,545 | 3 | 0 | `████████░░` 79% |
@@ -143,6 +143,11 @@ Implemented routines and the Rust module that holds them.
 | 00402bb0 | 815 | baddy.cpp | objects.rs |
 | 00403000 | 171 | unattributed | objects.rs |
 | 00403410 | 511 | unattributed | objects.rs |
+| 0040b650 | 1409 | camera.cpp | camera.rs |
+| 0040be70 | 508 | unattributed | camera.rs |
+| 0040c370 | 7297 | camera.h | camera.rs |
+| 0040e090 | 3294 | camera.cpp | camera.rs |
+| 00410610 | 1431 | camera.cpp | camera.rs |
 | 00448860 | 289 | exp.cpp | collision.rs |
 | 00449cd0 | 906 | unattributed | font.rs |
 | 0044a070 | 1100 | FontTools.cpp | text.rs |
@@ -235,6 +240,12 @@ Implemented routines and the Rust module that holds them.
 | 0049df00 | 1296 | physics.cpp | ground.rs |
 | 0049e480 | 229 | physics.cpp | session.rs |
 | 0049e680 | 2983 | physics.cpp | ground.rs |
+| 004a9650 | 255 | unattributed | camera.rs |
+| 004a9820 | 71 | unattributed | camera.rs |
+| 004a9870 | 71 | unattributed | camera.rs |
+| 004a9910 | 237 | unattributed | camera.rs |
+| 004a9a00 | 491 | unattributed | camera.rs |
+| 004a9bf0 | 890 | unattributed | camera.rs |
 | 004a9f70 | 81 | unattributed | rail.rs |
 | 004a9fd0 | 17 | unattributed | rail.rs |
 | 004aa040 | 79 | unattributed | rail.rs |
@@ -280,9 +291,12 @@ Implemented routines and the Rust module that holds them.
 | 004c7a00 | 489 | trig.cpp | ground.rs |
 | 004c8650 | 316 | trig.cpp | trig.rs |
 | 004c9320 | 30 | unattributed | rng.rs |
+| 004c9500 | 136 | unattributed | camera.rs |
+| 004c9770 | 258 | unattributed | camera.rs |
 | 004c9f50 | 95 | unattributed | trig.rs |
 | 004ca0a0 | 32 | unattributed | camera.rs |
 | 004ca2d0 | 846 | unattributed | collision.rs |
+| 004ca8f0 | 73 | unattributed | camera.rs |
 | 004ca9f0 | 41 | unattributed | skater.rs |
 | 004caa20 | 41 | unattributed | skater.rs |
 | 004caae0 | 39 | unattributed | rec.rs |
@@ -314,7 +328,7 @@ Implemented routines and the Rust module that holds them.
 | 004da680 | 242 | unattributed | bitmap.rs |
 | 004da840 | 666 | unattributed | materials.rs |
 | 004dc0c0 | 60 | unattributed | hud.rs |
-| 004e2f80 | 104 | unattributed | rail.rs |
+| 004e2f80 | 104 | unattributed | camera.rs |
 | 004e2ff0 | 113 | unattributed | skater.rs |
 | 004e3130 | 160 | unattributed | skater.rs |
 | 004e3ce0 | 59 | unattributed | rail.rs |
@@ -322,6 +336,8 @@ Implemented routines and the Rust module that holds them.
 | 004e7de0 | 377 | unattributed | skater.rs |
 | 004e7f60 | 371 | unattributed | skater.rs |
 | 004e80e0 | 85 | unattributed | skater.rs |
+| 004e8580 | 25 | unattributed | camera.rs |
+| 004e85a0 | 329 | unattributed | camera.rs |
 | 004e8770 | 3 | unattributed | bitmap.rs |
 | 004e9780 | 421 | unattributed | pkr.rs |
 | 004e9940 | 568 | unattributed | pkr.rs |
@@ -329,7 +345,7 @@ Implemented routines and the Rust module that holds them.
 | 004f39b0 | 42 | unattributed | ground.rs |
 | 004f4940 | 445 | unattributed | collision.rs |
 | 004f53b0 | 44 | unattributed | skater.rs |
-| 004f5f90 | 39 | unattributed | skater.rs |
+| 004f5f90 | 39 | unattributed | camera.rs |
 | 004f5fc0 | 19 | unattributed | skater.rs |
 
 ## Recovered, not yet reimplemented
@@ -480,7 +496,6 @@ Implemented routines and the Rust module that holds them.
 | 004c9340 | 77 | unattributed |
 | 004c9390 | 107 | unattributed |
 | 004ca0c0 | 120 | unattributed |
-| 004ca8f0 | 73 | unattributed |
 | 004cb360 | 20 | unattributed |
 | 004cb380 | 57 | unattributed |
 | 004cb6e0 | 292 | video.cpp |
@@ -527,7 +542,6 @@ Implemented routines and the Rust module that holds them.
 | 004e81a0 | 85 | unattributed |
 | 004e8410 | 79 | unattributed |
 | 004e8480 | 217 | unattributed |
-| 004e85a0 | 329 | unattributed |
 | 004e8970 | 3 | unattributed |
 | 004e9070 | 89 | unattributed |
 | 004e9730 | 67 | unattributed |
@@ -560,4 +574,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 004d4bf0
+Status entries outside the function inventory: 0040f850, 004d4bf0

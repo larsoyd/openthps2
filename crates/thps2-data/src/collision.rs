@@ -240,6 +240,8 @@ struct CollisionFace {
 
 /// Glass faces stay solid until a kill shatters their item.
 const BREAKABLE: u32 = 0x80000;
+/// Faces the camera probes see, the others let the view through.
+const CAMERA_FACE: u32 = 0x100000;
 
 #[derive(Debug)]
 struct CollisionItem {
@@ -343,6 +345,8 @@ pub struct Hit {
     /// Source Q12 normal, with negative Y pointing upward.
     pub normal: [i16; 3],
     pub distance_units: i32,
+    /// Whole unit length of the probed segment.
+    pub length_units: i32,
     /// Collision word with the normal index below and the surface bits above 16.
     pub flags: u32,
     /// Face word 0 as stored in the model.
@@ -572,6 +576,31 @@ impl CollisionWorld {
         end: [i32; 3],
         ignore_lips: bool,
     ) -> Result<Option<Hit>, String> {
+        self.query_faces(start, end, ignore_lips, 0)
+    }
+
+    /// The camera's probes see lip faces and, raised by most of them, nothing but camera faces.
+    pub fn query_camera(
+        &self,
+        start: [i32; 3],
+        end: [i32; 3],
+        camera_faces: bool,
+    ) -> Result<Option<Hit>, String> {
+        self.query_faces(
+            start,
+            end,
+            false,
+            if camera_faces { CAMERA_FACE } else { 0 },
+        )
+    }
+
+    fn query_faces(
+        &self,
+        start: [i32; 3],
+        end: [i32; 3],
+        ignore_lips: bool,
+        require: u32,
+    ) -> Result<Option<Hit>, String> {
         if start == end {
             return Ok(None);
         }
@@ -595,6 +624,7 @@ impl CollisionWorld {
             delta,
             length,
             ignore_lips,
+            require,
         };
         let mut best = None;
         let mut stamped = vec![false; self.items.len()];
@@ -620,12 +650,14 @@ impl CollisionWorld {
             delta,
             length,
             ignore_lips,
+            require,
         } = *query;
         let item = &self.items[item_index];
         let (s, e) = (item.local(start), item.local(end));
         let broken = self.shattered.contains(&item_index);
         for face in &item.faces {
             if (ignore_lips && face.flags & 0x400000 != 0)
+                || face.flags & require != require
                 || (broken && face.flags & BREAKABLE != 0)
             {
                 continue;
@@ -649,6 +681,7 @@ impl CollisionWorld {
                 position_fixed,
                 normal: face.normal,
                 distance_units: (length * t / 0x4000) as i32,
+                length_units: length as i32,
                 flags: face.flags,
                 face_flags: face.face_flags,
             });
@@ -715,6 +748,7 @@ struct Query {
     delta: [i64; 3],
     length: i64,
     ignore_lips: bool,
+    require: u32,
 }
 
 /// Native a*b/c truncates an x87 quotient, exact division only differs within one extended ulp.

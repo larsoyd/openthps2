@@ -12,7 +12,6 @@ pub const NORMAL_HOLD_LIMIT: i32 = 0x18000;
 pub const FAKIE_DOT: i32 = 0x5000;
 pub const BIG_DROP_BASE: i32 = 0x3c3;
 pub const WORLD_UP: [i32; 3] = [0, -4096, 0];
-pub const TURN_ACCEL: i32 = 0x3c;
 pub const TURN_MAX: i32 = 0x2d000;
 pub const TURN_MAX_CROUCH: i32 = 0x5a000;
 pub const LEAN_FRAMES: i32 = 0x16;
@@ -78,6 +77,8 @@ pub struct Rules {
     /// Multiplayer handicap, single player reads the career record instead.
     pub handicap: Option<i32>,
     pub auto_kick: bool,
+    /// Board turning setting, 1 unless changed in skater select.
+    pub deck_turning: u8,
 }
 
 impl Rules {
@@ -710,10 +711,16 @@ impl Skater {
     fn turn_input(
         &mut self,
         table: &AnimationTable,
+        rules: Rules,
         pad: Pad,
         frame: FrameScale,
     ) -> Result<(), String> {
-        let mut accel = (TURN_ACCEL * 0x100 * frame.scale) >> 8;
+        let base = match rules.deck_turning {
+            0 => 0x3c,
+            1 => 0x78,
+            _ => 0xb4,
+        };
+        let mut accel = (base * 0x100 * frame.scale) >> 8;
         let mut limit = TURN_MAX;
         self.crouch_lean = pad.down;
         self.turning = pad.left || pad.right;
@@ -1604,7 +1611,7 @@ pub fn step(
     s.now += 1;
     s.anim.tick(frame.scale)?;
     if s.on_ground() {
-        s.turn_input(table, pad, frame)?;
+        s.turn_input(table, rules, pad, frame)?;
     } else {
         s.air_turn(table, pad)?;
     }

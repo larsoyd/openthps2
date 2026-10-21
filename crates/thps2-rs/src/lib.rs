@@ -203,6 +203,7 @@ pub fn inspect(
             stats: TONY_HAWK_STATS,
             handicap: None,
             auto_kick: true,
+            deck_turning: 1,
         }))
         .insert_resource(pad)
         .init_resource::<SessionAssets>()

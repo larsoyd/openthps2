@@ -20,7 +20,7 @@ modern platforms and community creation. Current progress is in [PROGRESS.md](PR
 - **High resolutions and ultrawide** - 1440p, 4K and ultrawide with correct aspect ratios and readable, scalable menus.
 - **High refresh rates** - interpolated movement and animation while the 30 Hz simulation keeps trick timing and
   game speed.
-- **No Hard Limits** - No hard limits like on draw distance and in memory for the default improved rendering.
+- **No Hard Limits** - No hard set limits from vanilla like on draw distance, 3d models, and in memory for the default improved rendering.
 - **Classic and modern rendering** - the authentic software look or modern GPU graphics, sharing one simulation. - NB: Classic rendering may fail with a message when loading any skate parks/content relying on its improvements
 - **Displays and cameras** - windowed, fullscreen or borderless play, widescreen-aware framing and adjustable field of
   view.

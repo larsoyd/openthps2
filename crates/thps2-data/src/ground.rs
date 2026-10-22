@@ -1981,7 +1981,10 @@ impl Skater {
         }
         let angle = (frame.scale * turn_units) >> 8;
         if spin_mode {
-            self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(angle)));
+            // the yaw helper does nothing while bailing in either mode
+            if !self.bailing {
+                self.set_basis(mat_mul_cols(self.basis_matrix(), rot_y_matrix(angle)));
+            }
         } else {
             self.rotate(old_matrix, angle)?;
         }

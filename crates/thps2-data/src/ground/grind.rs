@@ -163,9 +163,13 @@ impl Skater {
             blocked: self.grind.last_rail.filter(|_| self.grind.block > 0),
             enabled: &self.enabled_rails,
         };
-        level
+        let along = level
             .rails
-            .search(level.world, &sweep, &mut self.grind.found)
+            .search(level.world, &sweep, &mut self.grind.found)?;
+        if along && self.grind.no_stick == 1 {
+            self.grind.no_stick = 0;
+        }
+        Ok(())
     }
 
     /// Onto the rail point: the grind script by approach and pad, the velocity along the rail plus

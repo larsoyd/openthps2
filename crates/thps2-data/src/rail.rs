@@ -174,6 +174,8 @@ impl Rails {
 
 const SHORT_LIMIT: i32 = 0x6883;
 const BEST_START: i32 = 100_000_000;
+/// Level travel and rail directions agreeing past this dot.
+const ALONG: i32 = 0xdac;
 const SWEEP_PAD: i32 = 0x64000;
 
 /// Closest points of the motion segment and a rail segment, with their distance in file units.
@@ -315,13 +317,16 @@ pub struct Sweep<'a> {
 
 impl Rails {
     /// Ranks every rail segment near the sweep, a near miss with a better rank cancelling the find.
+    /// Keeps the best rail hit of the sweep in found, and tells whether a hit within reach ran
+    /// along the travel, which lets the last frame of the no stick timer go.
     pub fn search(
         &self,
         world: &CollisionWorld,
         sweep: &Sweep,
         found: &mut Option<RailHit>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let mut best = BEST_START;
+        let mut along = false;
         let lo: V3 = std::array::from_fn(|i| sweep.old[i].min(sweep.new[i]) - SWEEP_PAD);
         let hi: V3 = std::array::from_fn(|i| sweep.old[i].max(sweep.new[i]) + SWEEP_PAD);
         let outside = |min: V3, max: V3| (0..3).any(|i| hi[i] < min[i] || lo[i] > max[i]);
@@ -346,9 +351,12 @@ impl Rails {
                         if reach > 100 {
                             best = rank;
                             *found = None;
-                        } else if let Some(hit) = self.accept(world, rail, n, nx, near.p, sweep)? {
-                            best = rank;
-                            *found = Some(hit);
+                        } else {
+                            along |= c > ALONG;
+                            if let Some(hit) = self.accept(world, rail, n, nx, near.p, sweep)? {
+                                best = rank;
+                                *found = Some(hit);
+                            }
                         }
                     }
                 }
@@ -360,7 +368,7 @@ impl Rails {
                 nx = next;
             }
         }
-        Ok(())
+        Ok(along)
     }
 
     fn accept(

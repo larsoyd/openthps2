@@ -171,16 +171,20 @@ fn rank(sorted: &[f64], p: f64) -> f64 {
 }
 
 #[cfg(feature = "viewer")]
-pub use window::{add, run};
+pub use window::{StepLimit, add, capture_window, run};
 
 #[cfg(feature = "viewer")]
 mod window {
-    use std::error::Error;
+    use std::{error::Error, path::PathBuf};
 
     use bevy::{
         asset::RenderAssetUsages,
         prelude::*,
-        render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+        render::{
+            render_resource::{Extent3d, TextureDimension, TextureFormat},
+            view::screenshot::{Screenshot, ScreenshotCaptured},
+        },
+        time::TimeUpdateStrategy,
     };
     use std::time::Instant;
     use thps2_data::{
@@ -191,6 +195,10 @@ mod window {
 
     use super::{LOG_PERIOD, RunLog};
 
+    /// Fixed steps after which the session stops, so a capture shows a chosen frame.
+    #[derive(Resource)]
+    pub struct StepLimit(pub u32);
+
     #[derive(Resource)]
     struct Play {
         hangar: Hangar,
@@ -199,6 +207,8 @@ mod window {
         log: RunLog,
         /// A step ran since the last compose, so the frame needs drawing again.
         fresh: bool,
+        steps: u32,
+        composed: u32,
     }
 
     /// Keyboard stand ins for the pad until the original bindings are ported.
@@ -224,7 +234,39 @@ mod window {
         let (path, out) = super::log_file()?;
         println!("[play] log={}", path.display());
         let mut app = App::new();
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        app.add_plugins(DefaultPlugins.set(window_plugin()));
+        add(&mut app, hangar, RunLog::new(out, LOG_PERIOD))?;
+        if app.run().is_success() {
+            Ok(())
+        } else {
+            Err("play halted".into())
+        }
+    }
+
+    /// Runs one fixed step per window frame up to the limit and saves what the window shows.
+    pub fn capture_window(
+        archive: &Archive,
+        frames: u32,
+        path: PathBuf,
+    ) -> Result<(), Box<dyn Error>> {
+        let hangar = Hangar::load(archive)?;
+        let (_, out) = super::log_file()?;
+        let mut app = App::new();
+        app.add_plugins(DefaultPlugins.set(window_plugin()));
+        add(&mut app, hangar, RunLog::new(out, LOG_PERIOD))?;
+        app.insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
+            .insert_resource(StepLimit(frames))
+            .insert_resource(Shot(Some(path)))
+            .add_systems(Update, shoot.after(present));
+        if app.run().is_success() {
+            Ok(())
+        } else {
+            Err("window capture failed".into())
+        }
+    }
+
+    fn window_plugin() -> WindowPlugin {
+        WindowPlugin {
             primary_window: Some(Window {
                 title: "THPS2 Hangar".into(),
                 resolution: (640u32, 480u32).into(),
@@ -232,13 +274,49 @@ mod window {
                 ..default()
             }),
             ..default()
-        }));
-        add(&mut app, hangar, RunLog::new(out, LOG_PERIOD))?;
-        if app.run().is_success() {
-            Ok(())
-        } else {
-            Err("play halted".into())
         }
+    }
+
+    /// The PNG the window is saved to once the last step is drawn.
+    #[derive(Resource)]
+    struct Shot(Option<PathBuf>);
+
+    fn shoot(
+        mut commands: Commands,
+        play: Res<Play>,
+        limit: Res<StepLimit>,
+        mut shot: ResMut<Shot>,
+    ) {
+        if play.steps < limit.0 {
+            return;
+        }
+        let Some(path) = shot.0.take() else {
+            return;
+        };
+        let (steps, composed) = (play.steps, play.composed);
+        commands.spawn(Screenshot::primary_window()).observe(
+            move |event: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
+                let saved = event
+                    .image
+                    .clone()
+                    .try_into_dynamic()
+                    .map_err(|e| e.to_string())
+                    .and_then(|image| image.to_rgb8().save(&path).map_err(|e| e.to_string()));
+                match saved {
+                    Ok(()) => {
+                        println!(
+                            "[play] window_steps={steps} composed={composed} capture={}",
+                            path.display()
+                        );
+                        exit.write(AppExit::Success);
+                    }
+                    Err(e) => {
+                        eprintln!("[play] capture={} {e}", path.display());
+                        exit.write(AppExit::error());
+                    }
+                }
+            },
+        );
     }
 
     /// The session on a 30 Hz fixed step, drawn into a sprite after each window frame.
@@ -251,6 +329,8 @@ mod window {
                 image: None,
                 log,
                 fresh: true,
+                steps: 0,
+                composed: 0,
             })
             .add_systems(Startup, setup)
             .add_systems(FixedUpdate, step)
@@ -278,16 +358,24 @@ mod window {
 
     fn step(
         keys: Res<ButtonInput<KeyCode>>,
+        limit: Option<Res<StepLimit>>,
         mut play: ResMut<Play>,
         mut exit: MessageWriter<AppExit>,
     ) {
         let play = &mut *play;
+        if limit.as_ref().is_some_and(|l| play.steps >= l.0) {
+            return;
+        }
         let before = play.session.run.skater.session;
         let frames = play.session.run.frames;
         let started = Instant::now();
         let stepped = play.session.step(&play.hangar, pad(&keys));
         play.log.step(started.elapsed().as_secs_f64() * 1000.0);
         play.fresh = true;
+        play.steps += 1;
+        if limit.is_some_and(|l| play.steps == l.0) {
+            play.log.event(&format!("stopped steps={}", play.steps));
+        }
         if let Err(e) = stepped {
             play.log.event(&format!("halted error={e}"));
             eprintln!("[play] halted error={e}");
@@ -321,6 +409,7 @@ mod window {
             let started = Instant::now();
             let composed = play.session.compose(&play.hangar);
             play.log.compose(started.elapsed().as_secs_f64() * 1000.0);
+            play.composed += 1;
             match composed {
                 Ok(raster) => {
                     let rgba: Vec<u8> = super::rgb(&raster)

@@ -169,6 +169,20 @@ fn play_window(_: &Archive) -> Result<(), Box<dyn Error>> {
     Err("--play without --capture requires cargo feature viewer".into())
 }
 
+#[cfg(feature = "viewer")]
+fn play_window_capture(
+    archive: &Archive,
+    frames: u32,
+    path: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    play::capture_window(archive, frames, path)
+}
+
+#[cfg(not(feature = "viewer"))]
+fn play_window_capture(_: &Archive, _: u32, _: PathBuf) -> Result<(), Box<dyn Error>> {
+    Err("--window requires cargo feature viewer".into())
+}
+
 /// Reads ALL.PKR and refuses any archive but the supported release.
 fn open_archive(root: &std::path::Path) -> Result<Archive, Box<dyn Error>> {
     let path = root.join("ALL.PKR");
@@ -400,6 +414,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut release_after = None;
     let mut play = false;
     let mut play_frames = None;
+    let mut window = false;
     while let Some(arg) = args.next() {
         if arg == "--data-root" {
             root = Some(PathBuf::from(
@@ -442,6 +457,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             }
         } else if arg == "--play" {
             play = true;
+        } else if arg == "--window" {
+            window = true;
         } else if arg == "--frames" {
             play_frames = Some(
                 args.next()
@@ -466,11 +483,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     if play {
         let root = root.ok_or("--data-root is required (directory containing ALL.PKR)")?;
         let archive = open_archive(&root)?;
-        return match (play_frames, capture) {
-            (Some(frames), Some(path)) => play::capture(&archive, frames, &path),
-            (None, None) => play_window(&archive),
+        return match (play_frames, capture, window) {
+            (Some(frames), Some(path), true) => play_window_capture(&archive, frames, path),
+            (Some(frames), Some(path), false) => play::capture(&archive, frames, &path),
+            (None, None, false) => play_window(&archive),
+            (_, _, true) => Err("--window requires --frames N and --capture FILE".into()),
             _ => Err("--play takes --frames N and --capture FILE together or neither".into()),
         };
+    }
+    if window {
+        return Err("--window requires --play".into());
     }
     if play_frames.is_some() {
         return Err("--frames requires --play".into());

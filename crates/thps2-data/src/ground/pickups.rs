@@ -19,11 +19,13 @@ pub struct Pickup {
     pub kind: u8,
     base: V3,
     pub position: V3,
-    phase: u16,
+    pub phase: u16,
     /// Bob phase step per design frame.
     pub speed: u16,
     pub reach: u16,
     pub timer: u16,
+    /// Hidden by a region script, which stops the bob but not the touch.
+    pub hidden: bool,
 }
 
 fn word(raw: &[u8], at: usize) -> Result<i32, String> {
@@ -76,6 +78,7 @@ impl Pickup {
             speed,
             reach: if kind == TAPE { TAPE_REACH } else { REACH },
             timer: if taken { 1 } else { record(4) },
+            hidden: false,
         })
     }
 
@@ -92,8 +95,9 @@ impl Pickup {
                 return false;
             }
         }
-        // past the far clip a powerup stops bobbing
-        if rough_distance(skater, self.position) > crate::render::HANGAR_VIEWPORT.far {
+        // hidden or past the far clip a powerup stops bobbing
+        if self.hidden || rough_distance(skater, self.position) > crate::render::HANGAR_VIEWPORT.far
+        {
             return true;
         }
         let lift = crate::camera::rsin(i32::from(self.phase & 0xfff)) * BOB_HEIGHT;

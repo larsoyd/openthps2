@@ -3611,6 +3611,11 @@ impl Run {
                                 prop.hidden = !r.show;
                             }
                         }
+                        for pickup in &mut self.pickups {
+                            if crate::collision::in_region(pickup.position, b, r.inside) {
+                                pickup.hidden = !r.show;
+                            }
+                        }
                     }
                 }
                 WorldEvent::Visible(checksum, show) => world.show_item(checksum, show),

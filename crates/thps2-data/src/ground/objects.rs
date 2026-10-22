@@ -485,11 +485,12 @@ impl Prop {
     }
 
     pub(super) fn knock(&mut self, s: &mut Skater, push: [i32; 3]) -> Result<(), String> {
-        if self.kind == 0 || self.bouncing || self.dead {
-            return Err(format!(
-                "kill of prop node={} kind={} bouncing={} dead={} unsupported",
-                self.node, self.kind, self.bouncing, self.dead
-            ));
+        if self.dead {
+            return Err(format!("kill of dead prop node={} unsupported", self.node));
+        }
+        // a prop that cannot bounce now only counts the hit, a variable no ported script reads
+        if self.kind == 0 || self.bouncing {
+            return Ok(());
         }
         let speed = crate::camera::length12([push[0], 0, push[2]]);
         self.bouncing = true;

@@ -3651,7 +3651,7 @@ pub fn step(
     s.pitch = 0;
     if s.on_ground() {
         s.turn_input(table, rules, pad, frame)?;
-    } else if s.state != State::Grind {
+    } else {
         s.air_turn(table, pad, frame)?;
     }
     s.accel = [0; 3];

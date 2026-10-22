@@ -45,7 +45,7 @@ Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 - **Native on Windows and Linux** - a modern 64-bit build of the game.
 - **Modern displays** - high resolutions, widescreen and high refresh rates, with the original 30 Hz simulation kept intact.
 - **Bugs fixed** - clear mistakes of the original are corrected and listed in [BUGFIXES.md](BUGFIXES.md).
-- **Your saves keep working** - career saves and created parks stay compatible with the original game.
+- **Your saves keep working** - career saves and created parks stay compatible from the original game.
 - **Made for modding** - custom skaters, levels and trick scripts are part of the plan from the start.
 
 Faithful comes first: anything that changes how the game plays, such as cheats or rebalanced physics, will always be

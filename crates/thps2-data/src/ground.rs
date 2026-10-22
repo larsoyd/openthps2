@@ -441,8 +441,10 @@ pub struct Skater {
     /// A combo is open: tricks and gaps push onto the panel until the landing commits them.
     pub combo: bool,
     pub gaps: Vec<PendingGap>,
-    /// An ended gap that only counts once the skater grinds.
-    pub grind_gap: Option<i16>,
+    /// Ended gaps that only count once the skater grinds or rolls in a manual, with the command
+    /// point whose links the award pulses.
+    pub grind_gap: Option<(i16, usize)>,
+    pub manual_gap: Option<(i16, usize)>,
     /// The last landing's alignment, and whether a wall bonk excused it.
     pub style: Style,
     pub unjudged: bool,
@@ -858,6 +860,7 @@ impl Skater {
             combo: false,
             gaps: Vec::new(),
             grind_gap: None,
+            manual_gap: None,
             style: Style::default(),
             unjudged: false,
             boost: 0,
@@ -1620,8 +1623,9 @@ impl Skater {
         Ok(())
     }
 
-    /// Pending gaps whose state mask covers the current state are lost.
-    fn cancel_gaps(&mut self) -> Result<(), String> {
+    /// Pending gaps whose state mask covers the current state are lost, then a waiting manual gap
+    /// counts in a manual on the ground and a waiting grind gap on a rail.
+    fn cancel_gaps(&mut self, triggers: &Triggers) -> Result<(), String> {
         let mask = if self.bailing {
             0xffff
         } else {
@@ -1642,18 +1646,33 @@ impl Skater {
         }
         self.gaps = kept;
         if self.state == State::Ground {
-            self.grind_gap = None;
+            if self.manual != 0
+                && let Some(waiting) = self.manual_gap
+            {
+                self.open_combo();
+                self.award_waiting_gap(triggers, waiting)?;
+            }
+            (self.grind_gap, self.manual_gap) = (None, None);
         }
         if self.state == State::Grind
-            && let Some(id) = self.grind_gap.take()
+            && let Some(waiting) = self.grind_gap.take()
         {
-            let gap = hangar_gap(id)?;
-            self.push_entry(Entry {
-                gap: Some(id),
-                ..Entry::new(gap.name, i32::from(gap.points), 0, 2)
-            });
+            self.award_waiting_gap(triggers, waiting)?;
         }
         Ok(())
+    }
+
+    fn award_waiting_gap(
+        &mut self,
+        triggers: &Triggers,
+        (id, node): (i16, usize),
+    ) -> Result<(), String> {
+        let gap = hangar_gap(id)?;
+        self.push_entry(Entry {
+            gap: Some(id),
+            ..Entry::new(gap.name, i32::from(gap.points), 0, 2)
+        });
+        self.pulse_links(triggers, node, 0)
     }
 
     /// Sweeps the frame's travel for trigger planes and runs the command points newly touched.
@@ -1690,7 +1709,9 @@ impl Skater {
         let own = triggers.checksum(node).unwrap_or(0);
         for command in triggers.commands(node)? {
             match command {
-                Command::Gap { end, id } => self.gap_command(own, end, id)?,
+                Command::Gap { end, id } => {
+                    self.gap_command(triggers, node, depth, own, end, id)?
+                }
                 Command::InitialPulses(n) => {
                     if !self.pulses.iter().any(|p| p.0 == node) {
                         self.pulses.push((node, n));
@@ -1804,7 +1825,16 @@ impl Skater {
     }
 
     /// Ends the gaps waiting for this command point, then starts the one it names.
-    fn gap_command(&mut self, own: u32, end: u32, id: i16) -> Result<(), String> {
+    /// Every gap award also pulses the links of the command point that ended it.
+    fn gap_command(
+        &mut self,
+        triggers: &Triggers,
+        node: usize,
+        depth: u32,
+        own: u32,
+        end: u32,
+        id: i16,
+    ) -> Result<(), String> {
         if self.bailing {
             return Ok(());
         }
@@ -1812,11 +1842,12 @@ impl Skater {
         self.gaps = kept;
         for g in ended {
             let gap = hangar_gap(g.id)?;
-            if gap.mask & 0x40 != 0 {
-                return Err(format!("gap id={} finishing in a manual unsupported", g.id));
-            }
             if gap.mask & 8 != 0 {
-                self.grind_gap = Some(g.id);
+                self.grind_gap = Some((g.id, node));
+                continue;
+            }
+            if gap.mask & 0x40 != 0 {
+                self.manual_gap = Some((g.id, node));
                 continue;
             }
             let rolling = self.state == State::Ground && self.manual == 0;
@@ -1831,6 +1862,7 @@ impl Skater {
             if rolling {
                 self.commit_combo()?;
             }
+            self.pulse_links(triggers, node, depth)?;
         }
         if end != 0 {
             hangar_gap(id)?;
@@ -1908,7 +1940,7 @@ impl Skater {
         (self.armed, self.charge, self.grind_trick) = (false, 0, None);
         self.air_queue.clear();
         (self.grind.on_rail, self.grind.found, self.grind.last_rail) = (false, None, None);
-        (self.combo, self.grind_gap) = (false, None);
+        (self.combo, self.grind_gap, self.manual_gap) = (false, None, None);
         (self.spins, self.spin_angle) = (0, 0);
         self.panel.entries.clear();
         self.text_events.push(TextEvent::Bailed);
@@ -3667,14 +3699,20 @@ pub fn step(
     s.wall_hit_recovery(table)?;
     s.decay_push_target(rules);
     s.apply_boost()?;
-    s.cancel_gaps()?;
+    s.cancel_gaps(level.triggers)?;
     (s.last_start, s.frame_start) = (s.frame_start, s.position);
     let dispatched = s.state;
     if dispatched == State::Ground && frame.time - s.landed_at > (20 * frame.scale) >> 8 {
         s.start_manual(level, rules, true)?;
     }
     match s.state {
-        State::Ground | State::Grind => s.lip_spin = false,
+        State::Ground => {
+            (s.lip_spin, s.grind.last_rail) = (false, None);
+            if s.manual == 0 {
+                (s.grind.angle, s.grind.rate, s.grind.heat) = (0, 0, 0);
+            }
+        }
+        State::Grind => s.lip_spin = false,
         State::Wall => (s.lip_spin, s.grind.last_rail) = (false, None),
         State::Vert => s.lip_spin = true,
         _ => {}

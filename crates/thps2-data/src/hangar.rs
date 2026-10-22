@@ -443,7 +443,7 @@ impl Session {
             .props
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.frozen_at.is_none() && !p.hidden)
+            .filter(|(_, p)| p.frozen_at.is_none() && !p.knocked && !p.dead && !p.hidden)
             .filter_map(|(index, p)| p.model.map(|m| (index, p, m)))
             .map(|(index, p, checksum)| {
                 let model = hangar

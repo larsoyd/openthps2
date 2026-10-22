@@ -1662,7 +1662,7 @@ impl Skater {
                 Command::Signal => {
                     for link in triggers.links(node) {
                         if triggers.kind(link) == MOVING_OBJECT {
-                            self.world_events.push(WorldEvent::Touch(link));
+                            self.world_events.push(WorldEvent::Signal(link));
                         }
                     }
                     if let Some(link) = triggers
@@ -3297,8 +3297,9 @@ pub enum WorldEvent {
     /// A pulse created the script object of this node.
     Create(usize),
     Prop(usize),
-    /// A kill or signal reached the objects of this node.
+    /// A kill reached the objects of this node.
     Touch(usize),
+    Signal(usize),
 }
 
 /// One single session run: the skater, the frame clock and the unpaused VB counter.
@@ -3371,7 +3372,7 @@ impl Run {
             object.update(&mut self.skater, level.triggers, frame.hold_delta)?;
         }
         for prop in &mut self.props {
-            prop.update(&mut self.skater, frame.hold_delta)?;
+            prop.update(&mut self.skater, self.vb)?;
         }
         self.apply_world_events(level)?;
         Ok(outcome)
@@ -3409,6 +3410,17 @@ impl Run {
                         return Err(format!(
                             "kill or signal of script object node={node} unsupported"
                         ));
+                    }
+                    for prop in self.props.iter_mut().filter(|p| p.node == node) {
+                        prop.knocked = true;
+                    }
+                }
+                WorldEvent::Signal(node) => {
+                    if self.objects.iter().any(|o| o.node == node) {
+                        return Err(format!("signal of script object node={node} unsupported"));
+                    }
+                    for prop in self.props.iter_mut().filter(|p| p.node == node) {
+                        prop.signal();
                     }
                 }
             }

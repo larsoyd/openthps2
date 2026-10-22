@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 257 (5.4%) | 171,321 (17.9%) |
-| Recovered | 215 (4.6%) | 83,911 (8.7%) |
-| Open | 4248 | 704,507 |
+| Implemented | 261 (5.5%) | 172,671 (18.0%) |
+| Recovered | 216 (4.6%) | 85,986 (9.0%) |
+| Open | 4243 | 701,082 |
 
-`████░░░░░░░░░░░░░░░░` 17.9% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 18.0% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 91 | 99 | `█░░░░░░░░░` 10% |
+| unattributed | 2977 | 354,046 | 92 | 98 | `█░░░░░░░░░` 10% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -30,7 +30,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
 | panel.cpp | 37 | 14,181 | 16 | 1 | `██████░░░░` 62% |
 | career.cpp | 81 | 13,988 | 0 | 5 | `░░░░░░░░░░` 0% |
-| trig.cpp | 30 | 13,716 | 12 | 2 | `███████░░░` 73% |
+| trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
 | Menu.cpp | 51 | 10,954 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -45,7 +45,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | camera.h | 1 | 7,297 | 1 | 0 | `██████████` 100% |
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
-| baddy.cpp | 10 | 6,545 | 3 | 0 | `████████░░` 79% |
+| baddy.cpp | 10 | 6,545 | 4 | 0 | `████████░░` 80% |
 | trickdb.cpp | 22 | 6,398 | 11 | 3 | `████████░░` 81% |
 | FrontEnd2.cpp | 10 | 6,381 | 0 | 2 | `░░░░░░░░░░` 0% |
 | WinMain.cpp | 13 | 5,956 | 0 | 3 | `░░░░░░░░░░` 0% |
@@ -65,7 +65,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | commonfe.cpp | 26 | 3,710 | 0 | 0 | `░░░░░░░░░░` 0% |
 | rail.cpp | 14 | 3,610 | 5 | 2 | `███████░░░` 73% |
 | CreEdit.cpp | 9 | 3,519 | 0 | 0 | `░░░░░░░░░░` 0% |
-| platform.cpp | 4 | 3,463 | 0 | 0 | `░░░░░░░░░░` 0% |
+| platform.cpp | 4 | 3,463 | 1 | 2 | `██░░░░░░░░` 23% |
 | skatmgr.cpp | 30 | 3,436 | 0 | 2 | `░░░░░░░░░░` 0% |
 | DxPlay.cpp | 24 | 2,986 | 0 | 0 | `░░░░░░░░░░` 0% |
 | decomp.cpp | 2 | 2,930 | 2 | 0 | `██████████` 100% |
@@ -140,6 +140,7 @@ Implemented routines and the Rust module that holds them.
 |---|---|---|---|
 | 00401520 | 177 | baddy.cpp | objects.rs |
 | 004015e0 | 4187 | baddy.cpp | objects.rs |
+| 004027c0 | 35 | baddy.cpp | objects.rs |
 | 00402bb0 | 815 | baddy.cpp | objects.rs |
 | 00403000 | 171 | unattributed | objects.rs |
 | 00403410 | 511 | unattributed | objects.rs |
@@ -271,6 +272,8 @@ Implemented routines and the Rust module that holds them.
 | 0049e480 | 229 | physics.cpp | session.rs |
 | 0049e680 | 2983 | physics.cpp | ground.rs |
 | 0049f250 | 235 | unattributed | objects.rs |
+| 004a03e0 | 802 | platform.cpp | objects.rs |
+| 004a1060 | 469 | unattributed | objects.rs |
 | 004a9650 | 255 | unattributed | camera.rs |
 | 004a9820 | 71 | unattributed | camera.rs |
 | 004a9870 | 71 | unattributed | camera.rs |
@@ -325,6 +328,7 @@ Implemented routines and the Rust module that holds them.
 | 004c5460 | 880 | trig.cpp | ground.rs |
 | 004c58b0 | 498 | trig.cpp | ground.rs |
 | 004c5b00 | 44 | trig.cpp | ground.rs |
+| 004c5b30 | 44 | trig.cpp | ground.rs |
 | 004c5b60 | 155 | trig.cpp | ground.rs |
 | 004c5dc0 | 6201 | trig.cpp | trig.rs |
 | 004c77f0 | 522 | trig.cpp | ground.rs |
@@ -509,7 +513,8 @@ Implemented routines and the Rust module that holds them.
 | 0049d8a0 | 283 | physics.cpp |
 | 0049dad0 | 168 | physics.cpp |
 | 0049e570 | 268 | physics.cpp |
-| 004a1060 | 469 | unattributed |
+| 0049f4c0 | 669 | platform.cpp |
+| 0049f780 | 1875 | platform.cpp |
 | 004a12d0 | 354 | unattributed |
 | 004aa410 | 16 | rail.cpp |
 | 004aa420 | 16 | rail.cpp |

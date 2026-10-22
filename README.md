@@ -1,13 +1,38 @@
-# thps2-rs
+<p align="center">
+  <img src="media/logo.png" alt="OpenTHPS2" width="380">
+</p>
+
+<h1 align="center">OpenTHPS2</h1>
+
+<p align="center">
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024_edition-bf3112.svg" alt="Rust 2024 edition"></a>
+  <a href="https://bevyengine.org/"><img src="https://img.shields.io/badge/Engine-Bevy_0.18-b6963c.svg" alt="Bevy 0.18"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-c6c7c9.svg" alt="MIT license"></a>
+  <a href="#status"><img src="https://img.shields.io/badge/Status-in_development-4e3938.svg" alt="In development"></a>
+  <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-18.4%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>
+</p>
+
+<p align="center">
+  <a href="PROGRESS.md"><img src="media/progress.svg" alt="Progress of the reimplementation" width="640"></a>
+</p>
 
 Tony Hawk's Pro Skater 2 for Windows, rebuilt in Rust on Bevy from the original game data. The goal is a faithful
 reimplementation of the USA rerelease: the same levels, skaters, physics, tricks, scoring and modes, read from your own
 copy of the game, with the freedom to fix bugs and to add widescreen and native 64-bit support along the way.
 
-**Status: not playable yet.** A Hangar single session with Tony Hawk is reconstructed from the executable and
-matches the original game frame by frame on recorded inputs: skating, ollies, flips, grabs, lips, grinds, wallrides,
-manuals, bails, specials, scoring and combos, the scripted level events, the two minute clock, the end of the run and
-Retry. Rendering is a static diagnostic. The HUD, camera, menus, audio, career mode and the other levels are open. <!-- progress --> 18.4% of the executable implemented by bytes (274 of 4720 functions), 8.7% more recovered. <!-- /progress --> The full map is in [PROGRESS.md](PROGRESS.md).
+> [!IMPORTANT]
+> OpenTHPS2 is an independent project, not affiliated with or endorsed by Activision or Neversoft. It contains no game
+> files. You need your own copy of the game.
+
+## Status
+
+**Not playable yet.** A Hangar single session with Tony Hawk is reconstructed from the executable and matches the
+original game frame by frame on recorded inputs: skating, ollies, flips, grabs, lips, grinds, wallrides, manuals,
+bails, specials, scoring and combos, the scripted level events and moving props, the two minute clock, the end of the
+run and Retry. The session is drawn like the original: the level, the skater, the camera, the HUD, the trick text and
+the end screens equal the original's frames within a small per pixel tolerance. Particles, career mode, the menus,
+audio and the other levels are open. <!-- progress --> 18.4% of the executable implemented by bytes (274 of 4720 functions), 8.7% more recovered. <!-- /progress -->
+Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 
 ## Requirements
 
@@ -43,9 +68,9 @@ frame count, position, velocity, animation and the reason it stopped early, if a
 
 The simulation stops with an explicit reason at the first situation it does not cover yet. It never guesses.
 
-In `--play` the level, camera, clock, statistics screen and end menu are drawn like the original by a software renderer.
-The skater, its shadow, the score and special panels and particles are not drawn yet, and the keys are stand-ins until
-the original bindings are rebuilt.
+In `--play` the level, the skater and its shadow, the props, the camera, the clock, the score and special panels, the
+trick text and the statistics screen and end menu are drawn like the original by a software renderer. Particles
+(sparks, glass shards, blood) are not drawn yet, and the keys are stand-ins until the original bindings are rebuilt.
 
 ## Captured camera format
 

@@ -1961,13 +1961,17 @@ impl Skater {
             if rolling {
                 self.open_combo();
             }
+            let heard = self.career_events.len();
             self.push_entry(Entry {
                 gap: Some(g.id),
                 ..Entry::new(gap.name, i32::from(gap.points), 0, 0)
             });
             self.trick_landed = true;
             if rolling {
+                // the career hears of a rolling gap after the landing so it waits for the next one
+                let award: Vec<_> = self.career_events.drain(heard..).collect();
                 self.commit_combo()?;
+                self.career_events.extend(award);
             }
             self.pulse_links(triggers, node, depth)?;
         }

@@ -1,6 +1,11 @@
+mod fresh;
 mod levels;
+mod skaters;
 
 pub use levels::LEVELS;
+pub use skaters::{HIGH_SCORE_INITIALS, SKATERS};
+
+use fresh::{HIGH_SCORE_ENTRIES, HIGH_SCORE_SIZE, HIGH_SCORES, INITIALS, TIPS_ON, TIPS_SHOWN};
 
 use crate::card::{CARD_HEADER, CardIcons};
 use crate::score::{Gap, HANGAR_GAPS, hangar_gap};
@@ -49,6 +54,26 @@ impl Goal {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Skater {
+    pub name: &'static str,
+    pub stats: [u8; 10],
+    pub selectable: bool,
+    /// Bit 1 marks a custom skater slot, bit 5 a secret skater.
+    pub flags: u32,
+}
+
+impl Skater {
+    pub const fn new(name: &'static str, stats: [u8; 10], selectable: bool, flags: u32) -> Self {
+        Self {
+            name,
+            stats,
+            selectable,
+            flags,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LevelInfo {
     pub name: &'static str,
     pub place: &'static str,
@@ -73,6 +98,22 @@ const COMPETITION_CASH: u16 = 0x8000;
 const MONEY_ICONS: [u8; 3] = [0x18, 0x19, 0x1a];
 const LEVEL_PICKUP: u8 = 0x21;
 const PICKUP_NODE: i16 = 5;
+const GAP_BITS: usize = 0x17d4;
+/// Gap checklist rows the unlock check counts, the eight career levels.
+const GAP_LEVELS: usize = 8;
+const UNLOCKS: usize = 0x1c24;
+const TIPS_REMEMBERED: usize = TIPS_SHOWN + 8;
+/// Kind of each trick tip, the first frame of a career run shows the first kind 0 tip not seen.
+pub const TIP_KINDS: [u8; 22] = [
+    0, 2, 2, 2, 2, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+/// Tips run while no level past this one is open.
+const TIP_LEVELS: usize = 3;
+const CUSTOM_FLAG: u32 = 2;
+/// Private Carrera, left out of the all skaters checks.
+const LEFT_OUT: u32 = 0x80;
+const MEDALS: u16 = 0x1c00;
+const COMPETITION_LEVELS: [usize; 3] = [2, 5, 7];
 
 /// One character's career record as the save keeps it.
 #[derive(Clone, Debug)]
@@ -144,6 +185,46 @@ impl Progress {
     fn level_tapes(&self, level: usize) -> u32 {
         (self.goals[level] & 0x3ff).count_ones()
     }
+
+    fn medals(&self) -> usize {
+        (0..PROGRESS_LEVELS)
+            .filter(|&l| LEVELS[l].competition && self.goals[l] & MEDALS != 0)
+            .count()
+    }
+
+    /// Every tape, three golds and every competition cash icon.
+    fn complete(&self) -> bool {
+        self.tapes == 50
+            && self.raw[3] == 3
+            && COMPETITION_LEVELS
+                .iter()
+                .all(|&l| self.goals[l] & COMPETITION_CASH != 0)
+    }
+}
+
+/// Whether the level and every one before it is open: by career cash, or by medals where the
+/// table asks for medals. Chopper Drop and Skate Heaven also open by their unlock flags.
+fn level_open(level: usize, progress: &Progress, unlocks: u8) -> bool {
+    match level {
+        8 if unlocks & 8 != 0 => return true,
+        9 if unlocks & 0x10 != 0 => return true,
+        _ => {}
+    }
+    LEVELS[..=level].iter().all(|l| {
+        if l.medals_to_open == 0 {
+            progress.cash >= l.cash_to_open
+        } else {
+            progress.medals() as i32 >= l.medals_to_open
+        }
+    })
+}
+
+/// The last level open among the first ten.
+pub fn highest_open_level(progress: &Progress, unlocks: u8) -> usize {
+    (0..10)
+        .rev()
+        .find(|&l| level_open(l, progress, unlocks))
+        .unwrap_or(0)
 }
 
 /// A career file: the card header's name and the career block the original copies from memory.
@@ -198,6 +279,161 @@ impl CareerSave {
         Ok(())
     }
 
+    pub fn block(&self) -> &[u8] {
+        &self.block
+    }
+
+    fn word(&self, at: usize) -> u32 {
+        u32_at(&self.block, at)
+    }
+
+    fn set_word(&mut self, at: usize, value: u32) {
+        self.block[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn unlocks(&self) -> u8 {
+        self.block[UNLOCKS]
+    }
+
+    /// Starts a career run of the character: the record and the level's gap checklist from the
+    /// save, and the first frame's trick tip.
+    pub fn career_run(
+        &mut self,
+        skater: usize,
+        level: usize,
+        triggers: &Triggers,
+    ) -> Result<CareerRun, String> {
+        let mut run = CareerRun::new(self.progress(skater)?, level, triggers)?;
+        run.opened = highest_open_level(&run.progress, self.unlocks());
+        run.gap_bits = std::array::from_fn(|k| self.word(GAP_BITS + 12 * level + 4 * k));
+        if run.opened <= TIP_LEVELS
+            && let Some(tip) =
+                (0..TIP_KINDS.len()).find(|&t| TIP_KINDS[t] == 0 && !self.tip_shown(t))
+        {
+            self.show_tip(tip);
+        }
+        Ok(run)
+    }
+
+    fn tip_shown(&self, tip: usize) -> bool {
+        self.word(TIPS_SHOWN + 4 * (tip / 32)) & 1 << (tip % 32) != 0
+    }
+
+    fn show_tip(&mut self, tip: usize) {
+        if self.word(TIPS_ON) == 0 {
+            return;
+        }
+        let (bit, shown, remembered) = (
+            1 << (tip % 32),
+            TIPS_SHOWN + 4 * (tip / 32),
+            TIPS_REMEMBERED + 4 * (tip / 32),
+        );
+        let before = self.word(shown);
+        self.set_word(shown, before | bit);
+        if self.word(remembered) & bit == 0 && before & bit != 0 {
+            self.set_word(remembered, self.word(remembered) | bit);
+        }
+    }
+
+    /// The end of a single player career run: record and checklist back into the block, the
+    /// unlock checks and cash messages of a run without goals, then the high score table.
+    pub fn end_run(&mut self, skater: usize, run: &CareerRun, score: i32) -> Result<(), String> {
+        self.set_progress(skater, &run.progress)?;
+        for (k, w) in run.gap_bits.iter().enumerate() {
+            self.set_word(GAP_BITS + 12 * run.level + 4 * k, *w);
+        }
+        if run.awarded == 0 && !self.unlock(run)? {
+            self.cash_messages(skater)?;
+        }
+        if !LEVELS[run.level].competition {
+            self.enter_high_score(run.level, score, skater);
+        }
+        Ok(())
+    }
+
+    /// The first unlock message that applies, with the flag or record bit it sets.
+    fn unlock(&mut self, run: &CareerRun) -> Result<bool, String> {
+        let unlocks = self.unlocks();
+        let opened = highest_open_level(&run.progress, unlocks);
+        if opened != run.opened && (opened < 8 || (10..13).contains(&opened)) {
+            return Ok(true);
+        }
+        if unlocks & 4 == 0 && run.level < 10 {
+            let other = (1..GAP_LEVELS)
+                .find(|&l| (0..3).any(|k| self.word(GAP_BITS + 12 * l + 4 * k) != 0));
+            if let Some(l) = other {
+                return Err(format!(
+                    "unlock check refused: gap checklist of level={l} needs its gap count"
+                ));
+            }
+        }
+        let records: Vec<Progress> = (0..CHARACTERS)
+            .map(|id| self.progress(id))
+            .collect::<Result<_, _>>()?;
+        for (id, p) in records.iter().enumerate() {
+            if !p.complete() {
+                continue;
+            }
+            if SKATERS[id].flags & CUSTOM_FLAG == 0 {
+                if p.raw[1] & 1 == 0 {
+                    let at = 4 + PROGRESS_SIZE * id + 1;
+                    self.block[at] |= 1;
+                    return Ok(true);
+                }
+            } else if unlocks & 0x20 == 0 {
+                self.block[UNLOCKS] |= 0x20;
+                return Ok(true);
+            }
+        }
+        let pros = || {
+            records
+                .iter()
+                .zip(&SKATERS)
+                .filter(|(_, s)| s.flags & (CUSTOM_FLAG | LEFT_OUT) == 0)
+        };
+        let customs = || {
+            records
+                .iter()
+                .zip(&SKATERS)
+                .filter(|(_, s)| s.flags & CUSTOM_FLAG != 0)
+        };
+        let golds = customs().any(|(p, _)| p.raw[3] == 3) && pros().all(|(p, _)| p.raw[3] == 3);
+        let clear = customs().any(|(p, _)| p.complete()) && pros().all(|(p, _)| p.complete());
+        for (flag, met) in [(8, golds), (0x10, clear)] {
+            if met && unlocks & flag == 0 {
+                self.block[UNLOCKS] |= flag;
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Spending reminders once the unspent cash first reaches 500, then 2000.
+    fn cash_messages(&mut self, skater: usize) -> Result<(), String> {
+        let p = self.progress(skater)?;
+        let unspent = p.available == p.cash;
+        if self.unlocks() & 1 == 0 && p.available > 499 && unspent {
+            self.block[UNLOCKS] |= 1;
+        } else if self.unlocks() & 2 == 0 && p.available >= 2000 && unspent {
+            self.block[UNLOCKS] |= 2;
+        }
+        Ok(())
+    }
+
+    /// The score goes in above the first entry it reaches, under the last initials entered.
+    fn enter_high_score(&mut self, level: usize, score: i32, skater: usize) {
+        let entry = |e: usize| HIGH_SCORES + HIGH_SCORE_SIZE * (HIGH_SCORE_ENTRIES * level + e);
+        let Some(e) = (0..HIGH_SCORE_ENTRIES).find(|&e| self.word(entry(e) + 4) <= score as u32)
+        else {
+            return;
+        };
+        let (from, to) = (entry(e), entry(HIGH_SCORE_ENTRIES - 1));
+        self.block.copy_within(from..to, from + HIGH_SCORE_SIZE);
+        self.block.copy_within(INITIALS..INITIALS + 3, from);
+        self.block[from + 3] = skater as u8;
+        self.set_word(from + 4, score as u32);
+    }
+
     pub fn to_bytes(&self, icons: &CardIcons) -> Result<Vec<u8>, String> {
         let mut file = icons
             .header(&format!("{SAVE_TITLE}{}", self.name), 1)?
@@ -249,6 +485,8 @@ pub struct CareerRun {
     pub gap_bits: [u32; 3],
     /// Destroy goal count, 99 once the goal is given.
     pub destroyed: i32,
+    /// The last level open when the run started.
+    pub opened: usize,
 }
 
 impl CareerRun {
@@ -271,6 +509,7 @@ impl CareerRun {
             .filter(|g| (first..=last).contains(&(i32::from(g.id) % 10000)))
             .collect();
         let class = |c: u16| active.iter().filter(|g| g.class == c).count() as i32;
+        let opened = highest_open_level(&progress, 0);
         Ok(Self {
             progress,
             level,
@@ -289,6 +528,7 @@ impl CareerRun {
             trick_gap_mask: 0,
             gap_bits: [0; 3],
             destroyed: 0,
+            opened,
         })
     }
 

@@ -72,33 +72,46 @@ const SPECIAL: u16 = 0x8000;
 const CUSTOM_SKATERS: std::ops::RangeInclusive<usize> = 13..=16;
 const SPECIAL_SLOTS: usize = 5;
 
-impl KeyTable {
-    /// The table a skater gets from the default trick slots of a fresh career.
-    pub fn build(scripts: &TrickScripts, skater: usize) -> Result<Self, String> {
-        if CUSTOM_SKATERS.contains(&skater) {
-            return Err(format!("custom skater={skater} trick slots unsupported"));
-        }
+/// A skater's trick slots as the career record keeps them: a trick per assignable slot, then
+/// five special tricks with their key combos.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrickConfig {
+    pub slots: [Option<u8>; SLOT_COUNT],
+    pub specials: [Option<(u8, u8)>; SPECIAL_SLOTS],
+}
+
+pub const SLOT_COUNT: usize = 0x2b;
+/// Header word of the trick list custom skaters start from.
+const CUSTOM_LIST: usize = 6;
+
+impl TrickConfig {
+    /// The slots a fresh career gives the skater from its trick list, specials after the rest.
+    pub fn defaults(scripts: &TrickScripts, skater: usize) -> Result<Self, String> {
+        Self::from_list(scripts, skater_list(scripts, skater)?)
+    }
+
+    /// The slots the custom skater default list gives.
+    pub fn custom(scripts: &TrickScripts) -> Result<Self, String> {
+        Self::from_list(scripts, scripts.header(CUSTOM_LIST)?)
+    }
+
+    fn from_list(scripts: &TrickScripts, list: usize) -> Result<Self, String> {
         let db = trick_database(scripts)?;
-        let index = |script: usize| {
-            db.iter()
-                .position(|t| t.script == script)
-                .ok_or_else(|| format!("key list script={script:#x} not in the trick database"))
-        };
-        let lists = scripts.header(0)?;
-        let moves = read_list(scripts, scripts.offset(lists + skater * 2)?)?;
-        let mut slots = [None; 0x2b];
+        let moves = read_list(scripts, list)?;
+        let mut slots = [None; SLOT_COUNT];
         for m in moves.iter().filter(|m| m.flags & SPECIAL == 0) {
             if let Some(i) = SLOTS.iter().position(|s| s.buttons == m.buttons) {
-                slots[i] = Some(index(m.script)?);
+                slots[i] = Some(trick_index(&db, m.script)?);
             }
         }
-        let mut specials: [Option<(usize, usize)>; SPECIAL_SLOTS] = [None; SPECIAL_SLOTS];
+        let mut specials: [Option<(u8, u8)>; SPECIAL_SLOTS] = [None; SPECIAL_SLOTS];
         for m in moves.iter().filter(|m| m.flags & SPECIAL != 0) {
             let combo = COMBOS
                 .iter()
                 .position(|c| *c == m.buttons)
-                .ok_or_else(|| format!("special script={:#x} has no combo", m.script))?;
-            let trick = index(m.script)?;
+                .ok_or_else(|| format!("special script={:#x} has no combo", m.script))?
+                as u8;
+            let trick = trick_index(&db, m.script)?;
             for s in &mut specials {
                 if s.is_some_and(|s| s.1 == combo) {
                     *s = None;
@@ -112,6 +125,58 @@ impl KeyTable {
                 _ => return Err(format!("special script={:#x} slot refused", m.script)),
             }
         }
+        Ok(Self { slots, specials })
+    }
+
+    /// Slot bytes, then the special tricks and their combos, unused ones 0xff.
+    pub fn to_bytes(&self) -> [u8; SLOT_COUNT + 2 * SPECIAL_SLOTS] {
+        let mut b = [0xff; SLOT_COUNT + 2 * SPECIAL_SLOTS];
+        for (i, s) in self.slots.iter().enumerate() {
+            b[i] = s.unwrap_or(0xff);
+        }
+        for (i, s) in self.specials.iter().enumerate() {
+            if let Some((trick, combo)) = s {
+                b[SLOT_COUNT + i] = *trick;
+                b[SLOT_COUNT + SPECIAL_SLOTS + i] = *combo;
+            }
+        }
+        b
+    }
+}
+
+/// One bit per trick database entry the skater's list holds, the bought tricks of a fresh career.
+pub fn known_tricks(scripts: &TrickScripts, skater: usize) -> Result<[u32; 4], String> {
+    let db = trick_database(scripts)?;
+    let mut bits = [0; 4];
+    for m in read_list(scripts, skater_list(scripts, skater)?)? {
+        if let Some(i) = db.iter().position(|t| t.script == m.script) {
+            bits[i / 32] |= 1 << (i % 32);
+        }
+    }
+    Ok(bits)
+}
+
+fn skater_list(scripts: &TrickScripts, skater: usize) -> Result<usize, String> {
+    scripts.offset(scripts.header(0)? + skater * 2)
+}
+
+fn trick_index(db: &[Trick], script: usize) -> Result<u8, String> {
+    db.iter()
+        .position(|t| t.script == script)
+        .filter(|&i| i < 0x80)
+        .map(|i| i as u8)
+        .ok_or_else(|| format!("key list script={script:#x} not in the trick database"))
+}
+
+impl KeyTable {
+    /// The table a skater gets from the default trick slots of a fresh career.
+    pub fn build(scripts: &TrickScripts, skater: usize) -> Result<Self, String> {
+        if CUSTOM_SKATERS.contains(&skater) {
+            return Err(format!("custom skater={skater} trick slots unsupported"));
+        }
+        let db = trick_database(scripts)?;
+        let config = TrickConfig::defaults(scripts, skater)?;
+        let moves = read_list(scripts, skater_list(scripts, skater)?)?;
         let mut entries = Vec::new();
         let emit = |entries: &mut Vec<KeyEntry>, buttons: &[u8], t: &Trick| {
             entries.push(KeyEntry {
@@ -122,19 +187,19 @@ impl KeyTable {
         };
         let category = |entries: &mut Vec<KeyEntry>, mask: u16| -> Result<(), String> {
             for m in &moves {
-                let t = &db[index(m.script)?];
+                let t = &db[usize::from(trick_index(&db, m.script)?)];
                 let slotted = SLOTS.iter().any(|s| s.buttons == m.buttons);
                 if t.category & SPECIAL == 0 && !slotted && t.category & mask != 0 {
                     emit(entries, &m.buttons, t);
                 }
             }
             for rank in 0..4 {
-                for (slot, filled) in SLOTS.iter().zip(slots) {
+                for (slot, filled) in SLOTS.iter().zip(config.slots) {
                     if let Some(i) = filled
                         && slot.mask & mask != 0
                         && slot.rank == rank
                     {
-                        emit(entries, slot.buttons, &db[i]);
+                        emit(entries, slot.buttons, &db[usize::from(i)]);
                     }
                 }
             }
@@ -142,8 +207,12 @@ impl KeyTable {
         };
         category(&mut entries, 0x1000)?;
         category(&mut entries, 0x800)?;
-        for &(trick, combo) in specials.iter().flatten() {
-            emit(&mut entries, COMBOS[combo], &db[trick]);
+        for &(trick, combo) in config.specials.iter().flatten() {
+            emit(
+                &mut entries,
+                COMBOS[usize::from(combo)],
+                &db[usize::from(trick)],
+            );
         }
         for mask in [0x2000, 0x4000, 0x300] {
             category(&mut entries, mask)?;

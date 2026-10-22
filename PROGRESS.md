@@ -8,28 +8,28 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 319 (6.8%) | 189,330 (19.7%) |
-| Recovered | 217 (4.6%) | 86,064 (9.0%) |
-| Open | 4184 | 684,345 |
+| Implemented | 344 (7.3%) | 200,867 (20.9%) |
+| Recovered | 223 (4.7%) | 86,985 (9.1%) |
+| Open | 4153 | 671,887 |
 
-`████░░░░░░░░░░░░░░░░` 19.7% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 20.9% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 113 | 96 | `█░░░░░░░░░` 12% |
+| unattributed | 2977 | 354,046 | 115 | 99 | `█░░░░░░░░░` 12% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
-| mmu.cpp | 70 | 31,238 | 2 | 8 | `░░░░░░░░░░` 3% |
-| front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
+| mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
+| front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
 | bit.cpp | 123 | 25,393 | 0 | 5 | `░░░░░░░░░░` 0% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
-| create.cpp | 54 | 18,174 | 0 | 0 | `░░░░░░░░░░` 0% |
+| create.cpp | 54 | 18,174 | 3 | 0 | `█░░░░░░░░░` 12% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
 | panel.cpp | 37 | 14,181 | 18 | 1 | `██████░░░░` 64% |
-| career.cpp | 81 | 13,988 | 25 | 7 | `███░░░░░░░` 27% |
+| career.cpp | 81 | 13,988 | 38 | 9 | `█████░░░░░` 48% |
 | trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
@@ -46,12 +46,12 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
 | baddy.cpp | 10 | 6,545 | 5 | 0 | `████████░░` 80% |
-| trickdb.cpp | 22 | 6,398 | 11 | 3 | `████████░░` 81% |
+| trickdb.cpp | 22 | 6,398 | 13 | 2 | `█████████░` 89% |
 | FrontEnd2.cpp | 10 | 6,381 | 0 | 2 | `░░░░░░░░░░` 0% |
 | WinMain.cpp | 13 | 5,956 | 0 | 3 | `░░░░░░░░░░` 0% |
 | appwin.cpp | 12 | 5,751 | 0 | 0 | `░░░░░░░░░░` 0% |
 | m3dcolij.cpp | 6 | 5,728 | 2 | 1 | `███████░░░` 71% |
-| cre_texset.cpp | 4 | 5,005 | 0 | 0 | `░░░░░░░░░░` 0% |
+| cre_texset.cpp | 4 | 5,005 | 3 | 0 | `██████████` 95% |
 | PCMovie.cpp | 7 | 4,977 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickscript.cpp | 2 | 4,585 | 1 | 0 | `█████████░` 95% |
 | create_stitch.cpp | 15 | 4,319 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -66,7 +66,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | rail.cpp | 14 | 3,610 | 5 | 2 | `███████░░░` 73% |
 | CreEdit.cpp | 9 | 3,519 | 0 | 0 | `░░░░░░░░░░` 0% |
 | platform.cpp | 4 | 3,463 | 3 | 0 | `██████████` 97% |
-| skatmgr.cpp | 30 | 3,436 | 0 | 2 | `░░░░░░░░░░` 0% |
+| skatmgr.cpp | 30 | 3,436 | 1 | 2 | `░░░░░░░░░░` 4% |
 | DxPlay.cpp | 24 | 2,986 | 0 | 0 | `░░░░░░░░░░` 0% |
 | decomp.cpp | 2 | 2,930 | 2 | 0 | `██████████` 100% |
 | mem.cpp | 11 | 2,904 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -114,7 +114,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | init.cpp | 1 | 600 | 0 | 0 | `░░░░░░░░░░` 0% |
 | car.cpp | 1 | 570 | 0 | 0 | `░░░░░░░░░░` 0% |
 | MainMenu.cpp | 2 | 511 | 0 | 1 | `░░░░░░░░░░` 0% |
-| tricktips.cpp | 2 | 499 | 0 | 0 | `░░░░░░░░░░` 0% |
+| tricktips.cpp | 2 | 499 | 0 | 2 | `░░░░░░░░░░` 0% |
 | sfx.cpp | 3 | 493 | 0 | 0 | `░░░░░░░░░░` 0% |
 | D3dTimer.cpp | 2 | 424 | 0 | 2 | `░░░░░░░░░░` 0% |
 | NetMenu.cpp | 1 | 341 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -150,6 +150,10 @@ Implemented routines and the Rust module that holds them.
 | 0040c370 | 7297 | camera.h | camera.rs |
 | 0040e090 | 3294 | camera.cpp | camera.rs |
 | 00410610 | 1431 | camera.cpp | camera.rs |
+| 004138f0 | 791 | career.cpp | fresh.rs |
+| 00413c10 | 325 | career.cpp | fresh.rs |
+| 00413f30 | 63 | career.cpp | fresh.rs |
+| 00413f70 | 183 | career.cpp | fresh.rs |
 | 004141a0 | 33 | career.cpp | career.rs |
 | 004141d0 | 168 | career.cpp | career.rs |
 | 00414280 | 84 | career.cpp | career.rs |
@@ -174,7 +178,24 @@ Implemented routines and the Rust module that holds them.
 | 00415060 | 275 | career.cpp | career.rs |
 | 00415180 | 353 | career.cpp | career.rs |
 | 004152f0 | 143 | career.cpp | career.rs |
+| 004158d0 | 54 | career.cpp | career.rs |
+| 00415910 | 183 | career.cpp | career.rs |
+| 004159d0 | 191 | career.cpp | career.rs |
+| 00415a90 | 69 | career.cpp | career.rs |
 | 00416050 | 19 | career.cpp | career.rs |
+| 00416140 | 236 | career.cpp | input.rs |
+| 00416230 | 264 | career.cpp | input.rs |
+| 00416380 | 300 | career.cpp | input.rs |
+| 00416740 | 55 | career.cpp | career.rs |
+| 004170d0 | 258 | career.cpp | fresh.rs |
+| 0041db50 | 105 | unattributed | create.rs |
+| 0041dc60 | 78 | unattributed | create.rs |
+| 0041ddb0 | 228 | cre_texset.cpp | create.rs |
+| 0041dea0 | 4264 | cre_texset.cpp | create.rs |
+| 0041ef50 | 272 | cre_texset.cpp | create.rs |
+| 00422f20 | 1097 | create.cpp | create.rs |
+| 00423370 | 850 | create.cpp | create.rs |
+| 004236d0 | 302 | create.cpp | fresh.rs |
 | 004305f0 | 773 | decomp.cpp | pose.rs |
 | 00430920 | 2157 | decomp.cpp | pose.rs |
 | 004321d0 | 117 | DynamicLogo.cpp | materials.rs |
@@ -192,6 +213,7 @@ Implemented routines and the Rust module that holds them.
 | 0044b720 | 67 | front.cpp | hud.rs |
 | 0044ba90 | 296 | front.cpp | hud.rs |
 | 0044ca60 | 4737 | front.cpp | hud.rs |
+| 0044e0f0 | 756 | front.cpp | career.rs |
 | 0044e3f0 | 41 | front.cpp | hud.rs |
 | 004568d0 | 185 | unattributed | text.rs |
 | 00457160 | 628 | Image.cpp | text.rs |
@@ -330,6 +352,7 @@ Implemented routines and the Rust module that holds them.
 | 004aaf70 | 2622 | unattributed | rail.rs |
 | 004ae090 | 1689 | Shatter.cpp | collision.rs |
 | 004af0b0 | 212 | unattributed | collision.rs |
+| 004b1810 | 122 | skatmgr.cpp | fresh.rs |
 | 004b1ef0 | 68 | spool.cpp | collision.rs |
 | 004b20f0 | 33 | spool.cpp | psx.rs |
 | 004b2450 | 1578 | spool.cpp | anim.rs |
@@ -349,7 +372,9 @@ Implemented routines and the Rust module that holds them.
 | 004bb4f0 | 602 | trickdb.cpp | input.rs |
 | 004bb7e0 | 493 | trickdb.cpp | input.rs |
 | 004bba50 | 581 | trickdb.cpp | input.rs |
+| 004bbd70 | 386 | trickdb.cpp | input.rs |
 | 004bbf00 | 1017 | trickdb.cpp | input.rs |
+| 004bc330 | 105 | trickdb.cpp | input.rs |
 | 004bc3a0 | 475 | trickdb.cpp | input.rs |
 | 004bc7e0 | 280 | trickdb.cpp | input.rs |
 | 004bc900 | 272 | trickdb.cpp | input.rs |
@@ -470,13 +495,16 @@ Implemented routines and the Rust module that holds them.
 | 00407050 | 384 | bit.cpp |
 | 0040b060 | 315 | unattributed |
 | 00411fc0 | 1621 | unattributed |
-| 00413c10 | 325 | career.cpp |
 | 00413d60 | 357 | career.cpp |
 | 00414770 | 61 | career.cpp |
 | 00415380 | 477 | career.cpp |
+| 00415560 | 48 | career.cpp |
+| 00415590 | 15 | career.cpp |
 | 004165d0 | 288 | career.cpp |
 | 004166f0 | 67 | career.cpp |
 | 00416980 | 127 | career.cpp |
+| 00416f80 | 43 | career.cpp |
+| 00417330 | 145 | unattributed |
 | 00419420 | 57 | unattributed |
 | 00419600 | 627 | competition.cpp |
 | 0041b540 | 69 | competition.cpp |
@@ -485,9 +513,9 @@ Implemented routines and the Rust module that holds them.
 | 0044ab70 | 24 | FontTools.cpp |
 | 0044b1f0 | 66 | unattributed |
 | 0044dfa0 | 326 | front.cpp |
-| 0044e0f0 | 756 | front.cpp |
 | 0044eac0 | 13872 | front.cpp |
 | 004524a0 | 1492 | front.cpp |
+| 00452a80 | 637 | unattributed |
 | 00452d30 | 139 | unattributed |
 | 00452de0 | 28 | unattributed |
 | 00452ff0 | 3985 | FrontEnd2.cpp |
@@ -521,6 +549,7 @@ Implemented routines and the Rust module that holds them.
 | 0047b1a0 | 297 | mmu.cpp |
 | 0047b2d0 | 302 | mmu.cpp |
 | 0047b6e0 | 228 | mmu.cpp |
+| 0047b8d0 | 12 | mmu.cpp |
 | 0047b8e0 | 232 | mmu.cpp |
 | 00480890 | 192 | ob.cpp |
 | 00480fa0 | 41 | ob.cpp |
@@ -590,11 +619,13 @@ Implemented routines and the Rust module that holds them.
 | 004bb240 | 132 | unattributed |
 | 004bb2d0 | 262 | unattributed |
 | 004bc300 | 41 | trickdb.cpp |
-| 004bc330 | 105 | trickdb.cpp |
 | 004bd170 | 105 | trickdb.cpp |
 | 004bd980 | 587 | trickob.cpp |
 | 004bdbd0 | 106 | trickob.cpp |
 | 004bdc40 | 192 | trickob.cpp |
+| 004c4620 | 708 | unattributed |
+| 004c48f0 | 96 | tricktips.cpp |
+| 004c4950 | 403 | tricktips.cpp |
 | 004c4b80 | 31 | unattributed |
 | 004c4e30 | 715 | trig.cpp |
 | 004c8550 | 220 | trig.cpp |

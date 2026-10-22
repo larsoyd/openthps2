@@ -1042,7 +1042,6 @@ impl Skater {
         }
         self.set_state(State::Air);
         self.open_combo();
-        self.landing_timer = LANDING_TIMER;
         (self.spin_angle, self.spins) = (0, 0);
         self.jumped = true;
         self.trick_running = false;
@@ -1256,7 +1255,6 @@ impl Skater {
             return Ok(());
         }
         self.open_combo();
-        self.landing_timer = LANDING_TIMER;
         let ups = if self.manual == 0 && !wallie {
             self.up_presses()
         } else {
@@ -1551,7 +1549,12 @@ impl Skater {
         }
     }
 
+    /// Opening the combo also restarts the landing timer, and does nothing on a wall.
     fn open_combo(&mut self) {
+        if self.state == State::Wall {
+            return;
+        }
+        self.landing_timer = LANDING_TIMER;
         if !self.combo {
             self.career_events.push(CareerEvent::TakeOff);
         }
@@ -1704,7 +1707,9 @@ impl Skater {
             if self.manual != 0
                 && let Some(waiting) = self.manual_gap
             {
-                self.open_combo();
+                if !self.combo {
+                    self.open_combo();
+                }
                 self.award_waiting_gap(triggers, waiting)?;
             }
             (self.grind_gap, self.manual_gap) = (None, None);
@@ -2136,7 +2141,9 @@ impl Skater {
         let kind = if self.state == State::Grind {
             1
         } else {
-            self.open_combo();
+            if !self.combo {
+                self.open_combo();
+            }
             u8::from(self.manual != 0)
         };
         self.push_entry(Entry {
@@ -2495,7 +2502,6 @@ impl Skater {
             }
             self.set_state(State::Air);
             self.open_combo();
-            self.landing_timer = LANDING_TIMER;
             self.vert = false;
             self.set_anim(table, ANIM_AIR)?;
             self.jumped = true;
@@ -2506,7 +2512,6 @@ impl Skater {
             self.jumped = true;
         }
         self.open_combo();
-        self.landing_timer = LANDING_TIMER;
         (self.spin_angle, self.spins) = (0, 0);
         self.set_state(State::Vert);
         Ok(())

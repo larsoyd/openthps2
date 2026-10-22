@@ -180,7 +180,7 @@ impl Skater {
         if p.kind == TAPE {
             return career.tape();
         }
-        let rolling = self.state == State::Ground;
+        let rolling = self.state == State::Ground && !self.bailing;
         if rolling {
             self.open_combo();
         }

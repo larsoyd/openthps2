@@ -144,7 +144,6 @@ pub fn wall_step(
     let Some(hit) = probe.filter(|h| h.flags & 0x800000 == 0) else {
         s.set_state(State::Air);
         s.open_combo();
-        s.landing_timer = LANDING_TIMER;
         (s.spin_angle, s.spins, s.trick_running, s.jumped, s.manual) = (0, 0, false, true, 0);
         if !s.bailing {
             let id = if s.crouching {

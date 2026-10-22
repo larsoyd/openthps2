@@ -3667,11 +3667,11 @@ fn lip_contact(
         return Ok(true);
     }
     s.set_state(State::Air);
+    // up held pushes back off the face by a quarter of the speed
     if pad.up {
-        return Err(format!(
-            "lip pop unsupported item={} face={}",
-            hit.item_index, hit.face_index
-        ));
+        let quarter = speed_of(s.velocity)? >> 2;
+        s.velocity[0] -= mul_q12(i32::from(hit.normal[0]), quarter);
+        s.velocity[2] -= mul_q12(i32::from(hit.normal[2]), quarter);
     }
     s.vert = false;
     s.landing_timer = LANDING_TIMER;

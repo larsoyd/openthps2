@@ -29,6 +29,12 @@ pub const SKATERS: [Skater; 20] = [
     Skater::new("Spider-Man", [7, 7, 5, 5, 5, 4, 4, 6, 3, 4], false, 0x120),
 ];
 
+/// The name each skater shows in the high score tables.
+pub const HIGH_SCORE_NAMES: [&str; 20] = [
+    "Tony", "Bob", "Steve", "Kareem", "Rune", "Eric", "Bucky", "Rodney", "Chad", "Andrew", "Geoff",
+    "Elissa", "Jamie", "Custom", "Custom", "Custom", "Custom", "Dick", "Carrera", "Spidey",
+];
+
 /// Initials Career_Init draws for the default high scores.
 pub const HIGH_SCORE_INITIALS: [&str; 39] = [
     "RJM", "RAD", "JKU", "JKS", "JGA", "MIK", "SIL", "SMP", "JOW", "ECF", "ARS", "DDT", "NSN",

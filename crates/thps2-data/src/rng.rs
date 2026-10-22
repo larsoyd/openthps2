@@ -7,6 +7,11 @@ pub struct Rng {
 }
 
 impl Rng {
+    /// The words before any seed, zero like the rest of the bss.
+    pub fn unseeded() -> Self {
+        Self { s: 0, a: 0, b: 0 }
+    }
+
     pub fn seeded(seed: u32) -> Self {
         Self {
             s: seed,

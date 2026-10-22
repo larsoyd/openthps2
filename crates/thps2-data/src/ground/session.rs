@@ -1,4 +1,5 @@
 use super::*;
+use crate::highscores::{Entry, HighScores};
 
 /// Two minutes on the run clock plus the thirty ticks the clock starts short.
 pub const SESSION_TICKS: i32 = 7230;
@@ -17,6 +18,11 @@ pub struct Session {
     /// Past the statistics screen, on the end menu with Retry picked.
     pub menu: bool,
     jump_held: bool,
+    /// The level's table, which the run's score goes into when the run ends.
+    pub scores: Option<HighScores>,
+    /// The row the score took, edited after the statistics screen.
+    pub entered: Option<usize>,
+    pub entry: Option<Entry>,
 }
 
 impl Default for Session {
@@ -28,26 +34,46 @@ impl Default for Session {
             ended: false,
             menu: false,
             jump_held: false,
+            scores: None,
+            entered: None,
+            entry: None,
         }
     }
 }
 
 impl Session {
-    /// The statistics screen and then the end menu each take a fresh jump press, the second one
-    /// picks Retry. Other menu items are not part of the rewrite yet.
+    /// The statistics screen, the initials of a score that made the table and then the end menu
+    /// each take a fresh jump press, the last one picks Retry. Other menu items are not part of
+    /// the rewrite yet.
     pub(super) fn end_screens(&mut self, pad: Pad, score: i32) -> Result<bool, String> {
         let pressed = pad.jump && !self.jump_held;
         self.jump_held = pad.jump;
+        if let Some(entry) = &mut self.entry {
+            let scores = self
+                .scores
+                .as_mut()
+                .ok_or("[session] initials without a table")?;
+            let row = &mut scores.entries[entry.row];
+            entry.edit(&mut row.initials, pad);
+            if pressed {
+                scores.initials = row.initials;
+                (self.entry, self.menu) = (None, true);
+            }
+            return Ok(false);
+        }
         if !pressed {
             return Ok(false);
         }
         if self.menu {
             return Ok(true);
         }
-        if score >= LOWEST_HIGH_SCORE {
-            return Err(format!("high score entry unsupported score={score}"));
+        if self.scores.is_none() {
+            return Err(format!("[session] no high score table score={score}"));
         }
-        self.menu = true;
+        match self.entered.take() {
+            Some(row) => self.entry = Some(Entry::new(row)),
+            None => self.menu = true,
+        }
         Ok(false)
     }
 
@@ -67,9 +93,6 @@ impl Session {
         format!("{min}:{sec:02}")
     }
 }
-
-/// The last entry of the Hangar's default high score table, a score that reaches it is entered.
-const LOWEST_HIGH_SCORE: i32 = 5000;
 
 impl Skater {
     /// Rolling outside a manual or stopped, the only states the run can end in.
@@ -111,6 +134,8 @@ impl Skater {
             return Ok(());
         }
         (self.session.time_up, self.session.ended) = (false, true);
+        let score = self.panel.score;
+        self.session.entered = self.session.scores.as_mut().and_then(|t| t.enter(score));
         Ok(())
     }
 

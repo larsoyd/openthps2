@@ -8,9 +8,9 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 396 (8.4%) | 222,631 (23.2%) |
-| Recovered | 218 (4.6%) | 93,607 (9.8%) |
-| Open | 4106 | 643,501 |
+| Implemented | 397 (8.4%) | 222,756 (23.2%) |
+| Recovered | 219 (4.6%) | 94,115 (9.8%) |
+| Open | 4104 | 642,868 |
 
 `█████░░░░░░░░░░░░░░░` 23.2% implemented by bytes
 
@@ -18,10 +18,10 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 129 | 96 | `█░░░░░░░░░` 14% |
+| unattributed | 2977 | 354,046 | 130 | 96 | `█░░░░░░░░░` 14% |
 | physics.cpp | 110 | 64,313 | 50 | 36 | `███████░░░` 73% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
-| front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
+| front.cpp | 42 | 29,072 | 5 | 4 | `██░░░░░░░░` 20% |
 | bit.cpp | 123 | 25,393 | 10 | 4 | `█░░░░░░░░░` 10% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -393,6 +393,7 @@ Implemented routines and the Rust module that holds them.
 | 004aa5d0 | 663 | rail.cpp | rail.rs |
 | 004aa8c0 | 1608 | rail.cpp | rail.rs |
 | 004aaf70 | 2622 | unattributed | rail.rs |
+| 004ac370 | 125 | unattributed | highscores.rs |
 | 004add10 | 336 | unattributed | collision.rs |
 | 004adee0 | 311 | unattributed | collision.rs |
 | 004ae020 | 97 | unattributed | collision.rs |
@@ -563,6 +564,7 @@ Implemented routines and the Rust module that holds them.
 | 0042f700 | 255 | unattributed |
 | 0044ab70 | 24 | FontTools.cpp |
 | 0044b1f0 | 66 | unattributed |
+| 0044dda0 | 508 | front.cpp |
 | 0044dfa0 | 326 | front.cpp |
 | 0044eac0 | 13872 | front.cpp |
 | 004524a0 | 1492 | front.cpp |

@@ -12,6 +12,7 @@ pub mod fixes;
 pub mod font;
 pub mod ground;
 pub mod hangar;
+pub mod highscores;
 pub mod hud;
 pub mod input;
 pub mod materials;

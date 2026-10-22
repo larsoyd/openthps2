@@ -1,5 +1,6 @@
 use crate::{
     anim::AnimationTable,
+    career::{CareerSave, SKATERS},
     collision::CollisionWorld,
     effects,
     figure::{
@@ -9,6 +10,7 @@ use crate::{
     fixes::Fixes,
     font::Font,
     ground::{Level, Outcome, Pad, PropModels, Rules, Run, TONY_HAWK_STATS},
+    highscores::HighScores,
     hud::{self, EndScreens, FontId, ImageId, Overlay},
     input::KeyTable,
     materials::{TONY_HAWK_DECK, TONY_HAWK_LOGOS, apply_deck, apply_logos, resolve_textures},
@@ -30,7 +32,10 @@ use crate::{
 const LOGO_START: usize = 2;
 /// Clear colour of the Hangar frame after gamma.
 const CLEAR: u32 = 0x0020_2d32;
-const HIGH_SCORE: i32 = 40000;
+
+/// The Hangar's row in the level table and Tony's in the skater table.
+const LEVEL: usize = 0;
+const TONY_ID: u8 = 0;
 
 pub const TONY: Rules = Rules {
     stats: TONY_HAWK_STATS,
@@ -67,6 +72,8 @@ pub struct Hangar {
     prop_models: PropModels,
     object_infos: Vec<TextureInfo>,
     object_textures: usize,
+    /// The table a boot leaves for the level, Tony playing.
+    pub high_scores: HighScores,
 }
 
 fn texture_infos(materials: &[crate::materials::Texture]) -> Vec<TextureInfo> {
@@ -130,6 +137,7 @@ impl Hangar {
             })
             .collect::<Result<_, String>>()?;
         let scripts = TrickScripts::parse(read("data/TRICKS.BIN")?.to_vec())?;
+        let high_scores = CareerSave::boot_high_scores(&SKATERS, LEVEL, TONY_ID);
         let (figure, figure_surfaces) = load_figure(archive)?;
         let objects = load_scene(archive, "data/SKHAN_O.PSX")?;
         let object_materials =
@@ -171,6 +179,7 @@ impl Hangar {
             score_font,
             trick_glyphs: glyphs(&trick_font),
             trick_font,
+            high_scores,
             sprites,
             scene,
             triggers,
@@ -247,7 +256,8 @@ pub struct Session {
 impl Session {
     pub fn start(hangar: &Hangar) -> Result<Self, String> {
         let level = hangar.level();
-        let run = Run::start(&level, hangar.triggers.restart_named("Start")?)?;
+        let mut run = Run::start(&level, hangar.triggers.restart_named("Start")?)?;
+        run.skater.session.scores = Some(hangar.high_scores);
         Ok(Self {
             run,
             fixes: Fixes::default(),
@@ -265,9 +275,9 @@ impl Session {
         let level = hangar.level();
         // the pass that takes Retry only restarts, the new run's first frame is the next pass
         if self.run.frame(&level, TONY, pad)? == Outcome::Retry {
-            let fixes = self.fixes;
+            let (fixes, scores) = (self.fixes, self.run.skater.session.scores);
             *self = Self::start(hangar)?;
-            self.fixes = fixes;
+            (self.fixes, self.run.skater.session.scores) = (fixes, scores);
             return Ok(());
         }
         let pose = self.pose(hangar)?;
@@ -284,11 +294,9 @@ impl Session {
         let time = self.run.clock.current().time;
         let fonts = [&hangar.time_font, &hangar.score_font];
         self.overlay = hud::panels(fonts, s, &tricks, time, self.run.vb)?;
-        let screens = self.screens.pass(
-            [&hangar.mess_font, &hangar.trick_font],
-            &self.run,
-            HIGH_SCORE,
-        )?;
+        let screens = self
+            .screens
+            .pass([&hangar.mess_font, &hangar.trick_font], &self.run)?;
         self.overlay
             .extend(screens.into_iter().map(|p| Overlay::Glyph(FontId::Mess, p)));
         Ok(())

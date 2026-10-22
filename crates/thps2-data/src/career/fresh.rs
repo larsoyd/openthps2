@@ -3,6 +3,7 @@ use super::{
     Skater,
 };
 use crate::create::{CUSTOM_SIZE, CUSTOM_SKATERS, TextureSets, custom_defaults};
+use crate::highscores::HighScores;
 use crate::input::{TrickConfig, known_tricks};
 use crate::rng::Rng;
 use crate::script::TrickScripts;
@@ -54,6 +55,24 @@ impl CareerSave {
             name: String::new(),
             block: b,
         })
+    }
+}
+
+impl CareerSave {
+    /// The table the boot's Career_Init draws from the unseeded generator, which a session plays
+    /// on until a career is started or loaded.
+    pub fn boot_high_scores(
+        skaters: &[Skater; CHARACTERS],
+        level: usize,
+        skater: u8,
+    ) -> HighScores {
+        let mut save = Self {
+            name: String::new(),
+            block: vec![0; BLOCK_SIZE],
+        };
+        high_scores(&mut save.block, &mut Rng::unseeded(), skaters);
+        save.block[INITIALS..INITIALS + 3].copy_from_slice(b"AAA");
+        save.high_scores(level, skater)
     }
 }
 

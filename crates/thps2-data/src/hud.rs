@@ -1,6 +1,8 @@
 use crate::{
+    career::{HIGH_SCORE_NAMES, LEVELS},
     font::Font,
     ground::{Run, Session, Skater},
+    highscores::{Entry, HighScores},
     text::{CharMap, Prim, Text},
 };
 
@@ -36,6 +38,13 @@ const SLIDE_STEP: i32 = 30;
 const LABEL_STOP: i32 = 90;
 const VALUE_STOP: i32 = 410;
 const ROWS: [(usize, i32); 3] = [(0, 60), (1, 78), (3, 96)];
+const TABLE_STOP: i32 = 180;
+const TABLE_VALUE_STOP: i32 = 412;
+const TABLE_TOP: i32 = 59;
+const TABLE_SPACING: i32 = 19;
+const INITIALS_AT: i32 = -92;
+const INITIAL_SPACING: i32 = 26;
+const DIGIT_SPACING: i32 = 18;
 const MENU_ITEMS: [&str; 5] = [
     "Update save file",
     "Retry",
@@ -139,22 +148,26 @@ impl EndMenu {
 #[derive(Clone, Debug, Default)]
 pub struct EndScreens {
     slides: Option<Slides>,
+    table: Option<Slides>,
     menu: Option<EndMenu>,
 }
 
 impl EndScreens {
     /// The fonts are the message font the screens draw with and the trick font the best combo
     /// lines are measured in.
-    pub fn pass(
-        &mut self,
-        [font, trick_font]: [&Font; 2],
-        run: &Run,
-        high_score: i32,
-    ) -> Result<Vec<Prim>, String> {
+    pub fn pass(&mut self, [font, trick_font]: [&Font; 2], run: &Run) -> Result<Vec<Prim>, String> {
         let session = &run.skater.session;
         if !session.ended {
             *self = Self::default();
             return Ok(Vec::new());
+        }
+        let scores = session
+            .scores
+            .as_ref()
+            .ok_or("[hud] end screens without a high score table")?;
+        if let Some(entry) = &session.entry {
+            let table = self.table.get_or_insert_with(Slides::new);
+            return high_scores(font, table, scores, entry, run.ticks);
         }
         if session.menu {
             let menu = self.menu.get_or_insert_with(EndMenu::new);
@@ -167,8 +180,7 @@ impl EndScreens {
         let mut prims =
             mess(1, PROMPT, 0xc0).draw(font, CENTRE_X, 222, "Press ENTER to continue")?;
         prims.extend(mess(1, TITLE, 0x100).draw(font, CENTRE_X, 40, "Statistics")?);
-        // a score at or above the table's top takes its place before the screen reads it
-        let values = [panel.score, high_score.max(panel.score), panel.landed];
+        let values = [panel.score, scores.entries[0].score as i32, panel.landed];
         for ((index, y), label) in ROWS
             .iter()
             .zip(["Total Score", "High Score", "Tricks Landed"])
@@ -213,6 +225,54 @@ impl EndScreens {
         }
         Ok(prims)
     }
+}
+
+/// The level's table with the new entry's initials under edit: the row slides in, the letter
+/// under the cursor swells with the pulse and an underscore under it blinks every ten ticks.
+fn high_scores(
+    font: &Font,
+    table: &mut Slides,
+    scores: &HighScores,
+    entry: &Entry,
+    ticks: i32,
+) -> Result<Vec<Prim>, String> {
+    let title = format!("{} high scores", LEVELS[scores.level].name);
+    let mut prims = mess(1, TITLE, 0x100).draw(font, CENTRE_X, 40, &title)?;
+    let blink = (ticks / 2 / 10) & 1 == 1;
+    let mut pulse = entry.pulse;
+    for (row, e) in scores.entries.iter().enumerate() {
+        table.labels[row] = (table.labels[row] + SLIDE_STEP).min(TABLE_STOP);
+        table.values[row] = (table.values[row] - SLIDE_STEP).max(TABLE_VALUE_STOP);
+        let (x, y) = (table.labels[row], TABLE_TOP + TABLE_SPACING * row as i32);
+        let editing = row == entry.row;
+        let colour = if editing { TITLE } else { GREY };
+        pulse = (pulse - 1).max(0);
+        for (k, &c) in e.initials.iter().enumerate() {
+            let scale = if editing && k == entry.cursor {
+                0x100 + 6 * pulse
+            } else {
+                0x100
+            };
+            let at = x + INITIALS_AT + INITIAL_SPACING * k as i32;
+            prims.extend(mess(1, colour, scale).draw(font, at, y, &char::from(c).to_string())?);
+        }
+        if editing && blink {
+            let at = x + INITIALS_AT + INITIAL_SPACING * entry.cursor as i32;
+            prims.extend(mess(1, colour, 0x100).draw(font, at, y + 8, "_")?);
+        }
+        let name = HIGH_SCORE_NAMES
+            .get(usize::from(e.skater))
+            .ok_or_else(|| format!("[hud] high score row={row} skater={}", e.skater))?;
+        prims.extend(mess(0, colour, 0x100).draw(font, x, y, name)?);
+        let digits = e.score.to_string();
+        let end = table.values[row] + 30 - DIGIT_SPACING * digits.len() as i32;
+        for (i, d) in digits.char_indices().rev() {
+            let at = end + DIGIT_SPACING * i as i32;
+            prims.extend(mess(1, colour, 0x100).draw(font, at, y, &d.to_string())?);
+        }
+    }
+    prims.extend(mess(1, PROMPT, 0xc0).draw(font, CENTRE_X, 222, "Press ENTER to continue")?);
+    Ok(prims)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

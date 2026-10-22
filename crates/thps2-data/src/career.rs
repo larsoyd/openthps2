@@ -3,12 +3,13 @@ mod levels;
 mod skaters;
 
 pub use levels::LEVELS;
-pub use skaters::{HIGH_SCORE_INITIALS, SKATERS};
+pub use skaters::{HIGH_SCORE_INITIALS, HIGH_SCORE_NAMES, SKATERS};
 
 use fresh::{HIGH_SCORE_ENTRIES, HIGH_SCORE_SIZE, HIGH_SCORES, INITIALS, TIPS_ON, TIPS_SHOWN};
 
 use crate::card::{CARD_HEADER, CardIcons};
 use crate::ground::Rules;
+use crate::highscores::{HighScore, HighScores};
 use crate::score::{Gap, HANGAR_GAPS, hangar_gap};
 use crate::trig::Triggers;
 
@@ -429,18 +430,36 @@ impl CareerSave {
         Ok(())
     }
 
-    /// The score goes in above the first entry it reaches, under the last initials entered.
     fn enter_high_score(&mut self, level: usize, score: i32, skater: usize) {
+        let mut scores = self.high_scores(level, skater as u8);
+        scores.enter(score);
+        self.set_high_scores(&scores);
+    }
+
+    /// A level's table with the last initials entered, for a run of the given skater.
+    pub fn high_scores(&self, level: usize, skater: u8) -> HighScores {
         let entry = |e: usize| HIGH_SCORES + HIGH_SCORE_SIZE * (HIGH_SCORE_ENTRIES * level + e);
-        let Some(e) = (0..HIGH_SCORE_ENTRIES).find(|&e| self.word(entry(e) + 4) <= score as u32)
-        else {
-            return;
-        };
-        let (from, to) = (entry(e), entry(HIGH_SCORE_ENTRIES - 1));
-        self.block.copy_within(from..to, from + HIGH_SCORE_SIZE);
-        self.block.copy_within(INITIALS..INITIALS + 3, from);
-        self.block[from + 3] = skater as u8;
-        self.set_word(from + 4, score as u32);
+        HighScores {
+            level,
+            entries: std::array::from_fn(|e| HighScore {
+                initials: std::array::from_fn(|k| self.block[entry(e) + k]),
+                skater: self.block[entry(e) + 3],
+                score: self.word(entry(e) + 4),
+            }),
+            initials: std::array::from_fn(|k| self.block[INITIALS + k]),
+            skater,
+        }
+    }
+
+    pub fn set_high_scores(&mut self, scores: &HighScores) {
+        let at = HIGH_SCORES + HIGH_SCORE_SIZE * HIGH_SCORE_ENTRIES * scores.level;
+        for (e, s) in scores.entries.iter().enumerate() {
+            let at = at + HIGH_SCORE_SIZE * e;
+            self.block[at..at + 3].copy_from_slice(&s.initials);
+            self.block[at + 3] = s.skater;
+            self.set_word(at + 4, s.score);
+        }
+        self.block[INITIALS..INITIALS + 3].copy_from_slice(&scores.initials);
     }
 
     pub fn to_bytes(&self, icons: &CardIcons) -> Result<Vec<u8>, String> {

@@ -383,6 +383,9 @@ pub struct Skater {
     pub fast: bool,
     pub terrain: u32,
     pub switched: bool,
+    /// A script swapped the side and stance the next grind start picks, until the ground, an
+    /// ollie or a board flip clears it.
+    pub mirrored: bool,
     /// Downward travel accumulated while airborne, Q12.
     pub fall: i32,
     /// Ground distance below the origin minus the standing height at frame start, Q12.
@@ -832,6 +835,7 @@ impl Skater {
             fast: false,
             terrain: 0,
             switched: false,
+            mirrored: false,
             fall: 0,
             clearance: 0,
             turn: 0,
@@ -994,10 +998,12 @@ impl Skater {
         }
         if std::mem::take(&mut self.switch_on_anim) {
             self.switched = !self.switched;
+            self.mirrored = false;
         }
         if std::mem::take(&mut self.turn_on_anim) {
             self.forward = self.forward.map(|c| -c);
             self.lateral = self.lateral.map(|c| -c);
+            self.mirrored = false;
         }
         self.anim.run(table, id, start, end, pingpong as i8)
     }
@@ -1182,7 +1188,7 @@ impl Skater {
             (self.trick_running, self.script, self.manual_pending) = (false, None, None);
             self.balance.kick = 0;
         }
-        self.armed = false;
+        (self.armed, self.mirrored) = (false, false);
         self.jumped = true;
         self.vert_jump = self.vert;
         self.pop_speed = speed_of(self.velocity)?;
@@ -1756,14 +1762,23 @@ impl Skater {
                     }
                     self.pulse_links(triggers, node, depth)?;
                 }
-                Command::Kill => {
+                Command::Kill { loud } => {
                     for link in triggers.links(node) {
                         match triggers.kind(link) {
                             kind if ENV_ITEMS.contains(&kind) => {
                                 let checksum = triggers.checksum(link).ok_or_else(|| {
                                     format!("command point node={node} kills node={link} without checksum")
                                 })?;
-                                self.world_events.push(WorldEvent::Kill(checksum));
+                                self.world_events.push(if loud {
+                                    WorldEvent::Kill(checksum)
+                                } else {
+                                    WorldEvent::Visible(checksum, false)
+                                });
+                            }
+                            kind @ (MOVING_OBJECT | SIGNALLED_OBJECT) if !loud => {
+                                return Err(format!(
+                                    "command point node={node} quiet kill of node={link} kind={kind} unsupported"
+                                ));
                             }
                             MOVING_OBJECT | SIGNALLED_OBJECT => self
                                 .world_events
@@ -2174,6 +2189,19 @@ impl Skater {
                     pc = end + 1;
                 }
                 0x0c => self.push_script_trick(),
+                0x50 => {
+                    pc = (pc..)
+                        .find(|&i| scripts.byte(i).is_none_or(|b| b == 0))
+                        .unwrap()
+                        + 1;
+                }
+                0x22 => self.switched = !self.switched,
+                0x57 => self.mirrored = true,
+                0x21 => {
+                    let turn = rot_y_matrix(i32::from(short(pc)?) & 0xfff);
+                    self.set_basis(mat_mul_cols(self.basis_matrix(), turn));
+                    pc += 2;
+                }
                 0x18 => {
                     let to = self.script_frame(short(pc)?);
                     let time = self.frame_time as i16;
@@ -2747,12 +2775,30 @@ impl Skater {
     ) -> Result<(), String> {
         if self.head_on(normal, needs_speed)? {
             self.set_anim(table, ANIM_WALL_HIT)?;
+            self.stop_trick()?;
             // the bonk sound is not played, its pick still takes a random number
             self.rng.next(3);
             self.unjudged = true;
             return self.wall_response(normal, WALL_HIT_TURN);
         }
         self.wall_response(normal, WALL_TURN)
+    }
+
+    /// A bonk stops the trick script and drops what was queued. A trick caught mid move would
+    /// also cancel the combo, which is not ported.
+    fn stop_trick(&mut self) -> Result<(), String> {
+        (self.script, self.grind_trick, self.manual_pending) = (None, None, None);
+        self.air_queue.clear();
+        if self.trick_running && !self.script_ended {
+            if !self.panel.entries.is_empty() {
+                return Err(format!(
+                    "wall bonk cancels a combo of entries={} unsupported",
+                    self.panel.entries.len()
+                ));
+            }
+            self.trick_running = false;
+        }
+        Ok(())
     }
 
     /// A face within reach above a rolling or stopped skater rights the board and pushes off it.
@@ -3115,6 +3161,7 @@ pub fn ground_step(
 ) -> Result<Outcome, String> {
     let (world, table) = (level.world, level.table);
     s.ground_start = s.position;
+    s.mirrored = false;
     let stopped = s.state == State::Stopped;
     let vert = s.state == State::Vert;
     if s.state == State::Ground {

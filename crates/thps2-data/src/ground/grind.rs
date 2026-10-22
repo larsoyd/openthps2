@@ -193,8 +193,8 @@ impl Skater {
         self.grind.last_rail = Some(hit.start);
         let index = usize::from(self.grind.outer)
             + 2 * (usize::from(square)
-                + 2 * (usize::from(ahead)
-                    + 2 * (usize::from(self.switched)
+                + 2 * (usize::from(ahead ^ self.mirrored)
+                    + 2 * (usize::from(self.switched ^ self.mirrored)
                         + 2 * usize::from(crate::input::direction(pad)))));
         self.grind.board = 1;
         let side = i32::from(hit.side);

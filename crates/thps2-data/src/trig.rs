@@ -46,8 +46,11 @@ pub enum Command {
     InitialPulses(u16),
     SendPulse,
     Regions(Regions),
-    /// Kills the objects, skaters or rails the node links to.
-    Kill,
+    /// Kills the objects, skaters or rails the node links to. A loud kill shatters env items, a
+    /// quiet one hides them.
+    Kill {
+        loud: bool,
+    },
     /// Signals the moving objects the node links to.
     Signal,
     /// Shows or hides the env items the node links to.
@@ -145,7 +148,8 @@ impl Triggers {
                     at += 2;
                 }
                 0x03 => commands.push(Command::SendPulse),
-                0x0c => commands.push(Command::Kill),
+                0x0b => commands.push(Command::Kill { loud: false }),
+                0x0c => commands.push(Command::Kill { loud: true }),
                 0x0a => commands.push(Command::Signal),
                 0x0d => {
                     commands.push(Command::Visible(half(at)? != 0));

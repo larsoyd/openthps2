@@ -8,8 +8,8 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 355 (7.5%) | 208,850 (21.8%) |
-| Recovered | 215 (4.6%) | 79,905 (8.3%) |
+| Implemented | 356 (7.5%) | 208,946 (21.8%) |
+| Recovered | 214 (4.5%) | 79,809 (8.3%) |
 | Open | 4150 | 670,984 |
 
 `████░░░░░░░░░░░░░░░░` 21.8% implemented by bytes
@@ -19,7 +19,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
 | unattributed | 2977 | 354,046 | 117 | 97 | `█░░░░░░░░░` 13% |
-| physics.cpp | 110 | 64,313 | 47 | 38 | `███████░░░` 72% |
+| physics.cpp | 110 | 64,313 | 48 | 37 | `███████░░░` 72% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
 | bit.cpp | 123 | 25,393 | 2 | 3 | `░░░░░░░░░░` 3% |
@@ -315,6 +315,7 @@ Implemented routines and the Rust module that holds them.
 | 004956f0 | 197 | physics.cpp | ground.rs |
 | 004957c0 | 802 | physics.cpp | ground.rs |
 | 00496060 | 534 | physics.cpp | skater.rs |
+| 00496300 | 96 | physics.cpp | ground.rs |
 | 00496360 | 491 | physics.cpp | ground.rs |
 | 00496550 | 5117 | physics.cpp | ground.rs |
 | 00497960 | 306 | physics.cpp | ground.rs |
@@ -595,7 +596,6 @@ Implemented routines and the Rust module that holds them.
 | 00495af0 | 457 | physics.cpp |
 | 00495cc0 | 927 | physics.cpp |
 | 00496280 | 101 | physics.cpp |
-| 00496300 | 96 | physics.cpp |
 | 00497aa0 | 272 | physics.cpp |
 | 00497bb0 | 568 | physics.cpp |
 | 00497df0 | 321 | physics.cpp |

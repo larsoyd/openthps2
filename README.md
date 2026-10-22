@@ -18,7 +18,7 @@
 
 Tony Hawk's Pro Skater 2 for Windows, rebuilt in Rust on Bevy from the original game data. The goal is a faithful
 reimplementation of the USA rerelease: the same levels, skaters, physics, tricks, scoring and modes, read from your own
-copy of the game, with the freedom to fix bugs, modding, improvements, and QoL features along the way.
+copy of the game, with the freedom to fix bugs, easier modding and to add improvements.
 
 > [!IMPORTANT]
 > OpenTHPS2 is an independent project, not affiliated with or endorsed by Activision or Neversoft. It contains no game

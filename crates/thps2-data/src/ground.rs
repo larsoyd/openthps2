@@ -3641,6 +3641,7 @@ pub fn step(
         s.switch_bonus = s.switched;
     }
     s.anim.tick_at(frame.scale, frame.time)?;
+    s.pitch = 0;
     if s.on_ground() {
         s.turn_input(table, rules, pad, frame)?;
     } else if s.state != State::Grind {

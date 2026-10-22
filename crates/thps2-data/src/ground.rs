@@ -1,6 +1,6 @@
 use crate::anim::{AnimState, AnimationTable};
 use crate::career::{CareerEvent, CareerRun, GoalKind};
-use crate::collision::{CollisionWorld, Hit, shatter_draws};
+use crate::collision::{CollisionWorld, Hit, Particle, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
 use crate::rng::Rng;
@@ -2718,6 +2718,8 @@ impl Skater {
     ) -> Result<(), String> {
         if self.head_on(normal, needs_speed)? {
             self.set_anim(table, ANIM_WALL_HIT)?;
+            // the bonk sound is not played, its pick still takes a random number
+            self.rng.next(3);
             self.unjudged = true;
             return self.wall_response(normal, WALL_HIT_TURN);
         }
@@ -3481,6 +3483,8 @@ pub struct Run {
     pub props: Vec<Prop>,
     /// Powerups, the newest first like their list.
     pub pickups: Vec<Pickup>,
+    /// Glass particles, the newest first, which draw random numbers right after the skaters.
+    pub particles: Vec<Particle>,
     pub career: Option<CareerRun>,
 }
 
@@ -3512,6 +3516,7 @@ impl Run {
             objects: Vec::new(),
             props: Vec::new(),
             pickups: Vec::new(),
+            particles: Vec::new(),
             career,
         };
         run.apply_world_events(level)?;
@@ -3551,6 +3556,8 @@ impl Run {
         self.take_pickup()?;
         self.clock.end_frame(self.vb);
         self.apply_world_events(level)?;
+        let rng = &mut self.skater.rng;
+        self.particles.retain_mut(|p| p.update(rng));
         let at = self.skater.position;
         self.pickups.retain_mut(|p| p.update(at, frame.scale));
         // props draw their random numbers before the script objects
@@ -3600,7 +3607,8 @@ impl Run {
             match event {
                 WorldEvent::Kill(checksum) => {
                     if let Some(panes) = world.shatter(checksum) {
-                        shatter_draws(&panes, &mut self.skater.rng);
+                        let (_, particles) = shatter_draws(&panes, world, &mut self.skater.rng)?;
+                        self.particles.splice(0..0, particles.into_iter().rev());
                     }
                 }
                 WorldEvent::Regions(r) => {

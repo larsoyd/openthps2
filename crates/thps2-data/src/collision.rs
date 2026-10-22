@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::psx::Scene;
+use crate::psx::{Face, Model, Scene};
 use crate::rng::Rng;
 
 #[derive(Debug)]
@@ -253,6 +253,67 @@ fn brightness(rgb: &[u8]) -> i32 {
     rgb[..3].iter().map(|&c| i32::from(c)).sum::<i32>() / 3
 }
 
+/// A model face as the shatter code reads it, corners placed the way the geometry code moves
+/// whole units, and the colour of a gouraud face averaged over its corners.
+fn pane(
+    model: &Model,
+    face: &Face,
+    position: [i32; 3],
+    colours: Option<&[u8]>,
+) -> Result<Pane, String> {
+    let word = loaded_face_word(face.flags);
+    let triangle = face.flags & 0x10 != 0;
+    let flags = face
+        .raw
+        .get(12..16)
+        .map_or(0, |w| u32::from_le_bytes(w.try_into().unwrap()));
+    let corner = |k: usize| -> Result<[i32; 3], String> {
+        let v = face
+            .indices
+            .get(k)
+            .and_then(|&i| model.vertices.get(usize::from(i)))
+            .ok_or("shatter face corner missing")?;
+        Ok(std::array::from_fn(|a| {
+            (i32::from(v.words[a]) + (position[a] >> 12)) << 12
+        }))
+    };
+    let normal = model
+        .normals_raw
+        .get((flags & 0xffff) as usize)
+        .map_or([0; 3], |n| {
+            std::array::from_fn(|a| i32::from(i16::from_le_bytes([n[2 * a], n[2 * a + 1]])))
+        });
+    let rgb: [i32; 3] = if word & 0x800 == 0 {
+        std::array::from_fn(|c| i32::from(face.raw[8 + c]))
+    } else {
+        let corners = if triangle { 3 } else { 4 };
+        let mut sum = [0; 3];
+        for k in 0..corners {
+            let entry = usize::from(face.raw[8 + k]) * 4;
+            let rgb = colours
+                .and_then(|t| t.get(entry..entry + 3))
+                .ok_or("shatter face colour entry missing")?;
+            for c in 0..3 {
+                sum[c] += i32::from(rgb[c]);
+            }
+        }
+        sum.map(|s| if triangle { s / 3 } else { s >> 2 })
+    };
+    let shade = if triangle {
+        rgb[0].max(rgb[1]).max(rgb[2])
+    } else {
+        rgb[0].max(rgb[2])
+    } >> 2;
+    Ok(Pane {
+        breakable: flags & BREAKABLE != 0,
+        textured: word & 0x40 == 0 && word & 1 != 0,
+        triangle,
+        corners: [corner(0)?, corner(1)?, corner(2)?],
+        normal,
+        shade,
+    })
+}
+
 /// An origin inside the box on every axis, or outside it on every axis.
 pub fn in_region(p: [i32; 3], [min, max]: [[i32; 3]; 2], inside: bool) -> bool {
     let mut within = (0..3).map(|a| (min[a]..=max[a]).contains(&p[a]));
@@ -285,6 +346,53 @@ pub struct Pane {
     breakable: bool,
     textured: bool,
     triangle: bool,
+    /// World Q12 corners 0 to 2 and the model normal the particles fly out along.
+    corners: [[i32; 3]; 3],
+    normal: [i32; 3],
+    /// The brightest colour the particles take, quads pass green twice and drop red.
+    shade: i32,
+}
+
+/// A glass particle as the generator sees it: its first corner's height, fall speed and floor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Particle {
+    y: i32,
+    vy: i32,
+    floor: i32,
+    bounces: u8,
+    life: i32,
+    shade: i32,
+}
+
+const PARTICLE_GRAVITY: i32 = 10000;
+const PARTICLE_BOUNCES: u8 = 2;
+const PARTICLE_FADE: i32 = 4;
+/// Particles start this far in front of the face when they look for the floor below.
+const FLOOR_LEAD: i32 = 500;
+const FLOOR_DROP: i32 = 0xbb8000;
+
+impl Particle {
+    /// One frame of the particle update, false once its colour has faded out.
+    pub fn update(&mut self, rng: &mut Rng) -> bool {
+        self.y = self.y.wrapping_add(self.vy);
+        self.vy = self.vy.wrapping_add(PARTICLE_GRAVITY);
+        // past two bounces the fall no longer draws, so its speed is left alone
+        if self.floor < self.y && self.bounces < PARTICLE_BOUNCES {
+            self.y = self.floor - rng.next(50) * 0x1000;
+            rng.next(50);
+            rng.next(50);
+            self.vy = self.vy.wrapping_neg() >> 2;
+            self.bounces += 1;
+        }
+        if self.bounces < PARTICLE_BOUNCES {
+            rng.next(5);
+        }
+        self.life = (self.life - 1).max(0);
+        if self.life == 0 {
+            self.shade = (self.shade - PARTICLE_FADE).max(0);
+        }
+        self.shade != 0
+    }
 }
 
 /// Faces past the sixth textured one break without shards.
@@ -293,9 +401,6 @@ const LEAF_DRAWS: [i32; 15] = [
     100, 100, 100, 96, 2, 160, 30, 48, 45, 175, 20, 2, 4096, 4096, 4096,
 ];
 const CENTRED_LEAF: usize = 7;
-const PARTICLE_DRAWS: [i32; 14] = [
-    4096, 4096, 40, 40, 201, 201, 201, 201, 201, 201, 201, 201, 201, 30,
-];
 
 struct Counted<'a> {
     rng: &'a mut Rng,
@@ -306,6 +411,34 @@ impl Counted<'_> {
     fn next(&mut self, n: i32) -> i32 {
         self.draws += 1;
         self.rng.next(n)
+    }
+
+    /// A spot on the face, flung along the normal and away from the face centre.
+    fn particle(&mut self, pane: &Pane, floor: i32) -> Particle {
+        let [v0, v1, v2] = pane.corners;
+        let edge = |v: [i32; 3]| -> [i32; 3] { std::array::from_fn(|i| (v[i] - v0[i]) >> 12) };
+        let (e1, e2) = (edge(v1), edge(v2));
+        let centre: [i32; 3] = std::array::from_fn(|i| (v1[i] + v2[i]) >> 1);
+        let (a, b) = (self.next(4096), self.next(4096));
+        let spot: [i32; 3] = std::array::from_fn(|i| {
+            ((a.wrapping_mul(e2[i]).wrapping_add(b.wrapping_mul(e1[i])) >> 12) << 12) + v0[i]
+        });
+        let away = calc_unit(std::array::from_fn(|i| spot[i] - centre[i]));
+        let (out, spread) = (self.next(40), self.next(40));
+        let vy = away[1].wrapping_mul(spread) + pane.normal[1] * out;
+        self.next(201);
+        let y = (self.next(201) - 100) * 0x1000 + spot[1];
+        for _ in 0..7 {
+            self.next(201);
+        }
+        Particle {
+            y,
+            vy,
+            floor,
+            bounces: 0,
+            life: self.next(30) + 30,
+            shade: pane.shade,
+        }
     }
 
     /// A textured shard splits while depth lasts, a leaf on the face's own centre skips one draw.
@@ -324,10 +457,15 @@ impl Counted<'_> {
     }
 }
 
-/// Draws the random numbers a shatter takes for its shards and particles, returning the count.
-pub fn shatter_draws(panes: &[Pane], rng: &mut Rng) -> u32 {
+/// Draws the random numbers a shatter takes for its shards and particles, returning the count
+/// and the particles that keep drawing while they fall.
+pub fn shatter_draws(
+    panes: &[Pane],
+    world: &CollisionWorld,
+    rng: &mut Rng,
+) -> Result<(u32, Vec<Particle>), String> {
     let mut c = Counted { rng, draws: 0 };
-    let mut shards = 0;
+    let (mut shards, mut particles) = (0, Vec::new());
     for pane in panes {
         let split = u32::from(c.next(5) == 0);
         if !pane.breakable {
@@ -341,14 +479,27 @@ pub fn shatter_draws(panes: &[Pane], rng: &mut Rng) -> u32 {
             }
             shards += 1;
         } else {
+            let floor = world.particle_floor(pane)?;
             for _ in 0..if pane.triangle { 15 } else { 30 } {
-                for n in PARTICLE_DRAWS {
-                    c.next(n);
-                }
+                particles.push(c.particle(pane, floor));
             }
         }
     }
-    c.draws
+    Ok((c.draws, particles))
+}
+
+/// The unit vector of the vector library, from the whole units of each axis.
+fn calc_unit(v: [i32; 3]) -> [i32; 3] {
+    let len = crate::skater::sqrt_int(
+        v.iter()
+            .map(|&c| ((c >> 12) as i16 as i32).pow(2))
+            .fold(0i32, i32::wrapping_add),
+    );
+    if len == 0 {
+        [0; 3]
+    } else {
+        v.map(|c| c / len)
+    }
 }
 
 /// The level geometry shared by every run, and the items this run has shattered or hidden.
@@ -565,17 +716,8 @@ impl CollisionWorld {
                 panes: model
                     .faces
                     .iter()
-                    .map(|face| {
-                        let word = loaded_face_word(face.flags);
-                        Pane {
-                            breakable: face.raw.get(12..16).is_some_and(|w| {
-                                u32::from_le_bytes(w.try_into().unwrap()) & BREAKABLE != 0
-                            }),
-                            textured: word & 0x40 == 0 && word & 1 != 0,
-                            triangle: face.flags & 0x10 != 0,
-                        }
-                    })
-                    .collect(),
+                    .map(|face| pane(model, face, item.position_fixed, colours))
+                    .collect::<Result<_, String>>()?,
             });
         }
         Ok(Self {
@@ -626,6 +768,17 @@ impl CollisionWorld {
             self.shattered.push(index);
         }
         Some(panes)
+    }
+
+    /// The height a face's particles bounce at, found straight down from in front of its centre.
+    fn particle_floor(&self, pane: &Pane) -> Result<i32, String> {
+        let [_, v1, v2] = pane.corners;
+        let start: [i32; 3] =
+            std::array::from_fn(|i| ((v1[i] + v2[i]) >> 1) + pane.normal[i] * FLOOR_LEAD);
+        let end = [start[0], start[1] + FLOOR_DROP, start[2]];
+        Ok(self
+            .query(start, end)?
+            .map_or(i32::MAX, |hit| hit.position_fixed[1]))
     }
 
     /// Shows or hides the first item with this model checksum.

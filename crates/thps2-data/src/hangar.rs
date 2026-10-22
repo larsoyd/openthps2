@@ -178,6 +178,11 @@ impl Hangar {
         })
     }
 
+    /// The trick line font, which a run without the viewer needs for the panel's random draws.
+    pub fn trick_font(&self) -> &Font {
+        &self.trick_font
+    }
+
     pub fn level(&self) -> Level<'_> {
         Level {
             world: &self.world,

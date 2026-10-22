@@ -8,21 +8,21 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 350 (7.4%) | 204,639 (21.3%) |
-| Recovered | 219 (4.6%) | 83,867 (8.7%) |
+| Implemented | 353 (7.5%) | 206,621 (21.5%) |
+| Recovered | 216 (4.6%) | 81,885 (8.5%) |
 | Open | 4151 | 671,233 |
 
-`████░░░░░░░░░░░░░░░░` 21.3% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 21.5% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 115 | 99 | `█░░░░░░░░░` 12% |
+| unattributed | 2977 | 354,046 | 116 | 98 | `█░░░░░░░░░` 12% |
 | physics.cpp | 110 | 64,313 | 47 | 38 | `███████░░░` 72% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
-| bit.cpp | 123 | 25,393 | 0 | 5 | `░░░░░░░░░░` 0% |
+| bit.cpp | 123 | 25,393 | 2 | 3 | `░░░░░░░░░░` 3% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
@@ -145,6 +145,8 @@ Implemented routines and the Rust module that holds them.
 | 00402bb0 | 815 | baddy.cpp | objects.rs |
 | 00403000 | 171 | unattributed | objects.rs |
 | 00403410 | 511 | unattributed | objects.rs |
+| 00406e30 | 474 | bit.cpp | collision.rs |
+| 00407050 | 384 | bit.cpp | collision.rs |
 | 0040b650 | 1409 | camera.cpp | camera.rs |
 | 0040be70 | 508 | unattributed | camera.rs |
 | 0040c370 | 7297 | camera.h | camera.rs |
@@ -358,6 +360,7 @@ Implemented routines and the Rust module that holds them.
 | 004aaf70 | 2622 | unattributed | rail.rs |
 | 004ae090 | 1689 | Shatter.cpp | collision.rs |
 | 004af0b0 | 212 | unattributed | collision.rs |
+| 004af1c0 | 1124 | unattributed | collision.rs |
 | 004b1810 | 122 | skatmgr.cpp | fresh.rs |
 | 004b1ef0 | 68 | spool.cpp | collision.rs |
 | 004b20f0 | 33 | spool.cpp | psx.rs |
@@ -497,8 +500,6 @@ Implemented routines and the Rust module that holds them.
 | 00403d30 | 139 | bit.cpp |
 | 00403e40 | 82 | bit.cpp |
 | 004053d0 | 220 | bit.cpp |
-| 00406e30 | 474 | bit.cpp |
-| 00407050 | 384 | bit.cpp |
 | 0040b060 | 315 | unattributed |
 | 00411fc0 | 1621 | unattributed |
 | 00413d60 | 357 | career.cpp |
@@ -614,7 +615,6 @@ Implemented routines and the Rust module that holds them.
 | 004add10 | 336 | unattributed |
 | 004adee0 | 311 | unattributed |
 | 004ae730 | 1980 | unattributed |
-| 004af1c0 | 1124 | unattributed |
 | 004b0cd0 | 101 | skatmgr.cpp |
 | 004b1430 | 109 | skatmgr.cpp |
 | 004baeb0 | 157 | unattributed |

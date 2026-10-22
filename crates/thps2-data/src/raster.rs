@@ -32,6 +32,8 @@ pub struct DrawState {
     pub alpha_op: u32,
     pub wrap: bool,
     pub gouraud: bool,
+    /// Device viewport x, y, width, height, the whole target when none.
+    pub viewport: Option<[usize; 4]>,
 }
 
 impl Default for DrawState {
@@ -47,6 +49,7 @@ impl Default for DrawState {
             alpha_op: OP_SELECT_ARG1,
             wrap: true,
             gouraud: true,
+            viewport: None,
         }
     }
 }
@@ -188,6 +191,9 @@ impl Raster {
             .max(0.0) as usize;
         let max_y =
             (v.iter().map(|p| p.y).fold(f32::MIN, f32::max).ceil() as usize).min(self.height);
+        let [vx, vy, vw, vh] = state.viewport.unwrap_or([0, 0, self.width, self.height]);
+        let (min_x, max_x) = (min_x.max(vx), max_x.min(vx + vw));
+        let (min_y, max_y) = (min_y.max(vy), max_y.min(vy + vh));
         let colours = v.map(|p| unpack_argb(p.diffuse));
         for py in min_y..max_y {
             for px in min_x..max_x {

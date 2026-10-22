@@ -711,6 +711,7 @@ impl Draw {
             alpha_op: op,
             wrap: self.wrap,
             gouraud: true,
+            viewport: None,
         }
     }
 }

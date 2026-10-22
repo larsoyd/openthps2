@@ -17,11 +17,11 @@ use crate::{
     pre::Pre,
     psx::Scene,
     rail::Rails,
-    raster::{BLEND_ZERO, DrawState, Raster, Texture},
+    raster::{BLEND_ONE, BLEND_ZERO, DrawState, Raster, Texture},
     render::{self, HANGAR_VIEWPORT, Placed, Poly, TextureInfo, View},
     script::TrickScripts,
     sprite::Sprite,
-    text::{ScreenQuad, gamma_table},
+    text::{Prim, ScreenQuad, draw_area_viewport, gamma_table},
     tricktext::TrickText,
     trig::Triggers,
 };
@@ -320,7 +320,35 @@ impl Session {
             })
             .collect();
         let size = [HANGAR_VIEWPORT.width as u32, HANGAR_VIEWPORT.height as u32];
+        let sprite = |image: ImageId| {
+            hangar
+                .sprites
+                .iter()
+                .find(|(id, _)| *id == image)
+                .map(|(_, s)| s)
+                .ok_or("[panel] image not loaded")
+        };
         for overlay in self.overlay.iter().rev() {
+            // drawn newest first, so an image submitted after its glyph comes before it
+            if let Overlay::Glyph(_, Prim { after: Some(t), .. }) = overlay {
+                let blood = sprite(ImageId::Blood)?;
+                let state = DrawState {
+                    viewport: draw_area_viewport(t.area, size),
+                    ..overlay_state(false)
+                };
+                draws.push(FrameDraw {
+                    vertices: t.quad(size, &gamma).vertices(blood.logical).to_vec(),
+                    state: if t.semi {
+                        DrawState {
+                            dst: BLEND_ONE,
+                            ..state
+                        }
+                    } else {
+                        state
+                    },
+                    texture: Some(&blood.texture),
+                });
+            }
             draws.push(match *overlay {
                 Overlay::Glyph(id, prim) => {
                     let (font, glyphs) = match id {
@@ -342,12 +370,7 @@ impl Session {
                     at: [x, y],
                     raw,
                 } => {
-                    let sprite = &hangar
-                        .sprites
-                        .iter()
-                        .find(|(id, _)| *id == image)
-                        .ok_or("[panel] image not loaded")?
-                        .1;
+                    let sprite = sprite(image)?;
                     let (w, h) = (i32::from(sprite.width), i32::from(sprite.height));
                     let level = if raw { 0xff } else { u32::from(gamma[0x80]) };
                     let diffuse = 0xff00_0000 | (level * 0x0001_0101);
@@ -516,5 +539,6 @@ fn overlay_state(shadow: bool) -> DrawState {
         alpha_op: 4,
         wrap: false,
         gouraud: true,
+        viewport: None,
     }
 }

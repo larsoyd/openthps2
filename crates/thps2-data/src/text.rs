@@ -86,6 +86,34 @@ pub struct Prim {
     pub shadow: bool,
     pub colour: [u8; 3],
     pub rect: [i32; 4],
+    /// An image the text's effect submits right after this glyph.
+    pub after: Option<Turned>,
+}
+
+/// A rotated image on the virtual screen, corners in the original's primitive order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Turned {
+    pub corners: [[i32; 2]; 4],
+    /// Far texel corner.
+    pub uv: [u8; 2],
+    pub grey: u8,
+    pub semi: bool,
+    /// Draw area x, y, width, height the image is clipped to while it is drawn.
+    pub area: [i32; 4],
+}
+
+impl Turned {
+    pub fn quad(&self, screen: [u32; 2], gamma: &[u8; 256]) -> ScreenQuad {
+        let [p0, p1, p2, p3] = self
+            .corners
+            .map(|[x, y]| [screen_x(x, screen), screen_y(y, screen)]);
+        let [u, v] = self.uv;
+        ScreenQuad {
+            corners: [p0, p1, p3, p2],
+            uv: [[0, 0], [u, 0], [u, v], [0, v]],
+            diffuse: 0xff00_0000 | (u32::from(gamma[usize::from(self.grey)]) * 0x0001_0101),
+        }
+    }
 }
 
 /// What a text effect does to each glyph of a string while it is laid out and drawn.
@@ -94,6 +122,13 @@ pub trait Effect {
     fn offset(&mut self, _y: &mut i32) {}
     /// The colour every glyph takes instead of the text's own.
     fn colour(&mut self) -> Option<[u8; 3]> {
+        None
+    }
+    /// Runs before the bottom trick line is drawn, where the panel colours the blood image.
+    fn before_bottom_line(&mut self) {}
+    /// An image to submit after a glyph, given its x, its top before the offset and after it,
+    /// all 20.12 on the screen, and the glyph's byte index in the string.
+    fn post(&mut self, _x: i32, _top: i32, _moved: i32, _index: usize) -> Option<Turned> {
         None
     }
 }
@@ -107,6 +142,8 @@ struct Placed {
     code: Option<Code>,
     x: i32,
     y: i32,
+    /// The glyph's top before the effect moved it.
+    top: i32,
 }
 
 impl Text {
@@ -159,6 +196,7 @@ impl Text {
                     code,
                     x: 0,
                     y: 0,
+                    top: 0,
                 });
                 continue;
             };
@@ -177,13 +215,15 @@ impl Text {
             } else {
                 pen += (w + self.spacing) * scale;
             }
-            let mut gy = -base * scale;
+            let top = -base * scale;
+            let mut gy = top;
             effect.offset(&mut gy);
             placed.push(Placed {
                 glyph,
                 code,
                 x: gx,
                 y: gy,
+                top,
             });
         }
         let origin_x = match self.hjust {
@@ -201,7 +241,7 @@ impl Text {
         };
         let (mut colour, mut saved) = (self.colour, self.colour);
         let mut prims = Vec::with_capacity(2 * placed.len());
-        for p in &placed {
+        for (index, p) in placed.iter().enumerate() {
             match p.code {
                 Some(Code::Restore) => colour = saved,
                 Some(Code::Colour(c)) => (saved, colour) = (colour, c),
@@ -227,6 +267,7 @@ impl Text {
                 shadow: false,
                 colour,
                 rect: rect(0, 0),
+                after: None,
             });
             if let Some([dx, dy]) = self.shadow {
                 prims.push(Prim {
@@ -234,7 +275,12 @@ impl Text {
                     shadow: true,
                     colour: SHADOW_COLOUR,
                     rect: rect(dx, dy),
+                    after: None,
                 });
+            }
+            let after = effect.post(p.x + origin_x, p.top + origin_y, p.y + origin_y, index);
+            if let Some(last) = prims.last_mut() {
+                last.after = after;
             }
         }
         Ok(prims)
@@ -295,11 +341,8 @@ impl ScreenQuad {
         diffuse: u32,
         screen: [u32; 2],
     ) -> Self {
-        // the products wrap and the y divide is unsigned like the original's
-        let sx = |x: i32| (x.wrapping_mul(screen[0] as i32) >> VIRTUAL_WIDTH_SHIFT) as i16 as i32;
-        let sy = |y: i32| {
-            (y.wrapping_mul(screen[1] as i32) as u32 / VIRTUAL_HEIGHT) as u16 as i16 as i32
-        };
+        let sx = |x: i32| screen_x(x, screen);
+        let sy = |y: i32| screen_y(y, screen);
         Self {
             corners: [
                 [sx(x0), sy(y0)],
@@ -311,6 +354,26 @@ impl ScreenQuad {
             diffuse,
         }
     }
+}
+
+/// The device viewport a draw area becomes, none when it would reach past the target and the
+/// device keeps its viewport.
+pub fn draw_area_viewport([x, y, w, h]: [i32; 4], screen: [u32; 2]) -> Option<[usize; 4]> {
+    let [sw, sh] = screen;
+    // the original works on unsigned products, wraps y into the 256 line buffer and clamps
+    let across = |v: i32| ((v as u32).wrapping_mul(sw) >> VIRTUAL_WIDTH_SHIFT).min(sw);
+    let down = |v: i32| ((v as u32).wrapping_mul(sh) / VIRTUAL_HEIGHT).min(sh);
+    let (x, w, y, h) = (across(x), across(w), down(y % 256), down(h));
+    (x + w <= sw && y + h <= sh).then_some([x, y, w, h].map(|v| v as usize))
+}
+
+// the products wrap and the y divide is unsigned like the original's
+fn screen_x(x: i32, screen: [u32; 2]) -> i32 {
+    (x.wrapping_mul(screen[0] as i32) >> VIRTUAL_WIDTH_SHIFT) as i16 as i32
+}
+
+fn screen_y(y: i32, screen: [u32; 2]) -> i32 {
+    (y.wrapping_mul(screen[1] as i32) as u32 / VIRTUAL_HEIGHT) as u16 as i16 as i32
 }
 
 impl ScreenQuad {

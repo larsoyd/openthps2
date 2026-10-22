@@ -224,13 +224,15 @@ pub enum ImageId {
     Score,
     Special,
     Switch,
+    Blood,
 }
 
 impl ImageId {
-    pub const ALL: [(Self, &'static str); 3] = [
+    pub const ALL: [(Self, &'static str); 4] = [
         (Self::Score, "scorep.bmp"),
         (Self::Special, "spec_bar.bmp"),
         (Self::Switch, "s2switch.bmp"),
+        (Self::Blood, "s2blood.bmp"),
     ];
 }
 

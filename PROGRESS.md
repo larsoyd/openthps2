@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 270 (5.7%) | 175,575 (18.3%) |
+| Implemented | 274 (5.8%) | 176,245 (18.4%) |
 | Recovered | 213 (4.5%) | 83,336 (8.7%) |
-| Open | 4237 | 700,828 |
+| Open | 4233 | 700,158 |
 
-`████░░░░░░░░░░░░░░░░` 18.3% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 18.4% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 98 | 97 | `█░░░░░░░░░` 10% |
+| unattributed | 2977 | 354,046 | 101 | 97 | `█░░░░░░░░░` 10% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -91,7 +91,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | player_ui.cpp | 5 | 1,590 | 0 | 0 | `░░░░░░░░░░` 0% |
 | redbook.cpp | 10 | 1,462 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickob.cpp | 6 | 1,419 | 0 | 3 | `░░░░░░░░░░` 0% |
-| texteffects.cpp | 17 | 1,332 | 6 | 0 | `███░░░░░░░` 27% |
+| texteffects.cpp | 17 | 1,332 | 7 | 0 | `████░░░░░░` 43% |
 | create_ui.cpp | 6 | 1,325 | 0 | 0 | `░░░░░░░░░░` 0% |
 | PRE.cpp | 9 | 1,246 | 0 | 0 | `░░░░░░░░░░` 0% |
 | d3dsprite.cpp | 2 | 1,243 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -168,6 +168,7 @@ Implemented routines and the Rust module that holds them.
 | 0044ba90 | 296 | front.cpp | hud.rs |
 | 0044ca60 | 4737 | front.cpp | hud.rs |
 | 0044e3f0 | 41 | front.cpp | hud.rs |
+| 004568d0 | 185 | unattributed | text.rs |
 | 00457160 | 628 | Image.cpp | text.rs |
 | 00457420 | 244 | Image.cpp | sprite.rs |
 | 0045e8e0 | 1690 | unattributed | render.rs |
@@ -308,6 +309,7 @@ Implemented routines and the Rust module that holds them.
 | 004b9d50 | 13 | texteffects.cpp | tricktext.rs |
 | 004b9d60 | 119 | texteffects.cpp | tricktext.rs |
 | 004b9de0 | 26 | texteffects.cpp | tricktext.rs |
+| 004b9e00 | 225 | texteffects.cpp | tricktext.rs |
 | 004ba780 | 21 | unattributed | tricktext.rs |
 | 004bb4f0 | 602 | trickdb.cpp | input.rs |
 | 004bb7e0 | 493 | trickdb.cpp | input.rs |
@@ -374,6 +376,7 @@ Implemented routines and the Rust module that holds them.
 | 004d2310 | 688 | unattributed | render.rs |
 | 004d26b0 | 797 | unattributed | render.rs |
 | 004d29e0 | 959 | unattributed | render.rs |
+| 004d3600 | 188 | unattributed | text.rs |
 | 004d4120 | 117 | unattributed | text.rs |
 | 004d8cd0 | 285 | d3dtex.cpp | bitmap.rs |
 | 004d8df0 | 273 | d3dtex.cpp | materials.rs |
@@ -398,6 +401,7 @@ Implemented routines and the Rust module that holds them.
 | 004e8580 | 25 | unattributed | camera.rs |
 | 004e85a0 | 329 | unattributed | camera.rs |
 | 004e8770 | 3 | unattributed | bitmap.rs |
+| 004e87f0 | 72 | unattributed | text.rs |
 | 004e9780 | 421 | unattributed | pkr.rs |
 | 004e9940 | 568 | unattributed | pkr.rs |
 | 004f3980 | 42 | unattributed | ground.rs |
@@ -627,4 +631,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 0040f850, 0046d160, 0049fef0, 004a07e0, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0
+Status entries outside the function inventory: 0040f850, 00457940, 0046d160, 0049fef0, 004a07e0, 004b9860, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0

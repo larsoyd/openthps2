@@ -1,10 +1,11 @@
 use crate::{
+    camera::{rcos, rsin},
     fixes::Fixes,
     font::Font,
     ground::{Skater, State},
     rng::Rng,
     score::{Entry, Shown, TextEvent, multiplier, spin_group},
-    text::{CharMap, Effect, Prim, Text},
+    text::{CharMap, Effect, Prim, Text, Turned},
 };
 
 /// Scale of the trick lines and of the pop the text grows from, 20.12.
@@ -18,6 +19,17 @@ const PENDING_AT: [i32; 2] = [256, 224];
 const LINE_GAP: i32 = 5;
 /// Falling glyphs stop this far below the top of the 240 line screen.
 const FALL_FLOOR: i32 = 270;
+/// The blood image s2blood.bmp, drawn at twice its size and squashed to 0xa00 down its height.
+const BLOOD_SIZE: [i32; 2] = [32, 64];
+const BLOOD_SCALE: i32 = 0x2000;
+const BLOOD_SQUASH: i32 = 0xa00;
+const BLOOD_GREY: u8 = 0x60;
+/// Width of the strip a falling glyph uncovers its blood in.
+const BLOOD_STRIP: i32 = 16;
+const SCREEN_WIDTH: i32 = 0x200;
+const SCREEN_HEIGHT: i32 = 240;
+/// Frames into a fall before its blood starts to fade.
+const BLOOD_FADE_AFTER: i32 = 50;
 const FALL_COLOUR: [u8; 3] = [0xff, 0x32, 0x32];
 
 pub const TRICKS: Text = Text {
@@ -170,24 +182,48 @@ impl Effect for Grow {
 }
 
 /// A lost combo's glyphs dropping one by one off the bottom of the screen.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct Fall {
     active: bool,
     timers: [i16; 32],
+    /// Per glyph the blood sprite's shift left and its angle.
+    drift: [i16; 32],
+    spin: [i16; 32],
     blood: bool,
+    frames: i32,
     index: usize,
     count: i32,
+    /// The shared blood image keeps its colour and blend between falls.
+    blood_grey: u8,
+    blood_semi: bool,
+}
+
+impl Default for Fall {
+    fn default() -> Self {
+        Self {
+            active: false,
+            timers: [0; 32],
+            drift: [0; 32],
+            spin: [0; 32],
+            blood: false,
+            frames: 0,
+            index: 0,
+            count: 0,
+            blood_grey: 0x80,
+            blood_semi: false,
+        }
+    }
 }
 
 impl Fall {
     fn start(&mut self, rng: &mut Rng) {
         self.active = true;
-        for timer in &mut self.timers {
-            *timer = (rng.next(30) + 15) as i16;
-            // drift and spin of the blood sprite
-            rng.next(48);
-            rng.next(256);
+        for k in 0..32 {
+            self.timers[k] = (rng.next(30) + 15) as i16;
+            self.drift[k] = rng.next(48) as i16;
+            self.spin[k] = ((rng.next(256) - 0x80) & 0xfff) as i16;
         }
+        self.frames = 0;
         self.blood = rng.next(2) == 0;
     }
 
@@ -196,6 +232,7 @@ impl Fall {
             for timer in &mut self.timers {
                 *timer = timer.wrapping_sub(1);
             }
+            self.frames += 1;
         }
     }
 
@@ -234,6 +271,53 @@ impl Effect for Fall {
 
     fn colour(&mut self) -> Option<[u8; 3]> {
         self.active.then_some(FALL_COLOUR)
+    }
+
+    fn before_bottom_line(&mut self) {
+        if self.active && self.blood {
+            self.blood_semi = true;
+            self.blood_grey = if self.frames > BLOOD_FADE_AFTER {
+                ((0x52 - self.frames) * 3).max(0) as u8
+            } else {
+                BLOOD_GREY
+            };
+        }
+    }
+
+    /// The blood sprite hangs from the glyph's place before the fall, turned about its top left,
+    /// and shows only in the strip the glyph has fallen through.
+    fn post(&mut self, x: i32, top: i32, moved: i32, index: usize) -> Option<Turned> {
+        let (x, y) = (x >> 12, top >> 12);
+        if !self.active || !self.blood || !(-16..=0x200).contains(&x) {
+            return None;
+        }
+        let k = index & 31;
+        let angle = i32::from(self.spin[k]);
+        let (c, s) = (rcos(angle), rsin(angle));
+        let axis_x = [
+            (c * BLOOD_SCALE) >> 12,
+            ((-(s * BLOOD_SQUASH) >> 12) * BLOOD_SCALE) >> 12,
+        ];
+        let axis_y = [
+            (s * BLOOD_SCALE) >> 12,
+            (((c * BLOOD_SQUASH) >> 12) * BLOOD_SCALE) >> 12,
+        ];
+        let [w, h] = BLOOD_SIZE;
+        let origin = [(x - i32::from(self.drift[k])) << 12, y << 12];
+        let corner =
+            |a: i32, b: i32| [0, 1].map(|i| (origin[i] + a * axis_x[i] + b * axis_y[i]) >> 12);
+        let strip = [
+            BLOOD_STRIP.min(SCREEN_WIDTH - x),
+            ((moved - top) >> 12).min(SCREEN_HEIGHT - y),
+        ];
+        Some(Turned {
+            corners: [corner(0, 0), corner(w, 0), corner(0, h), corner(w, h)],
+            uv: [(w - 1) as u8, (h - 1) as u8],
+            grey: self.blood_grey,
+            semi: self.blood_semi,
+            // a draw area is never empty
+            area: [x, y, strip[0], strip[1]].map(|v| if v == 0 { 1 } else { v }),
+        })
     }
 }
 
@@ -413,6 +497,7 @@ impl TrickText {
                 y -= text.height(font, line) + LINE_GAP;
             }
         }
+        effect.before_bottom_line();
         prims.extend(text.draw_with(font, x, y, &self.lines[0], effect)?);
         match current {
             Current::Grow => {

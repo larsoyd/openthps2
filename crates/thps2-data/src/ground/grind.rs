@@ -92,41 +92,42 @@ impl Skater {
         self.lateral = cross_q12(short(self.forward), short(self.up));
     }
 
-    /// A lip trick on a rail linked to a trick object scores the gap a command point ends there.
-    fn check_lip_object(&self, level: &Level) -> Result<(), String> {
-        let t = level.triggers;
-        let start = self.grind.start;
-        let mut node = start;
+    /// The gap a lip trick here would score: the one a command point ends at a trick object linked
+    /// to the rail, looked for from the segment the skater is on back toward the chain start.
+    fn lip_gap_target(&self, level: &Level) -> Result<Option<LipGap>, String> {
+        let (t, start) = (level.triggers, self.grind.start);
+        let mut node = self.grind.segment;
         let object = loop {
             let links = t.links(node);
             if let Some(&o) = links
                 .iter()
                 .take(2)
-                .find(|&&l| matches!(t.kind(l), 0xc | 0xe))
+                .find(|&&l| matches!(t.kind(l), TRICK_OBJECT | TRICK_OBJECT_ALT))
             {
                 break o;
             }
-            match level.rails.next(node) {
-                Some(n) if n != start => node = n,
-                _ => return Ok(()),
+            match level.rails.prev_in(node, start) {
+                Some(n) if n != self.grind.segment => node = n,
+                _ => return Ok(None),
             }
         };
         let Some(checksum) = t.checksum(object) else {
-            return Ok(());
+            return Ok(None);
         };
-        let ends_here = (0..t.nodes.len()).find(|&i| {
-            t.is_command_point(i)
-                && t.nodes[i]
-                    .raw
-                    .windows(4)
-                    .any(|w| w == checksum.to_le_bytes())
-        });
-        match ends_here {
-            Some(i) => Err(format!(
-                "lip gap of command point={i} at trick object={object} unsupported"
-            )),
-            None => Ok(()),
-        }
+        // the command list keeps the last command point of the file first
+        let id = (0..t.nodes.len())
+            .rev()
+            .find_map(|i| match t.commands(i).as_deref() {
+                Ok([Command::Gap { end, id }, ..]) if t.is_command_point(i) && *end == checksum => {
+                    Some(*id)
+                }
+                _ => None,
+            });
+        Ok(id.map(|id| LipGap {
+            id,
+            node,
+            awarded: false,
+        }))
     }
 
     fn search_rails(&mut self, level: &Level, pad: Pad) -> Result<(), String> {
@@ -214,9 +215,13 @@ impl Skater {
         } else {
             self.start_script(level.tricks.grind_script(index)?);
         }
+        self.lip_gap = self.lip_gap_target(level)?;
         self.run_script(level.table, level.tricks)?;
+        if let Some(gap) = self.lip_gap.take().filter(|g| g.awarded) {
+            self.pulse_links(level.triggers, gap.node, 0)?;
+        }
         if self.state == State::Lip {
-            return self.check_lip_object(level);
+            return Ok(());
         }
         self.set_state(State::Grind);
         let along = dot_q12(travel, self.velocity);

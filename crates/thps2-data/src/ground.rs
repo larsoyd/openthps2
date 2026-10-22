@@ -133,6 +133,8 @@ const CREATED_OBJECTS: [i16; 3] = [MOVING_OBJECT, 5, SIGNALLED_OBJECT];
 const SIGNALLED_OBJECT: i16 = 7;
 const RAIL_DEF: i16 = 10;
 const RAIL_POINT: i16 = 11;
+const TRICK_OBJECT: i16 = 12;
+const TRICK_OBJECT_ALT: i16 = 14;
 /// Env item nodes, a kill shatters their glass.
 const ENV_ITEMS: [i16; 2] = [2, 9];
 /// Env items and trick objects, the nodes a visibility script names by checksum.
@@ -391,6 +393,8 @@ pub struct Skater {
     pub nollie: bool,
     /// A bail script holds the physics still, the animation and the script keep running.
     pub frozen: bool,
+    /// The gap a lip trick on this rail scores while the rail start script runs.
+    pub lip_gap: Option<LipGap>,
     /// Downward travel accumulated while airborne, Q12.
     pub fall: i32,
     /// Ground distance below the origin minus the standing height at frame start, Q12.
@@ -609,6 +613,14 @@ pub struct Grind {
 pub struct PendingGap {
     pub end: u32,
     pub id: i16,
+}
+
+/// A gap a lip trick ends at a trick object, and the rail node whose links the award pulses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LipGap {
+    pub id: i16,
+    pub node: usize,
+    pub awarded: bool,
 }
 
 /// What the skater meets in a run: collision, its animation bank, trick scripts and level nodes.
@@ -845,6 +857,7 @@ impl Skater {
             mirrored: false,
             nollie: false,
             frozen: false,
+            lip_gap: None,
             fall: 0,
             clearance: 0,
             turn: 0,
@@ -1866,6 +1879,8 @@ impl Skater {
             }
             pickups::PICKUP_NODE => self.world_events.push(WorldEvent::Pickup(node)),
             RAIL_DEF | RAIL_POINT => self.world_events.push(WorldEvent::EnableRail(node)),
+            // trick objects only darken, or feed the tag mode
+            TRICK_OBJECT | TRICK_OBJECT_ALT => {}
             kind if CREATED_OBJECTS.contains(&kind) => {}
             _ if triggers.is_command_point(node) => {
                 self.run_command_point(triggers, node, depth + 1)?
@@ -2383,6 +2398,16 @@ impl Skater {
                     self.grind.on_rail = false;
                     self.state = State::Lip;
                     self.position = add(self.grind.contact, self.up.map(|c| c * LIP_RAISE))?;
+                    if let Some(g) = &mut self.lip_gap {
+                        let gap = hangar_gap(g.id)?;
+                        g.awarded = true;
+                        let id = g.id;
+                        self.push_entry(Entry {
+                            gap: Some(id),
+                            ..Entry::new(gap.name, i32::from(gap.points), 0, 0)
+                        });
+                        self.trick_landed = true;
+                    }
                     self.trick_running = false;
                 }
                 0x4a => {

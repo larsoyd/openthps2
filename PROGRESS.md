@@ -8,11 +8,11 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 274 (5.8%) | 176,245 (18.4%) |
-| Recovered | 213 (4.5%) | 83,336 (8.7%) |
-| Open | 4233 | 700,158 |
+| Implemented | 283 (6.0%) | 177,646 (18.5%) |
+| Recovered | 218 (4.6%) | 87,068 (9.1%) |
+| Open | 4219 | 695,025 |
 
-`████░░░░░░░░░░░░░░░░` 18.4% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 18.5% implemented by bytes
 
 ## By original source file
 
@@ -20,7 +20,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 |---|---|---|---|---|---|
 | unattributed | 2977 | 354,046 | 101 | 97 | `█░░░░░░░░░` 10% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
-| mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
+| mmu.cpp | 70 | 31,238 | 2 | 8 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
 | bit.cpp | 123 | 25,393 | 0 | 5 | `░░░░░░░░░░` 0% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -29,7 +29,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | create.cpp | 54 | 18,174 | 0 | 0 | `░░░░░░░░░░` 0% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
 | panel.cpp | 37 | 14,181 | 16 | 1 | `██████░░░░` 62% |
-| career.cpp | 81 | 13,988 | 0 | 5 | `░░░░░░░░░░` 0% |
+| career.cpp | 81 | 13,988 | 8 | 7 | `█░░░░░░░░░` 8% |
 | trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
@@ -150,6 +150,14 @@ Implemented routines and the Rust module that holds them.
 | 0040c370 | 7297 | camera.h | camera.rs |
 | 0040e090 | 3294 | camera.cpp | camera.rs |
 | 00410610 | 1431 | camera.cpp | camera.rs |
+| 004141a0 | 33 | career.cpp | career.rs |
+| 004141d0 | 168 | career.cpp | career.rs |
+| 00414280 | 84 | career.cpp | career.rs |
+| 004142e0 | 608 | career.cpp | career.rs |
+| 00414540 | 47 | career.cpp | career.rs |
+| 004145e0 | 106 | career.cpp | career.rs |
+| 00414650 | 31 | career.cpp | career.rs |
+| 00416050 | 19 | career.cpp | career.rs |
 | 004305f0 | 773 | decomp.cpp | pose.rs |
 | 00430920 | 2157 | decomp.cpp | pose.rs |
 | 004321d0 | 117 | DynamicLogo.cpp | materials.rs |
@@ -209,6 +217,7 @@ Implemented routines and the Rust module that holds them.
 | 0046d7a0 | 416 | unattributed | ground.rs |
 | 0046d970 | 252 | unattributed | ground.rs |
 | 0046e1d0 | 106 | unattributed | objects.rs |
+| 00475700 | 305 | mmu.cpp | card.rs |
 | 0047b400 | 730 | mmu.cpp | rec.rs |
 | 004801d0 | 31 | ob.cpp | ground.rs |
 | 00480730 | 340 | ob.cpp | anim.rs |
@@ -428,7 +437,9 @@ Implemented routines and the Rust module that holds them.
 | 00413c10 | 325 | career.cpp |
 | 00413d60 | 357 | career.cpp |
 | 00414770 | 61 | career.cpp |
-| 00416050 | 19 | career.cpp |
+| 00415380 | 477 | career.cpp |
+| 004165d0 | 288 | career.cpp |
+| 004166f0 | 67 | career.cpp |
 | 00416980 | 127 | career.cpp |
 | 00419420 | 57 | unattributed |
 | 00419600 | 627 | competition.cpp |
@@ -468,11 +479,14 @@ Implemented routines and the Rust module that holds them.
 | 0046d6e0 | 58 | unattributed |
 | 0046dd20 | 61 | unattributed |
 | 0046e080 | 333 | unattributed |
+| 004758e0 | 2324 | mmu.cpp |
+| 0047a0b0 | 363 | mmu.cpp |
 | 0047a220 | 595 | mmu.cpp |
 | 0047ae10 | 884 | mmu.cpp |
 | 0047b1a0 | 297 | mmu.cpp |
 | 0047b2d0 | 302 | mmu.cpp |
 | 0047b6e0 | 228 | mmu.cpp |
+| 0047b8e0 | 232 | mmu.cpp |
 | 00480890 | 192 | ob.cpp |
 | 00480fa0 | 41 | ob.cpp |
 | 00480ff0 | 273 | ob.cpp |

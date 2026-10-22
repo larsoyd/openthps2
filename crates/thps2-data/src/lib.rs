@@ -1,6 +1,8 @@
 pub mod anim;
 pub mod bitmap;
 pub mod camera;
+pub mod card;
+pub mod career;
 pub mod collision;
 pub mod draw;
 pub mod figure;

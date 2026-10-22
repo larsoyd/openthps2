@@ -1,4 +1,5 @@
 use crate::anim::{AnimState, AnimationTable};
+use crate::career::CareerRun;
 use crate::collision::{CollisionWorld, Hit, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
@@ -3317,6 +3318,7 @@ pub struct Run {
     pub objects: Vec<ScriptObject>,
     /// Placed object models, the newest first like their draw list.
     pub props: Vec<Prop>,
+    pub career: Option<CareerRun>,
 }
 
 impl Run {
@@ -3337,6 +3339,7 @@ impl Run {
             world: None,
             objects: Vec::new(),
             props: Vec::new(),
+            career: None,
         };
         run.apply_world_events(level)?;
         Ok(run)
@@ -3384,6 +3387,9 @@ impl Run {
             object.update(&mut self.skater, level.triggers, frame.hold_delta)?;
         }
         self.apply_world_events(level)?;
+        if let Some(career) = &mut self.career {
+            career.check_score(self.skater.panel.score)?;
+        }
         Ok(outcome)
     }
 

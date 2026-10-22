@@ -1,0 +1,328 @@
+mod levels;
+
+pub use levels::LEVELS;
+
+use crate::card::{CARD_HEADER, CardIcons};
+use crate::score::HANGAR_GAPS;
+use crate::trig::Triggers;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GoalKind {
+    Score = 0,
+    Skate,
+    Gaps,
+    Pickups,
+    Destroy,
+    Trick,
+    Hidden,
+    Clear,
+    /// Only the secret levels carry it, no check ever matches it.
+    Unused,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Goal {
+    pub kind: GoalKind,
+    /// Points for a score goal, an object count, or the model checksum of a pickup.
+    pub target: i32,
+    pub item: Option<&'static str>,
+    pub cash: i32,
+    pub text: &'static str,
+}
+
+impl Goal {
+    pub const fn new(
+        kind: GoalKind,
+        target: i32,
+        item: Option<&'static str>,
+        cash: i32,
+        text: &'static str,
+    ) -> Self {
+        Self {
+            kind,
+            target,
+            item,
+            cash,
+            text,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LevelInfo {
+    pub name: &'static str,
+    pub place: &'static str,
+    pub competition: bool,
+    pub cash_to_open: i32,
+    pub medals_to_open: i32,
+    /// First and last gap id of the level, compared against the id modulo 10000.
+    pub gaps: [i32; 2],
+    pub goals: [Goal; 10],
+}
+
+/// Levels a character keeps goal bits for, the editor park has none.
+pub const PROGRESS_LEVELS: usize = 13;
+pub const CHARACTERS: usize = 20;
+pub const CAREER_VERSION: u32 = 0x101500;
+
+const PROGRESS_SIZE: usize = 0x104;
+const BLOCK_SIZE: usize = 0x1e00;
+const SAVE_TITLE: &str = "THPS2 CAREER-";
+/// Bit 15 of a competition level's goal word: every cash icon there was picked up.
+const COMPETITION_CASH: u16 = 0x8000;
+const MONEY_ICONS: [u8; 3] = [0x18, 0x19, 0x1a];
+const LEVEL_PICKUP: u8 = 0x21;
+const PICKUP_NODE: i16 = 5;
+
+/// One character's career record as the save keeps it.
+#[derive(Clone, Debug)]
+pub struct Progress {
+    /// Goals got over the non competition levels.
+    pub tapes: u8,
+    /// Career total, and what is left of it to spend.
+    pub cash: i32,
+    pub available: i32,
+    /// One bit per goal of each level, competition medals above them.
+    pub goals: [u16; PROGRESS_LEVELS],
+    pub stats: [u8; 10],
+    /// Cash icons picked up, 64 bits per level.
+    pub money: [[u32; 2]; PROGRESS_LEVELS],
+    raw: [u8; PROGRESS_SIZE],
+}
+
+/// Records are equal when they save the same bytes.
+impl PartialEq for Progress {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_bytes() == other.to_bytes()
+    }
+}
+
+impl Eq for Progress {}
+
+impl Default for Progress {
+    fn default() -> Self {
+        Self::read(&[0; PROGRESS_SIZE])
+    }
+}
+
+fn u32_at(b: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(b[at..at + 4].try_into().unwrap())
+}
+
+impl Progress {
+    fn read(raw: &[u8; PROGRESS_SIZE]) -> Self {
+        Self {
+            tapes: raw[0],
+            cash: u32_at(raw, 4) as i32,
+            available: u32_at(raw, 8) as i32,
+            goals: std::array::from_fn(|l| {
+                u16::from_le_bytes([raw[0xc + 2 * l], raw[0xd + 2 * l]])
+            }),
+            stats: raw[0x38..0x42].try_into().unwrap(),
+            money: std::array::from_fn(|l| [0, 1].map(|k| u32_at(raw, 0x44 + 8 * l + 4 * k))),
+            raw: *raw,
+        }
+    }
+
+    fn to_bytes(&self) -> [u8; PROGRESS_SIZE] {
+        let mut b = self.raw;
+        b[0] = self.tapes;
+        b[4..8].copy_from_slice(&self.cash.to_le_bytes());
+        b[8..12].copy_from_slice(&self.available.to_le_bytes());
+        for (l, g) in self.goals.iter().enumerate() {
+            b[0xc + 2 * l..0xe + 2 * l].copy_from_slice(&g.to_le_bytes());
+        }
+        b[0x38..0x42].copy_from_slice(&self.stats);
+        for (l, words) in self.money.iter().enumerate() {
+            for (k, w) in words.iter().enumerate() {
+                b[0x44 + 8 * l + 4 * k..0x48 + 8 * l + 4 * k].copy_from_slice(&w.to_le_bytes());
+            }
+        }
+        b
+    }
+
+    fn level_tapes(&self, level: usize) -> u32 {
+        (self.goals[level] & 0x3ff).count_ones()
+    }
+}
+
+/// A career file: the card header's name and the career block the original copies from memory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CareerSave {
+    /// What follows the fixed title, as typed on the name screen.
+    pub name: String,
+    block: Vec<u8>,
+}
+
+impl CareerSave {
+    pub fn parse(file: &[u8]) -> Result<Self, String> {
+        if file.len() != CARD_HEADER + BLOCK_SIZE {
+            return Err(format!("career save size={} unsupported", file.len()));
+        }
+        if &file[..2] != b"SC" {
+            return Err(format!("career save card magic={:02x?}", &file[..2]));
+        }
+        let title = &file[4..0x44];
+        let title = &title[..title.iter().position(|&b| b == 0).unwrap_or(title.len())];
+        let title = String::from_utf8_lossy(title);
+        let Some(name) = title.strip_prefix(SAVE_TITLE) else {
+            return Err(format!("career save title={title:?} unsupported"));
+        };
+        let version = u32_at(file, CARD_HEADER);
+        if version != CAREER_VERSION {
+            return Err(format!("career save version={version:#x} unsupported"));
+        }
+        Ok(Self {
+            name: name.to_string(),
+            block: file[CARD_HEADER..].to_vec(),
+        })
+    }
+
+    fn record(id: usize) -> Result<usize, String> {
+        if id >= CHARACTERS {
+            return Err(format!("career character={id} out of range"));
+        }
+        Ok(4 + PROGRESS_SIZE * id)
+    }
+
+    pub fn progress(&self, id: usize) -> Result<Progress, String> {
+        let at = Self::record(id)?;
+        Ok(Progress::read(
+            self.block[at..at + PROGRESS_SIZE].try_into().unwrap(),
+        ))
+    }
+
+    pub fn set_progress(&mut self, id: usize, progress: &Progress) -> Result<(), String> {
+        let at = Self::record(id)?;
+        self.block[at..at + PROGRESS_SIZE].copy_from_slice(&progress.to_bytes());
+        Ok(())
+    }
+
+    pub fn to_bytes(&self, icons: &CardIcons) -> Result<Vec<u8>, String> {
+        let mut file = icons
+            .header(&format!("{SAVE_TITLE}{}", self.name), 1)?
+            .to_vec();
+        file.extend_from_slice(&self.block);
+        Ok(file)
+    }
+}
+
+/// Career state of one run on one level: the character's record and what the level offers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CareerRun {
+    pub progress: Progress,
+    pub level: usize,
+    /// Goals got during this run, one bit each.
+    pub level_goals: u16,
+    /// How many goals the skater got during this run.
+    pub awarded: i32,
+    pub money_pickups: i32,
+    pub level_pickups: i32,
+    pub gaps: i32,
+    pub goal_gaps: i32,
+    pub trick_gaps: i32,
+}
+
+impl CareerRun {
+    /// Counts the level's cash icons, pickups and gaps at the start of a run.
+    pub fn new(progress: Progress, level: usize, triggers: &Triggers) -> Result<Self, String> {
+        if level != 0 {
+            return Err(format!("career level={level} has no gap table yet"));
+        }
+        let pickups = |subtypes: &[u8]| {
+            triggers
+                .nodes
+                .iter()
+                .filter(|n| {
+                    n.kind == PICKUP_NODE && n.raw.get(2).is_some_and(|t| subtypes.contains(t))
+                })
+                .count() as i32
+        };
+        let [first, last] = LEVELS[level].gaps;
+        let active: Vec<_> = HANGAR_GAPS
+            .iter()
+            .filter(|g| (first..=last).contains(&(i32::from(g.id) % 10000)))
+            .collect();
+        let class = |c: u16| active.iter().filter(|g| g.class == c).count() as i32;
+        Ok(Self {
+            progress,
+            level,
+            level_goals: 0,
+            awarded: 0,
+            money_pickups: pickups(&MONEY_ICONS),
+            level_pickups: pickups(&[LEVEL_PICKUP]),
+            gaps: active.len() as i32,
+            goal_gaps: class(1),
+            trick_gaps: class(2),
+        })
+    }
+
+    fn goals(&self) -> &'static [Goal; 10] {
+        &LEVELS[self.level].goals
+    }
+
+    pub fn got(&self, goal: usize) -> bool {
+        self.progress.goals[self.level] & 1 << goal != 0
+    }
+
+    /// The HUD's score pass hands out every score goal the run's counted score has reached.
+    pub fn check_score(&mut self, score: i32) -> Result<(), String> {
+        for n in 0..10 {
+            let g = self.goals()[n];
+            if g.kind == GoalKind::Score && g.target <= score && !self.got(n) {
+                self.give_goal(n)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn give_goal(&mut self, goal: usize) -> Result<(), String> {
+        if goal >= 10 || self.got(goal) {
+            return Err(format!(
+                "career goal={goal} level={} already got or invalid",
+                self.level
+            ));
+        }
+        self.progress.goals[self.level] |= 1 << goal;
+        self.level_goals |= 1 << goal;
+        let p = &self.progress;
+        self.progress.tapes = (0..PROGRESS_LEVELS)
+            .filter(|&l| !LEVELS[l].competition)
+            .map(|l| p.level_tapes(l))
+            .sum::<u32>() as u8;
+        self.awarded += 1;
+        let cash = self.goals()[goal].cash;
+        self.progress.cash += cash;
+        self.progress.available += cash;
+        self.check_clear()
+    }
+
+    fn goal_of(&self, kind: GoalKind) -> Option<usize> {
+        self.goals().iter().position(|g| g.kind == kind)
+    }
+
+    fn money_got(&self) -> i32 {
+        self.progress.money[self.level]
+            .iter()
+            .map(|w| w.count_ones() as i32)
+            .sum()
+    }
+
+    /// With every cash icon taken a competition level is marked, a goal level gives its 100%
+    /// goal once the other nine are got.
+    fn check_clear(&mut self) -> Result<(), String> {
+        if self.money_got() < self.money_pickups {
+            return Ok(());
+        }
+        if LEVELS[self.level].competition {
+            self.progress.goals[self.level] |= COMPETITION_CASH;
+            return Ok(());
+        }
+        match self.goal_of(GoalKind::Clear) {
+            Some(n) if !self.got(n) && self.progress.level_tapes(self.level) == 9 => {
+                self.give_goal(n)
+            }
+            _ => Ok(()),
+        }
+    }
+}

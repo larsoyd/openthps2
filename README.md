@@ -41,8 +41,6 @@ Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
   `7e2ae173577c41598dc644824b52f7eaf9664ea478e177a8703f77c0185207da`.
 - Rust 1.89 or newer. Dependencies are pinned in `Cargo.lock`, Bevy at 0.18.1.
 
-Keep the game files outside this source tree and point the application at them with `--data-root`.
-
 ## Build and run
 
 ```sh
@@ -98,6 +96,11 @@ clockwise culling. Lighting, blending and draw order are provisional. Dynamic ob
 
 Units, coordinates and timing are documented at the boundaries in the source. Positions are 20.12 fixed point in the
 original's coordinate system with Y pointing down, angles are 4096 per turn, and one design frame is two 60 Hz ticks.
+
+## Contributing
+
+Contributions are welcome. Contributors are required to keep the game files outside this source tree and instead point the application at them with `--data-root`.
+
 
 ## License
 

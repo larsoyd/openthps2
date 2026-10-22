@@ -405,7 +405,7 @@ mod window {
     ) {
         let play = &mut *play;
         let image = play.image.as_ref().and_then(|h| images.get_mut(h));
-        if let Some(image) = image.filter(|_| std::mem::take(&mut play.fresh)) {
+        if let Some(mut image) = image.filter(|_| std::mem::take(&mut play.fresh)) {
             let started = Instant::now();
             let composed = play.session.compose(&play.hangar);
             play.log.compose(started.elapsed().as_secs_f64() * 1000.0);

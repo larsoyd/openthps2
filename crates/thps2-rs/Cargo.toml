@@ -12,4 +12,4 @@ viewer = ["bevy/bevy_asset", "bevy/bevy_core_pipeline", "bevy/bevy_pbr", "bevy/b
 [dependencies]
 thps2-data = { path = "../thps2-data" }
 sha2.workspace = true
-bevy = { version = "=0.18.1", default-features = false, features = ["std", "multi_threaded"] }
+bevy = { version = "=0.19.1", default-features = false, features = ["std", "multi_threaded"] }

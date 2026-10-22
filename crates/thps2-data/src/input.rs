@@ -394,6 +394,10 @@ impl Presses {
         }
     }
 
+    pub fn held(&self, code: u8) -> bool {
+        self.held[usize::from(code)]
+    }
+
     pub fn newest(&self) -> usize {
         (self.next + RING - 1) % RING
     }

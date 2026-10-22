@@ -440,7 +440,6 @@ impl Skater {
         let kind = usize::try_from(self.rail_bail)
             .map_err(|_| format!("rail bail kind={} out of range", self.rail_bail))?;
         self.rail_bail = 0;
-        self.grind.on_rail = false;
         self.start_bail(level.table, level.tricks, kind, false)?;
         Ok(false)
     }

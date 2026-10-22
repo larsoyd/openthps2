@@ -47,6 +47,7 @@ pub const HEAD_ON_DOT: i32 = 0xb50;
 const LIP_RAISE: i32 = 0x1e;
 /// The board turn whose late frames flip the stance once the next animation starts.
 const ANIM_TURNED: u16 = 0x82;
+const KICK_CODE: u8 = 10;
 /// How long after leaving the ground a held ollie still fires, in frame halves.
 pub const LATE_OLLIE_TIME: i32 = 0x14;
 pub const LANDING_TIMER: i32 = 0xf;
@@ -1904,6 +1905,9 @@ impl Skater {
     ) -> Result<(), String> {
         self.bail_lift = lift;
         self.gravity_percent = 100;
+        (self.armed, self.charge, self.grind_trick) = (false, 0, None);
+        self.air_queue.clear();
+        (self.grind.on_rail, self.grind.found, self.grind.last_rail) = (false, None, None);
         (self.combo, self.grind_gap) = (false, None);
         (self.spins, self.spin_angle) = (0, 0);
         self.panel.entries.clear();
@@ -1947,14 +1951,17 @@ impl Skater {
         Ok(())
     }
 
+    /// Getting up keeps a held crouch only while the kick button is down too.
     fn end_bail(&mut self, table: &AnimationTable) -> Result<(), String> {
-        if self.crouching {
-            return Err("bail end while crouching unsupported".into());
-        }
         self.bailing = false;
         self.bail_drag = 0;
         self.push_cooldown = BAIL_END_COOLDOWN;
-        self.set_anim(table, ANIM_IDLE)?;
+        if self.crouching && self.presses.held(KICK_CODE) {
+            self.run_anim(table, ANIM_CROUCH, 0, CROUCH_END, CROUCH_PINGPONG)?;
+        } else {
+            self.crouching = false;
+            self.set_anim(table, ANIM_IDLE)?;
+        }
         self.velocity = [0; 3];
         Ok(())
     }

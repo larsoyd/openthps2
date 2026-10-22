@@ -307,6 +307,31 @@ fn trick_database(scripts: &TrickScripts) -> Result<Vec<Trick>, String> {
     Ok(db)
 }
 
+/// Names the trick database lowers in place: per listed script the first trick name, unless a
+/// display name came first, and the first display name.
+pub(crate) fn listed_names(scripts: &TrickScripts) -> Result<Vec<usize>, String> {
+    let mut names = Vec::new();
+    for m in read_list(scripts, scripts.header(5)?)? {
+        let (mut named, mut shown) = (false, false);
+        let mut pc = m.script;
+        while scripts.byte(pc) != Some(7) {
+            match scripts.byte(pc) {
+                Some(0x0b) if !named => {
+                    names.push(pc + 1);
+                    named = true;
+                }
+                Some(0x50) if !shown => {
+                    names.push(pc + 1);
+                    (named, shown) = (true, true);
+                }
+                _ => {}
+            }
+            pc = op_end(scripts, pc)?;
+        }
+    }
+    Ok(names)
+}
+
 /// Where the op at pc ends, by the size classes the database scanner uses.
 fn op_end(scripts: &TrickScripts, pc: usize) -> Result<usize, String> {
     let op = scripts

@@ -21,7 +21,14 @@ impl TrickScripts {
                 data.len()
             ));
         }
-        Ok(Self { data, bail_table })
+        let mut scripts = Self { data, bail_table };
+        for at in crate::input::listed_names(&scripts)? {
+            let end = (at..)
+                .find(|&i| scripts.data.get(i).is_none_or(|&b| b == 0))
+                .unwrap();
+            scripts.data[at..end].make_ascii_lowercase();
+        }
+        Ok(scripts)
     }
 
     pub fn bail_script(&self, kind: usize) -> Result<usize, String> {

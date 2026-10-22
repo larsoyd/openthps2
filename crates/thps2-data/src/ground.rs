@@ -2016,7 +2016,7 @@ impl Skater {
         (self.grind.on_rail, self.grind.found, self.grind.last_rail) = (false, None, None);
         (self.combo, self.grind_gap, self.manual_gap) = (false, None, None);
         (self.spins, self.spin_angle) = (0, 0);
-        self.panel.entries.clear();
+        self.panel.discard();
         self.text_events.push(TextEvent::Bailed);
         (self.special, self.trick_landed) = (Special::default(), false);
         self.bailing = true;

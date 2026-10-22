@@ -55,6 +55,13 @@ const REPEAT_PERCENT: [i32; 5] = [100, 75, 50, 25, 10];
 const HISTORY_SIZE: usize = 100;
 const COUNT_UP_DELAY: i32 = 40;
 
+/// The name rotated left a bit per byte and xored in, seeded with the switch flag only, so half
+/// spins share a count.
+fn history_key(name: &str, variant: i32) -> u32 {
+    name.bytes()
+        .fold((variant & 1) as u32, |k, c| k.rotate_left(1) ^ u32::from(c))
+}
+
 /// One trick or gap of the open combo.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -142,8 +149,8 @@ pub struct Panel {
     pub pending: i32,
     pub delay: i32,
     pub entries: Vec<Entry>,
-    /// Session counts per name and variant, the variant being the switch flag plus twice the spins.
-    pub history: Vec<(String, i32, i32)>,
+    /// Session counts by history key.
+    pub history: Vec<(u32, i32)>,
     /// Tricks the run has landed, shown on the statistics screen.
     pub landed: i32,
     pub best: Option<BestCombo>,
@@ -207,23 +214,30 @@ impl Panel {
     }
 
     fn repeat(&mut self, name: &str, variant: i32) -> i32 {
-        let slot = match self
-            .history
-            .iter()
-            .position(|h| h.0 == name && h.1 == variant)
-        {
+        let key = history_key(name, variant);
+        let slot = match self.history.iter().position(|h| h.0 == key) {
             Some(slot) => slot,
             None if self.history.len() < HISTORY_SIZE => {
-                self.history.push((name.to_string(), variant, 0));
+                self.history.push((key, 0));
                 self.history.len() - 1
             }
             None => {
-                self.history[0] = (name.to_string(), variant, 0);
+                self.history[0] = (key, 0);
                 0
             }
         };
-        self.history[slot].2 += 1;
-        self.history[slot].2
+        self.history[slot].1 += 1;
+        self.history[slot].1
+    }
+
+    /// A bailed combo takes back the history count of each of its entries.
+    pub fn discard(&mut self) {
+        for e in self.entries.drain(..) {
+            let key = history_key(&e.name, i32::from(e.switched) + e.spins * 2);
+            if let Some(h) = self.history.iter_mut().find(|h| h.0 == key) {
+                h.1 -= 1;
+            }
+        }
     }
 
     /// Every entry of a landed combo counts as a landed trick, a higher total becomes the best

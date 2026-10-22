@@ -193,7 +193,7 @@ Keep headless servers on the shared simulation. Define authentication and permis
 consent and integrity checks, moderation, and compatible save/replay snapshots before promising persistent servers.
 The Garry's Mod community-server model is inspiration for independently hosted modes, not a claim of equivalent scope.
 Spectating is a useful goal; join-in-progress remains conditional on complete state transfer and compatible active
-scripts. Original DirectPlay interoperability remains research, not a promise or a required obsolete runtime dependency.
+scripts. Original DirectPlay interoperability in terms of network/multiplayer is not necessary and will not be implemented.
 
 Replays and ghosts need engine/rule versions, source-data identity, mod/script generations, input sampling and RNG
 state sufficient to reproduce the run, or a documented state-recording format. Reject incompatible playback clearly

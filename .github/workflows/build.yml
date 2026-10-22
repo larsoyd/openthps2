@@ -1,0 +1,75 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "crates/**/*.rs"
+      - "crates/**/*.wgsl"
+      - "crates/**/Cargo.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - ".cargo/config.toml"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_BUILD_JOBS: 2
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: "1.99.1"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - name: Linux
+            target: x86_64-unknown-linux-gnu
+          - name: Windows GNU cross-build
+            target: x86_64-pc-windows-gnu
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILD_TARGET: ${{ matrix.target }}
+      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install build prerequisites
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update
+          if [[ "$BUILD_TARGET" == x86_64-pc-windows-gnu ]]; then
+            sudo apt-get install -y --no-install-recommends build-essential pkg-config gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+          else
+            sudo apt-get install -y --no-install-recommends build-essential pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-x11-0 libvulkan1
+          fi
+
+      - name: Install Rust
+        timeout-minutes: 5
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update --target "$BUILD_TARGET"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ubuntu-24.04-${{ matrix.target }}-release-viewer
+          cache-bin: false
+
+      - name: Build application
+        timeout-minutes: 25
+        run: cargo build --locked --release -p thps2-rs --features viewer --target "$BUILD_TARGET"

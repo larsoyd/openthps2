@@ -161,7 +161,7 @@ impl Skater {
         self.grind.latch = false;
         self.position = [hit.point[0], hit.point[1] - RAIL_STAND, hit.point[2]];
         self.grind.on_rail = true;
-        self.grind.counted_from = self.position;
+        (self.grind.counted_from, self.grind.entry) = (self.position, self.position);
         if self.grind.last_balanced == Some(hit.start) {
             self.grind.heat += HEAT_STEP;
         } else {
@@ -327,7 +327,7 @@ impl Skater {
         }
         self.grind.direction = if slide < 0 { d } else { d.map(|c| -c) };
         let heading = self.grind.direction.map(|c| c * self.grind.board);
-        if dot_q12(heading, self.forward) < 0 && self.position != self.old_position {
+        if dot_q12(heading, self.forward) < 0 && self.old_position != self.grind.entry {
             self.grind.board = -self.grind.board;
             self.switch_on_anim = !self.switch_on_anim;
             self.turn_on_anim = !self.turn_on_anim;

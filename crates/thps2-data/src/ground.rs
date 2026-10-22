@@ -572,6 +572,8 @@ pub struct Grind {
     pub rate: i32,
     pub latch: bool,
     pub counted_from: [i32; 3],
+    /// Where the grind began, the board turns round only once a frame starts elsewhere.
+    pub entry: [i32; 3],
     pub side: u8,
     /// The rail approached from the outside of the last ground position, kept while on one rail.
     pub outer: bool,

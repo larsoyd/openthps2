@@ -498,6 +498,9 @@ pub struct CareerRun {
     pub destroyed: i32,
     /// The last level open when the run started.
     pub opened: usize,
+    /// Kinds whose goal was got before the run, their powerups leave at once: 1 the tape, 2 the
+    /// letters, 4 the level pickups.
+    pub taken_kinds: u8,
 }
 
 impl CareerRun {
@@ -521,7 +524,7 @@ impl CareerRun {
             .collect();
         let class = |c: u16| active.iter().filter(|g| g.class == c).count() as i32;
         let opened = highest_open_level(&progress, 0);
-        Ok(Self {
+        let mut run = Self {
             progress,
             level,
             level_goals: 0,
@@ -540,7 +543,18 @@ impl CareerRun {
             gap_bits: [0; 3],
             destroyed: 0,
             opened,
-        })
+            taken_kinds: 0,
+        };
+        for (bit, kind) in [
+            (1, GoalKind::Hidden),
+            (2, GoalKind::Skate),
+            (4, GoalKind::Pickups),
+        ] {
+            if run.got_kind(kind) {
+                run.taken_kinds |= bit;
+            }
+        }
+        Ok(run)
     }
 
     fn goals(&self) -> &'static [Goal; 10] {

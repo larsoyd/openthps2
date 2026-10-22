@@ -9,8 +9,8 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | | Functions | Bytes |
 |---|---|---|
 | Implemented | 388 (8.2%) | 218,389 (22.8%) |
-| Recovered | 208 (4.4%) | 77,500 (8.1%) |
-| Open | 4124 | 663,850 |
+| Recovered | 209 (4.4%) | 77,844 (8.1%) |
+| Open | 4123 | 663,506 |
 
 `█████░░░░░░░░░░░░░░░` 22.8% implemented by bytes
 
@@ -31,7 +31,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | panel.cpp | 37 | 14,181 | 18 | 1 | `██████░░░░` 64% |
 | career.cpp | 81 | 13,988 | 38 | 9 | `█████░░░░░` 48% |
 | trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
-| main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
+| main.cpp | 29 | 13,255 | 7 | 10 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
 | Menu.cpp | 51 | 10,954 | 0 | 0 | `░░░░░░░░░░` 0% |
 | competition.cpp | 30 | 10,871 | 0 | 2 | `░░░░░░░░░░` 0% |
@@ -568,6 +568,7 @@ Implemented routines and the Rust module that holds them.
 | 004657c0 | 100 | unattributed |
 | 00468cf0 | 405 | main.cpp |
 | 00469400 | 412 | main.cpp |
+| 004695a0 | 344 | main.cpp |
 | 00469700 | 511 | main.cpp |
 | 00469910 | 214 | main.cpp |
 | 004699f0 | 52 | main.cpp |

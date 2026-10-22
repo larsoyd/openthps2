@@ -40,7 +40,8 @@ fn word(raw: &[u8], at: usize) -> Result<i32, String> {
 }
 
 impl Pickup {
-    /// Outside a career run, and for cash an earlier run took, the pickup only lives one frame.
+    /// Outside a career run, for cash an earlier run took and for a kind whose goal is got, the
+    /// pickup only lives one frame.
     pub fn new(
         node: usize,
         triggers: &Triggers,
@@ -67,7 +68,15 @@ impl Pickup {
             ));
         }
         let speed = 90 + rng.next(20) as u16;
-        let taken = career.is_none_or(|c| CASH.iter().any(|m| m.0 == kind) && c.got_money(node));
+        let kind_bit = match kind {
+            TAPE => 1,
+            LEVEL_PICKUP => 4,
+            _ if LETTERS.contains(&kind) => 2,
+            _ => 0,
+        };
+        let taken = career.is_none_or(|c| {
+            (CASH.iter().any(|m| m.0 == kind) && c.got_money(node)) || c.taken_kinds & kind_bit != 0
+        });
         let known = LETTERS.contains(&kind)
             || [TAPE, LEVEL_PICKUP].contains(&kind)
             || CASH.iter().any(|m| m.0 == kind);

@@ -47,7 +47,8 @@ pub const HEAD_ON_DOT: i32 = 0xb50;
 const LIP_RAISE: i32 = 0x1e;
 /// The board turn whose late frames flip the stance once the next animation starts.
 const ANIM_TURNED: u16 = 0x82;
-pub const LATE_OLLIE_FRAMES: i32 = 0x14;
+/// How long after leaving the ground a held ollie still fires, in frame halves.
+pub const LATE_OLLIE_TIME: i32 = 0x14;
 pub const LANDING_TIMER: i32 = 0xf;
 pub const CROUCH_LEAN_LEFT_FRAMES: i32 = 0xf;
 pub const CROUCH_LEAN_RIGHT_FRAMES: i32 = 0xc;
@@ -390,7 +391,7 @@ pub struct Skater {
     pub charge: i32,
     pub armed: bool,
     pub jumped: bool,
-    /// Frame counter value when the current air time began, zero on the ground.
+    /// Frame time when the current air time began, zero on the ground.
     pub air_since: i32,
     pub vert: bool,
     pub vert_jump: bool,
@@ -1050,7 +1051,7 @@ impl Skater {
         if !held {
             self.jump_block = 0;
             self.crouching = false;
-            if self.air_since > 0 && self.now - self.air_since > LATE_OLLIE_FRAMES {
+            if self.air_since > 0 && self.frame_time - self.air_since > LATE_OLLIE_TIME {
                 self.armed = false;
             }
             let held_off = self.session.time_up
@@ -3638,7 +3639,7 @@ pub fn step(
     s.anim.tick_at(frame.scale, frame.time)?;
     if s.on_ground() {
         s.turn_input(table, rules, pad, frame)?;
-    } else if !matches!(s.state, State::Grind | State::Lip) {
+    } else if s.state != State::Grind {
         s.air_turn(table, pad, frame)?;
     }
     s.accel = [0; 3];
@@ -3704,7 +3705,7 @@ pub fn step(
     if !matches!(s.state, State::Air | State::Vert | State::VertPop) {
         (s.air_since, s.gravity_percent) = (0, 100);
     } else if s.air_since == 0 {
-        s.air_since = s.now;
+        s.air_since = s.frame_time;
     }
     if s.up[1] < -3800 {
         s.upright_y = s.position[1];

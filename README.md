@@ -68,7 +68,9 @@ These keys are temporary; remappable keyboard and controller input will follow. 
 
 ## Manual Build
 
-A binary release and an installer with a picker is planned for both Windows and Linux. But for now you need to manually build towards your own **Tony Hawk's Pro Skater 2 for Windows (USA rerelease)**. OpenTHPS2 reads `ALL.PKR` from the game's
+A binary release and an installer that allows you to graphically pick your THPS2 install is planned for both Windows and Linux. 
+
+This has not been implemented yet, however, so for now you need to manually build towards your own **Tony Hawk's Pro Skater 2 for Windows (USA rerelease)**. OpenTHPS2 reads `ALL.PKR` from the game's
 `SETUP/data` folder and checks it against the known release (SHA-256
 `7e2ae173577c41598dc644824b52f7eaf9664ea478e177a8703f77c0185207da`). There are no release builds yet, so for now you
 build OpenTHPS2 from source with [Rust](https://rust-lang.org/tools/install/).

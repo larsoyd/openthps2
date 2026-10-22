@@ -123,6 +123,9 @@ impl Skater {
                     + 2 * (usize::from(self.switched)
                         + 2 * usize::from(crate::input::direction(pad)))));
         self.grind.board = 1;
+        let side = i32::from(hit.side);
+        self.grind.ledge_branch =
+            side != 0 && (((1 - hit.sign) ^ side) >> 1 ^ i32::from(self.grind.outer)) != 0;
         let script = level.tricks.grind_script(index)?;
         self.start_script(script);
         self.run_script(level.table, level.tricks)?;

@@ -3,7 +3,7 @@ mod levels;
 pub use levels::LEVELS;
 
 use crate::card::{CARD_HEADER, CardIcons};
-use crate::score::HANGAR_GAPS;
+use crate::score::{Gap, HANGAR_GAPS, hangar_gap};
 use crate::trig::Triggers;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -207,6 +207,19 @@ impl CareerSave {
     }
 }
 
+/// What a skater's frame tells the career: a gap got, a combo landed with its trick names, a
+/// takeoff. The original keeps waiting gaps through a takeoff in the grind or wall state, which
+/// no takeoff here starts from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CareerEvent {
+    Gap(i16),
+    Land(Vec<String>),
+    TakeOff,
+}
+
+const GOAL_GAP: u16 = 1;
+const TRICK_GAP: u16 = 2;
+
 /// Career state of one run on one level: the character's record and what the level offers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CareerRun {
@@ -221,6 +234,14 @@ pub struct CareerRun {
     pub gaps: i32,
     pub goal_gaps: i32,
     pub trick_gaps: i32,
+    /// The goal gap and the trick gap waiting for the next landing.
+    pub pending_goal_gap: Option<i16>,
+    pub pending_trick_gap: Option<i16>,
+    /// Goal and trick gaps counted this run, by their number among the level's gaps of that class.
+    pub goal_gap_mask: u32,
+    pub trick_gap_mask: u32,
+    /// The gap checklist of the level, one bit per gap in table order.
+    pub gap_bits: [u32; 3],
 }
 
 impl CareerRun {
@@ -254,6 +275,11 @@ impl CareerRun {
             gaps: active.len() as i32,
             goal_gaps: class(1),
             trick_gaps: class(2),
+            pending_goal_gap: None,
+            pending_trick_gap: None,
+            goal_gap_mask: 0,
+            trick_gap_mask: 0,
+            gap_bits: [0; 3],
         })
     }
 
@@ -295,6 +321,111 @@ impl CareerRun {
         self.progress.cash += cash;
         self.progress.available += cash;
         self.check_clear()
+    }
+
+    pub fn apply(&mut self, event: CareerEvent) -> Result<(), String> {
+        match event {
+            CareerEvent::Gap(id) => self.award_gap(id),
+            CareerEvent::Land(names) => self.land(&names),
+            CareerEvent::TakeOff => {
+                (self.pending_goal_gap, self.pending_trick_gap) = (None, None);
+                Ok(())
+            }
+        }
+    }
+
+    fn level_gaps(&self) -> impl Iterator<Item = &'static Gap> {
+        let [first, last] = LEVELS[self.level].gaps;
+        HANGAR_GAPS
+            .iter()
+            .filter(move |g| (first..=last).contains(&(i32::from(g.id) % 10000)))
+    }
+
+    /// Where a gap stands among the level's gaps, or among those of one class.
+    fn gap_number(&self, id: i16, class: Option<u16>) -> Result<u32, String> {
+        self.level_gaps()
+            .filter(|g| class.is_none_or(|c| g.class == c))
+            .position(|g| g.id == id)
+            .map(|n| n as u32)
+            .ok_or_else(|| format!("career gap id={id} not in level={}", self.level))
+    }
+
+    fn got_kind(&self, kind: GoalKind) -> bool {
+        self.goal_of(kind).is_some_and(|n| self.got(n))
+    }
+
+    fn give_kind(&mut self, kind: GoalKind) -> Result<(), String> {
+        let n = self
+            .goal_of(kind)
+            .ok_or_else(|| format!("career level={} has no {kind:?} goal", self.level))?;
+        self.give_goal(n)
+    }
+
+    /// A got gap ticks the checklist. A new goal gap waits for the landing, a second one counts
+    /// the first at once. A new trick gap waits for the landing too.
+    fn award_gap(&mut self, id: i16) -> Result<(), String> {
+        let n = self.gap_number(id, None)?;
+        self.gap_bits[n as usize / 32] |= 1 << (n % 32);
+        match hangar_gap(id)?.class {
+            GOAL_GAP => {
+                let bit = 1 << self.gap_number(id, Some(GOAL_GAP))?;
+                if self.goal_gap_mask & bit == 0 && !self.got_kind(GoalKind::Gaps) {
+                    if let Some(first) = self.pending_goal_gap {
+                        self.award_goal_gap(first)?;
+                    }
+                    self.pending_goal_gap = Some(id);
+                }
+            }
+            TRICK_GAP => {
+                let bit = 1 << self.gap_number(id, Some(TRICK_GAP))?;
+                if self.trick_gap_mask & bit == 0 && !self.got_kind(GoalKind::Trick) {
+                    self.pending_trick_gap = Some(id);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn award_goal_gap(&mut self, id: i16) -> Result<(), String> {
+        self.goal_gap_mask |= 1 << self.gap_number(id, Some(GOAL_GAP))?;
+        if self.goal_gap_mask.count_ones() as i32 == self.goal_gaps {
+            self.give_kind(GoalKind::Gaps)?;
+        }
+        Ok(())
+    }
+
+    /// The trick gap counts when one of the landed tricks names the goal's trick.
+    fn land(&mut self, names: &[String]) -> Result<(), String> {
+        if let Some(id) = self.pending_trick_gap.take() {
+            let trick = self
+                .goal_of(GoalKind::Trick)
+                .and_then(|n| self.goals()[n].item)
+                .ok_or_else(|| format!("trick gap id={id} without a trick goal"))?
+                .to_ascii_lowercase();
+            if names
+                .iter()
+                .any(|n| n.to_ascii_lowercase().contains(&trick))
+            {
+                self.award_trick_gap(id)?;
+            }
+        }
+        if let Some(id) = self.pending_goal_gap.take() {
+            self.award_goal_gap(id)?;
+        }
+        Ok(())
+    }
+
+    fn award_trick_gap(&mut self, id: i16) -> Result<(), String> {
+        let bit = 1 << self.gap_number(id, Some(TRICK_GAP))?;
+        if self.trick_gap_mask & bit != 0 || self.got_kind(GoalKind::Trick) {
+            return Err(format!("trick gap id={id} counted twice"));
+        }
+        self.trick_gap_mask |= bit;
+        if self.trick_gap_mask.count_ones() as i32 == self.trick_gaps {
+            self.give_kind(GoalKind::Trick)?;
+        }
+        Ok(())
     }
 
     fn goal_of(&self, kind: GoalKind) -> Option<usize> {

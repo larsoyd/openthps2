@@ -1,5 +1,5 @@
 use crate::anim::{AnimState, AnimationTable};
-use crate::career::CareerRun;
+use crate::career::{CareerEvent, CareerRun};
 use crate::collision::{CollisionWorld, Hit, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
@@ -457,6 +457,8 @@ pub struct Skater {
     /// Kills and visibility changes the frame's scripts made, applied to the world after the frame.
     pub world_events: Vec<WorldEvent>,
     pub text_events: Vec<TextEvent>,
+    /// Gaps, landings and takeoffs of the frame, for the career run to count after it.
+    pub career_events: Vec<CareerEvent>,
     /// Light level of the ground under the skater, easing toward the doubled ground brightness.
     pub brightness: i32,
     pub brightness_target: i32,
@@ -545,6 +547,9 @@ pub struct Grind {
     pub side: u8,
     /// The rail approached from the outside of the last ground position, kept while on one rail.
     pub outer: bool,
+    /// Set at the grind start from the ledge side, the travel sign and the approach. Trick script
+    /// op 0x34 branches on it once.
+    pub ledge_branch: bool,
 }
 
 /// A gap started by one command point, ended by the command point with the end checksum.
@@ -843,6 +848,7 @@ impl Skater {
             touching: Vec::new(),
             world_events: Vec::new(),
             text_events: Vec::new(),
+            career_events: Vec::new(),
             brightness: 0,
             brightness_target: 0,
             board_hidden: false,
@@ -1025,7 +1031,7 @@ impl Skater {
         if self.jump_block != 0 {
             return Ok(());
         }
-        if self.state == State::Wall {
+        if matches!(self.state, State::Wall | State::Grind) {
             self.armed = true;
         } else if self.on_ground() {
             self.armed = true;
@@ -1098,6 +1104,9 @@ impl Skater {
     }
 
     fn ollie(&mut self, table: &AnimationTable, rules: Rules) -> Result<(), String> {
+        if self.state == State::Grind {
+            return Err("ollie off a rail unsupported".into());
+        }
         if self.manual != 0 {
             if self.ollie_script.is_some() {
                 return Err("ollie out of a manual into a queued move unsupported".into());
@@ -1436,6 +1445,9 @@ impl Skater {
     }
 
     fn open_combo(&mut self) {
+        if !self.combo {
+            self.career_events.push(CareerEvent::TakeOff);
+        }
         self.combo = true;
         (self.style, self.unjudged) = (Style::default(), false);
         self.text_events.push(TextEvent::Opened);
@@ -1485,6 +1497,9 @@ impl Skater {
         if !self.combo {
             return;
         }
+        if let Some(id) = entry.gap {
+            self.career_events.push(CareerEvent::Gap(id));
+        }
         if self.manual != 0 {
             self.balance.kick = manual::MANUAL_KICK;
             self.manual_pending = None;
@@ -1527,6 +1542,10 @@ impl Skater {
                 ..Entry::new("OLLIE", SPIN_OLLIE_POINTS * self.spins, 0, 0)
             });
             self.trick_landed = true;
+        }
+        if !self.panel.entries.is_empty() {
+            let names = self.panel.entries.iter().map(|e| e.name.clone()).collect();
+            self.career_events.push(CareerEvent::Land(names));
         }
         self.panel.commit(self.landed_style());
         if self.trick_landed {
@@ -2130,6 +2149,8 @@ impl Skater {
                 }
                 0x2f => pc += 2,
                 0x31 => self.end_bail(table)?,
+                0x34 if std::mem::take(&mut self.grind.ledge_branch) => pc = scripts.offset(pc)?,
+                0x34 => pc += 2,
                 0x32 => self.board_hidden = false,
                 0x33 => self.board_hidden = true,
                 // rumble only changes what is felt
@@ -3387,7 +3408,11 @@ impl Run {
             object.update(&mut self.skater, level.triggers, frame.hold_delta)?;
         }
         self.apply_world_events(level)?;
+        let events = std::mem::take(&mut self.skater.career_events);
         if let Some(career) = &mut self.career {
+            for event in events {
+                career.apply(event)?;
+            }
             career.check_score(self.skater.panel.score)?;
         }
         Ok(outcome)

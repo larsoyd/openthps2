@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 292 (6.2%) | 181,799 (18.9%) |
+| Implemented | 306 (6.5%) | 183,678 (19.1%) |
 | Recovered | 218 (4.6%) | 87,068 (9.1%) |
-| Open | 4210 | 690,872 |
+| Open | 4196 | 688,993 |
 
-`████░░░░░░░░░░░░░░░░` 18.9% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 19.1% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 110 | 97 | `█░░░░░░░░░` 11% |
+| unattributed | 2977 | 354,046 | 111 | 97 | `█░░░░░░░░░` 11% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 2 | 8 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -29,7 +29,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | create.cpp | 54 | 18,174 | 0 | 0 | `░░░░░░░░░░` 0% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
 | panel.cpp | 37 | 14,181 | 16 | 1 | `██████░░░░` 62% |
-| career.cpp | 81 | 13,988 | 8 | 7 | `█░░░░░░░░░` 8% |
+| career.cpp | 81 | 13,988 | 21 | 7 | `██░░░░░░░░` 20% |
 | trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
@@ -157,6 +157,19 @@ Implemented routines and the Rust module that holds them.
 | 00414540 | 47 | career.cpp | career.rs |
 | 004145e0 | 106 | career.cpp | career.rs |
 | 00414650 | 31 | career.cpp | career.rs |
+| 00414810 | 217 | career.cpp | career.rs |
+| 004148f0 | 217 | career.cpp | career.rs |
+| 004149d0 | 126 | career.cpp | career.rs |
+| 00414a50 | 38 | career.cpp | career.rs |
+| 00414a80 | 38 | career.cpp | career.rs |
+| 00414ab0 | 35 | career.cpp | career.rs |
+| 00414ae0 | 35 | career.cpp | career.rs |
+| 00414b50 | 51 | career.cpp | career.rs |
+| 00414bb0 | 15 | career.cpp | career.rs |
+| 00414bc0 | 15 | career.cpp | career.rs |
+| 00414bd0 | 125 | career.cpp | career.rs |
+| 00414c50 | 312 | career.cpp | career.rs |
+| 00414d90 | 518 | career.cpp | career.rs |
 | 00416050 | 19 | career.cpp | career.rs |
 | 004305f0 | 773 | decomp.cpp | pose.rs |
 | 00430920 | 2157 | decomp.cpp | pose.rs |
@@ -312,6 +325,7 @@ Implemented routines and the Rust module that holds them.
 | 004b39b0 | 1088 | spool.cpp | materials.rs |
 | 004b43e0 | 602 | spool.cpp | materials.rs |
 | 004b46a0 | 247 | spool.cpp | materials.rs |
+| 004b82b0 | 137 | unattributed | career.rs |
 | 004b9720 | 8 | texteffects.cpp | tricktext.rs |
 | 004b9790 | 132 | texteffects.cpp | tricktext.rs |
 | 004b9820 | 56 | texteffects.cpp | tricktext.rs |

@@ -218,6 +218,7 @@ impl Skater {
             None => career.level_pickup()?,
         }
         if rolling {
+            (self.spins, self.spin_angle) = (0, 0);
             self.commit_combo()?;
         }
         Ok(true)

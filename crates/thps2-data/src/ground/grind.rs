@@ -140,6 +140,7 @@ impl Skater {
             forward: self.forward,
             below: matches!(self.state, State::Ground | State::Vert),
             blocked: self.grind.last_rail.filter(|_| self.grind.block > 0),
+            enabled: &self.enabled_rails,
         };
         level
             .rails

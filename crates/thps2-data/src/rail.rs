@@ -128,6 +128,22 @@ impl Rails {
         }
     }
 
+    /// The start of the rail whose chain holds the node, walked from each start as the game does.
+    pub fn rail_of(&self, node: usize) -> Option<usize> {
+        self.rails.iter().map(|r| r.start).find(|&start| {
+            let mut n = start;
+            loop {
+                if n == node {
+                    return true;
+                }
+                match self.next(n) {
+                    Some(next) if next != start => n = next,
+                    _ => return false,
+                }
+            }
+        })
+    }
+
     pub fn next(&self, node: usize) -> Option<usize> {
         self.nodes.get(node).copied().flatten()?.next
     }
@@ -284,7 +300,7 @@ pub struct RailHit {
 }
 
 /// The skater's sweep this frame, for the rail search.
-pub struct Sweep {
+pub struct Sweep<'a> {
     pub old: V3,
     pub new: V3,
     pub velocity: V3,
@@ -293,6 +309,8 @@ pub struct Sweep {
     pub below: bool,
     /// The rail just left, blocked for a few frames.
     pub blocked: Option<usize>,
+    /// Starts of inactive rails a pulse has switched on.
+    pub enabled: &'a [usize],
 }
 
 impl Rails {
@@ -308,7 +326,8 @@ impl Rails {
         let hi: V3 = std::array::from_fn(|i| sweep.old[i].max(sweep.new[i]) + SWEEP_PAD);
         let outside = |min: V3, max: V3| (0..3).any(|i| hi[i] < min[i] || lo[i] > max[i]);
         for rail in &self.rails {
-            if !rail.active || outside(rail.min, rail.max) || sweep.blocked == Some(rail.start) {
+            let active = rail.active || sweep.enabled.contains(&rail.start);
+            if !active || outside(rail.min, rail.max) || sweep.blocked == Some(rail.start) {
                 continue;
             }
             let mut n = rail.start;

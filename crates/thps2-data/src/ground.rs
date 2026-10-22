@@ -131,6 +131,8 @@ const MOVING_OBJECT: i16 = 1;
 const CREATED_OBJECTS: [i16; 3] = [MOVING_OBJECT, 5, SIGNALLED_OBJECT];
 /// The other node kind a signal reaches besides moving objects.
 const SIGNALLED_OBJECT: i16 = 7;
+const RAIL_DEF: i16 = 10;
+const RAIL_POINT: i16 = 11;
 /// Env item nodes, a kill shatters their glass.
 const ENV_ITEMS: [i16; 2] = [2, 9];
 /// Env items and trick objects, the nodes a visibility script names by checksum.
@@ -429,6 +431,10 @@ pub struct Skater {
     pub blood_sprays: u32,
     /// Where the follow camera stood after the last frame, the air pitch turns by it.
     pub camera: V3,
+    /// Camera shakes object scripts asked for this frame, by shake type.
+    pub camera_shakes: Vec<u8>,
+    /// Starts of inactive rails a pulse has switched on.
+    pub enabled_rails: Vec<usize>,
     /// The basis kept with the old position as the state handler starts, a jump before it still
     /// sees the one from the frame before.
     pub frame_basis: [i32; 9],
@@ -861,6 +867,8 @@ impl Skater {
             spins: 0,
             blood_sprays: 0,
             camera: [0; 3],
+            camera_shakes: Vec::new(),
+            enabled_rails: Vec::new(),
             frame_basis: [0; 9],
             up_since: 0,
             lip_angle: 0,
@@ -1834,6 +1842,7 @@ impl Skater {
                 self.world_events.push(WorldEvent::Prop(node))
             }
             pickups::PICKUP_NODE => self.world_events.push(WorldEvent::Pickup(node)),
+            RAIL_DEF | RAIL_POINT => self.world_events.push(WorldEvent::EnableRail(node)),
             kind if CREATED_OBJECTS.contains(&kind) => {}
             _ if triggers.is_command_point(node) => {
                 self.run_command_point(triggers, node, depth + 1)?
@@ -3493,6 +3502,8 @@ pub enum WorldEvent {
     Signal(usize),
     /// A pulse reached the powerup of this node.
     Pickup(usize),
+    /// A pulse reached a node of a rail, which switches the rail on.
+    EnableRail(usize),
 }
 
 /// One single session run: the skater, the frame clock and the unpaused VB counter.
@@ -3697,6 +3708,15 @@ impl Run {
                     }
                     for prop in self.props.iter_mut().filter(|p| p.node == node) {
                         prop.knock(&mut self.skater, push)?;
+                    }
+                }
+                WorldEvent::EnableRail(node) => {
+                    let start = level
+                        .rails
+                        .rail_of(node)
+                        .ok_or_else(|| format!("pulse of rail node={node} outside every rail"))?;
+                    if !self.skater.enabled_rails.contains(&start) {
+                        self.skater.enabled_rails.push(start);
                     }
                 }
                 WorldEvent::Pickup(node) => {

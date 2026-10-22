@@ -17,6 +17,14 @@ const VARIABLE: u16 = 0x2000;
 const RANDOM: u16 = 0x2129;
 
 const SCAN_LABELS: u16 = 0x4105;
+const IF_EQUAL: u16 = 0x4114;
+const END_IF: u16 = 0x4120;
+const SHAKE: u16 = 0x4298;
+const PULSE_LINKS: u16 = 0x42b2;
+const REGISTER: u16 = 0x2120;
+const MY_NODE: u16 = 0x212a;
+/// Conditionals SkipToEndif counts as opening a level.
+const CONDITIONALS: std::ops::RangeInclusive<u16> = 0x4112..=0x4116;
 const DIE_QUIETLY: u16 = 0x4205;
 const SFX: u16 = 0x4290;
 const SFX_AT: u16 = 0x4291;
@@ -95,6 +103,9 @@ pub struct Prop {
     wait: u32,
     waited: u32,
     wait_from: i32,
+    registers: [u16; 6],
+    /// Set once the links have had the death pulse.
+    pulsed: bool,
 }
 
 impl Prop {
@@ -126,6 +137,8 @@ impl Prop {
             wait: 0,
             waited: 0,
             wait_from: 0,
+            registers: [0; 6],
+            pulsed: false,
         }
     }
 
@@ -144,16 +157,47 @@ impl Prop {
         Ok(w)
     }
 
-    /// A literal or a random number below the next word, none for other variables.
+    /// A literal, a random number below the next word, a register or the prop's own node, none
+    /// for other variables.
     fn variable(&mut self, w: u16, s: &mut Skater) -> Result<Option<i32>, String> {
         Ok(match w {
             RANDOM => {
                 let n = self.word()?;
                 Some(i32::from(s.rng.next(i32::from(n)) as i16))
             }
+            REGISTER => Some(i32::from(self.registers[self.register()?])),
+            MY_NODE => Some(self.node as i32),
             w if w & VARIABLE != 0 => None,
             w => Some(i32::from(w as i16)),
         })
+    }
+
+    /// The register index, the low byte of the next word.
+    fn register(&mut self) -> Result<usize, String> {
+        let n = usize::from(self.word()? & 0xff);
+        if n >= self.registers.len() {
+            return Err(format!("prop node={} register={n} out of range", self.node));
+        }
+        Ok(n)
+    }
+
+    /// Steps past the matching end if, counting the conditionals in between by their words.
+    fn skip_to_end_if(&mut self) -> Result<(), String> {
+        let mut depth = 0;
+        loop {
+            match self.word()? {
+                END_IF if depth == 0 => return Ok(()),
+                END_IF => depth -= 1,
+                END => {
+                    return Err(format!(
+                        "prop node={} conditional without end if",
+                        self.node
+                    ));
+                }
+                w if CONDITIONALS.contains(&w) => depth += 1,
+                _ => {}
+            }
+        }
     }
 
     fn operand(&mut self, s: &mut Skater) -> Result<Option<i32>, String> {
@@ -180,10 +224,11 @@ impl Prop {
     fn run(
         &mut self,
         s: &mut Skater,
-        models: &PropModels,
+        level: &Level,
         vb: i32,
         signalled: bool,
     ) -> Result<(), String> {
+        let (models, triggers) = (level.props, level.triggers);
         loop {
             let at = self.pc;
             let op = self.word()?;
@@ -217,7 +262,44 @@ impl Prop {
                     self.pc += 1;
                     false
                 }
-                SOUND_STOP => false,
+                SOUND_STOP | END_IF => false,
+                REGISTER => {
+                    let n = self.register()?;
+                    match self.operand(s)? {
+                        Some(v) => {
+                            self.registers[n] = v as u16;
+                            false
+                        }
+                        None => true,
+                    }
+                }
+                IF_EQUAL => match (self.operand(s)?, self.operand(s)?) {
+                    (Some(a), Some(b)) => {
+                        if a as u16 != b as u16 {
+                            self.skip_to_end_if()?;
+                        }
+                        false
+                    }
+                    _ => true,
+                },
+                SHAKE => match self.operand(s)? {
+                    Some(v) => {
+                        s.camera_shakes.push(match v {
+                            0 => 2,
+                            1 => 1,
+                            _ => 0,
+                        });
+                        false
+                    }
+                    None => true,
+                },
+                PULSE_LINKS => match self.operand(s)? {
+                    Some(node) => {
+                        s.pulse_links(triggers, node as usize, 0)?;
+                        false
+                    }
+                    None => true,
+                },
                 SET_MODEL => {
                     // the checksum sits at the next four byte boundary of the file
                     let k = ((self.script_offset + 2 * self.pc + 3) & !3) - self.script_offset;
@@ -269,7 +351,11 @@ impl Prop {
                     }
                     false
                 }
+                // dying pulses the links, once
                 DIE_QUIETLY => {
+                    if !std::mem::replace(&mut self.pulsed, true) {
+                        s.pulse_links(triggers, self.node, 0)?;
+                    }
                     self.dead = true;
                     return Ok(());
                 }
@@ -298,7 +384,7 @@ impl Prop {
                 (self.wait, self.waited, self.wait_from) = (0, 0, 0);
             }
         } else if self.active {
-            self.run(s, level.props, vb, signalled)?;
+            self.run(s, level, vb, signalled)?;
         }
         if self.frozen_at.is_none() && !self.dead {
             self.move_on(vb);

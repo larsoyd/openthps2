@@ -72,15 +72,26 @@ pub struct ObjectNode {
 }
 
 impl Node {
+    /// Where the link count sits: objects keep their type and flags before it, powerups their
+    /// subtype.
+    fn links_at(&self) -> usize {
+        match self.kind {
+            1 => 6,
+            5 => 4,
+            _ => 2,
+        }
+    }
+
     fn links(&self) -> usize {
+        let at = self.links_at();
         self.raw
-            .get(2..4)
+            .get(at..at + 2)
             .map_or(0, |b| usize::from(u16::from_le_bytes([b[0], b[1]])))
     }
 
     /// Node offset of the four byte aligned word after the links.
     fn after_links(&self) -> usize {
-        ((self.offset + 4 + self.links() * 2 + 3) & !3) - self.offset
+        ((self.offset + self.links_at() + 2 + self.links() * 2 + 3) & !3) - self.offset
     }
 
     fn checksum(&self) -> Option<u32> {
@@ -238,8 +249,14 @@ impl Triggers {
 
     pub fn links(&self, node: usize) -> Vec<usize> {
         let n = &self.nodes[node];
+        let at = n.links_at() + 2;
         (0..n.links())
-            .map(|k| usize::from(u16::from_le_bytes([n.raw[4 + k * 2], n.raw[5 + k * 2]])))
+            .map(|k| {
+                usize::from(u16::from_le_bytes([
+                    n.raw[at + k * 2],
+                    n.raw[at + 1 + k * 2],
+                ]))
+            })
             .collect()
     }
 

@@ -453,6 +453,8 @@ pub enum CareerEvent {
     TakeOff,
     /// A script's goal counter op.
     GoalCounter,
+    /// The score the score goals are checked against.
+    Score(i32),
 }
 
 const GOAL_GAP: u16 = 1;
@@ -577,6 +579,7 @@ impl CareerRun {
             CareerEvent::Gap(id) => self.award_gap(id),
             CareerEvent::Land(names) => self.land(&names),
             CareerEvent::GoalCounter => self.count_destroyed(),
+            CareerEvent::Score(score) => self.check_score(score),
             CareerEvent::TakeOff => {
                 (self.pending_goal_gap, self.pending_trick_gap) = (None, None);
                 Ok(())

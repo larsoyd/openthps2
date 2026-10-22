@@ -3878,7 +3878,6 @@ impl Run {
             for event in events {
                 career.apply(event)?;
             }
-            career.check_score(self.skater.panel.score)?;
         }
         Ok(outcome)
     }
@@ -4041,7 +4040,9 @@ pub fn step_with(
 ) -> Result<Outcome, String> {
     let table = level.table;
     s.dust.update(&mut s.rng);
+    // the previous display pass counted the score up and checked the score goals with it
     s.panel.count_up();
+    s.career_events.push(CareerEvent::Score(s.panel.score));
     s.gravity = s.air_gravity(rules);
     s.special.drain(frame.hold_delta);
     s.track_up_hold(pad, frame);

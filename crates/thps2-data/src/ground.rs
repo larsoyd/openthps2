@@ -3194,17 +3194,18 @@ fn bounce_probes(
     s: &mut Skater,
 ) -> Result<bool, String> {
     let entry = s.position;
-    if s.bounce(world, table, -1)? {
-        if s.bounce(world, table, 1)? {
-            s.position = entry;
+    let both = if s.bounce(world, table, -1)? {
+        s.bounce(world, table, 1)?
+    } else {
+        if !s.bounce(world, table, 1)? {
+            return Ok(false);
         }
-        return Ok(true);
-    }
-    if !s.bounce(world, table, 1)? {
-        return Ok(false);
-    }
-    if s.bounce(world, table, -1)? {
+        s.bounce(world, table, -1)?
+    };
+    // wedged between two faces the skater turns most of the way round
+    if both {
         s.position = entry;
+        s.rotate(s.frame_basis, 0x898)?;
     }
     Ok(true)
 }
@@ -3270,6 +3271,8 @@ pub fn ground_step(
     if let Some(contact) = contact {
         s.wall_branch(world, table, &contact, length, frame)?;
     }
+    // the shoulder probes follow the state the frame was dispatched in
+    let probe_shoulders = !vert;
     // a floor met by the move ends a lip ride before the ground probe
     let vert = vert && s.state == State::Vert;
     s.fast = speed_of(s.velocity)? > stat_speed(rules.stat(STAT_SPEED, s.stance()), 0x186);
@@ -3385,7 +3388,7 @@ pub fn ground_step(
     if stopped {
         s.position = s.old_position;
     }
-    if grounded && !vert {
+    if grounded && probe_shoulders {
         free_move = post_contact_probes(world, table, s)?;
         s.lean_probe(world)?;
     }
@@ -3393,6 +3396,10 @@ pub fn ground_step(
         s.leave_ground(table)?;
     }
     s.finish_frame(world, accel, free_move)?;
+    // leaving the ground still runs the shoulder probes, after the move
+    if !grounded && probe_shoulders {
+        bounce_probes(world, table, s)?;
+    }
     Ok(if grounded {
         Outcome::Grounded(hit.unwrap())
     } else {

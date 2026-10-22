@@ -2874,7 +2874,7 @@ impl Skater {
     ) -> Result<(), String> {
         if self.head_on(normal, needs_speed)? {
             self.set_anim(table, ANIM_WALL_HIT)?;
-            self.stop_trick()?;
+            self.stop_trick();
             // the bonk sound is not played, its pick still takes a random number
             self.rng.next(3);
             self.unjudged = true;
@@ -2883,21 +2883,18 @@ impl Skater {
         self.wall_response(normal, WALL_TURN)
     }
 
-    /// A bonk stops the trick script and drops what was queued. A trick caught mid move would
-    /// also cancel the combo, which is not ported.
-    fn stop_trick(&mut self) -> Result<(), String> {
+    /// A bonk stops the trick script and drops what was queued. A trick caught mid move loses
+    /// the combo's entries as a bail does, while the combo itself stays open.
+    fn stop_trick(&mut self) {
         (self.script, self.grind_trick, self.manual_pending) = (None, None, None);
         self.air_queue.clear();
         if self.trick_running && !self.script_ended {
+            (self.trick_running, self.trick_landed) = (false, false);
             if !self.panel.entries.is_empty() {
-                return Err(format!(
-                    "wall bonk cancels a combo of entries={} unsupported",
-                    self.panel.entries.len()
-                ));
+                self.panel.discard();
+                self.text_events.push(TextEvent::Bailed);
             }
-            self.trick_running = false;
         }
-        Ok(())
     }
 
     /// A face within reach above a rolling or stopped skater rights the board and pushes off it.

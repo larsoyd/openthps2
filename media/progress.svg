@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="34" viewBox="0 0 640 34" role="img" aria-label="21.7% reimplemented, 8.3% more recovered">
-  <title>21.7% reimplemented, 8.3% more recovered</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="34" viewBox="0 0 640 34" role="img" aria-label="21.8% reimplemented, 8.3% more recovered">
+  <title>21.8% reimplemented, 8.3% more recovered</title>
   <defs>
     <linearGradient id="done" x1="0" x2="1" y1="0" y2="0">
       <stop offset="0" stop-color="#bf3112"/>
@@ -13,5 +13,5 @@
     <rect x="140" y="2" width="53" height="30" fill="#8d8f93"/>
     <rect x="2" y="2" width="138" height="30" fill="url(#done)"/>
   </g>
-  <text x="320.0" y="22.0" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="14" font-weight="bold" fill="#ffffff" stroke="#000000" stroke-width="3" paint-order="stroke">21.7% reimplemented, 8.3% more recovered</text>
+  <text x="320.0" y="22.0" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="14" font-weight="bold" fill="#ffffff" stroke="#000000" stroke-width="3" paint-order="stroke">21.8% reimplemented, 8.3% more recovered</text>
 </svg>

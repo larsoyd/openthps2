@@ -8,11 +8,11 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 354 (7.5%) | 208,601 (21.7%) |
+| Implemented | 355 (7.5%) | 208,850 (21.8%) |
 | Recovered | 215 (4.6%) | 79,905 (8.3%) |
-| Open | 4151 | 671,233 |
+| Open | 4150 | 670,984 |
 
-`████░░░░░░░░░░░░░░░░` 21.7% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 21.8% implemented by bytes
 
 ## By original source file
 
@@ -40,7 +40,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | d3dtex.cpp | 20 | 9,174 | 8 | 0 | `██████░░░░` 57% |
 | EquipSel.cpp | 44 | 8,492 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickwin.cpp | 17 | 8,388 | 0 | 0 | `░░░░░░░░░░` 0% |
-| camera.cpp | 22 | 8,285 | 3 | 0 | `███████░░░` 74% |
+| camera.cpp | 22 | 8,285 | 4 | 0 | `████████░░` 77% |
 | m3d.cpp | 16 | 7,875 | 9 | 0 | `███████░░░` 73% |
 | camera.h | 1 | 7,297 | 1 | 0 | `██████████` 100% |
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -148,6 +148,7 @@ Implemented routines and the Rust module that holds them.
 | 00406e30 | 474 | bit.cpp | collision.rs |
 | 00407050 | 384 | bit.cpp | collision.rs |
 | 0040b650 | 1409 | camera.cpp | camera.rs |
+| 0040bd40 | 249 | camera.cpp | camera.rs |
 | 0040be70 | 508 | unattributed | camera.rs |
 | 0040c370 | 7297 | camera.h | camera.rs |
 | 0040e090 | 3294 | camera.cpp | camera.rs |

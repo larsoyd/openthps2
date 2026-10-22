@@ -3512,6 +3512,8 @@ pub struct Run {
     pub skater: Skater,
     pub clock: FrameClock,
     pub vb: i32,
+    /// World updates since the level start.
+    pub frames: i32,
     /// VB ticks including the end screens, which keep running after the run's own clock stops.
     pub ticks: i32,
     /// The level world once a script has broken or hidden something in it.
@@ -3553,6 +3555,7 @@ impl Run {
             skater,
             clock,
             vb: 0,
+            frames: 0,
             ticks: 0,
             world: None,
             objects: Vec::new(),
@@ -3578,12 +3581,17 @@ impl Run {
         let s = &self.skater;
         let moment = Moment {
             step: self.clock.current().scale,
+            frame: self.frames,
             time_up: s.session.time_up,
             orbit: s.session.time_up && s.session.wind < 40 && s.idle(),
             paused: s.session.ended,
         };
+        for kind in std::mem::take(&mut self.skater.camera_shakes) {
+            self.camera.shake(kind);
+        }
         let world = self.world.as_ref().unwrap_or(level.world);
-        self.camera.update(&Tripod::of(s), world, moment)?;
+        self.camera
+            .update(&Tripod::of(&self.skater), world, moment)?;
         self.skater.camera = self.camera.position;
         Ok(())
     }
@@ -3609,6 +3617,7 @@ impl Run {
         }
         let pad = self.skater.time_up_pad(pad);
         self.vb += 2;
+        self.frames += 1;
         let live = Level {
             world: self.world.as_ref().unwrap_or(level.world),
             ..*level

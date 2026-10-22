@@ -46,6 +46,8 @@ const REAR_GAIN: i16 = 0x568;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Moment {
     pub step: i32,
+    /// World updates since the level start, the phase of a shake.
+    pub frame: i32,
     pub time_up: bool,
     pub orbit: bool,
     pub paused: bool,
@@ -327,6 +329,10 @@ pub struct Camera {
     pub eye: V3,
     pub look_at: V3,
     pub matrix: Matrix,
+    /// Shake amplitude about x, y and z, wound down each frame by its decay.
+    pub shake: [i16; 3],
+    pub shake_decay: [u8; 3],
+    pub shake_rate: [u16; 3],
 }
 
 struct Frame<'a> {
@@ -378,6 +384,9 @@ impl Camera {
             eye: [0; 3],
             look_at: [0; 3],
             matrix: [0; 9],
+            shake: [0; 3],
+            shake_decay: [0; 3],
+            shake_rate: [0; 3],
         };
         let pushed = Tripod {
             velocity: tripod.forward.map(|c| c.wrapping_mul(20)),
@@ -470,8 +479,42 @@ impl Camera {
             RATE_NORMAL
         };
         self.follow(&f, rate)?;
+        self.shake_view(moment.frame);
         self.write_view(tripod);
         Ok(())
+    }
+
+    /// Starts a shake of a preset kind, replacing any shake still running.
+    pub fn shake(&mut self, kind: u8) {
+        self.shake = match kind {
+            0 => [25, 0, 50],
+            1 => [0, 0, 30],
+            _ => [0, 0, 25],
+        };
+        (self.shake_decay, self.shake_rate) = ([3, 0, 3], [600, 0, 600]);
+    }
+
+    /// Turns the orientation by a sine of each amplitude, then winds the amplitudes toward zero.
+    fn shake_view(&mut self, frame: i32) {
+        if self.shake == [0; 3] {
+            return;
+        }
+        let swing = |k: usize| {
+            let phase = i32::from(self.shake_rate[k]).wrapping_mul(frame) & 0xfff;
+            rsin(phase) * i32::from(self.shake[k]) / 4096
+        };
+        let (ax, ay, az) = (swing(0), swing(1), swing(2));
+        let turned = quat_mul(rot(1, ay), self.orientation);
+        self.orientation = quat_mul(quat_mul(turned, rot(0, ax)), rot(2, az));
+        for (a, &d) in self.shake.iter_mut().zip(&self.shake_decay) {
+            let next = if *a < 0 {
+                a.wrapping_add(i16::from(d))
+            } else {
+                a.wrapping_sub(i16::from(d))
+            };
+            // a wind down that crosses zero stops the shake on that axis
+            *a = if (next ^ *a) < 0 { 0 } else { next };
+        }
     }
 
     fn follow_heading(&mut self, f: &Frame) {

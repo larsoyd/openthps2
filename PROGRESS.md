@@ -8,21 +8,21 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 388 (8.2%) | 218,389 (22.8%) |
-| Recovered | 209 (4.4%) | 77,844 (8.1%) |
-| Open | 4123 | 663,506 |
+| Implemented | 389 (8.2%) | 219,604 (22.9%) |
+| Recovered | 211 (4.5%) | 91,976 (9.6%) |
+| Open | 4120 | 648,159 |
 
-`█████░░░░░░░░░░░░░░░` 22.8% implemented by bytes
+`█████░░░░░░░░░░░░░░░` 22.9% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 127 | 92 | `█░░░░░░░░░` 13% |
+| unattributed | 2977 | 354,046 | 128 | 93 | `█░░░░░░░░░` 14% |
 | physics.cpp | 110 | 64,313 | 49 | 36 | `███████░░░` 73% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
-| bit.cpp | 123 | 25,393 | 9 | 3 | `█░░░░░░░░░` 9% |
+| bit.cpp | 123 | 25,393 | 9 | 4 | `█░░░░░░░░░` 9% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
@@ -500,6 +500,7 @@ Implemented routines and the Rust module that holds them.
 | 004e2f80 | 104 | unattributed | camera.rs |
 | 004e2ff0 | 113 | unattributed | skater.rs |
 | 004e3130 | 160 | unattributed | skater.rs |
+| 004e34e0 | 1215 | unattributed | effects.rs |
 | 004e3ce0 | 59 | unattributed | rail.rs |
 | 004e3e80 | 252 | unattributed | options.rs |
 | 004e4d10 | 1872 | unattributed | options.rs |
@@ -535,6 +536,7 @@ Implemented routines and the Rust module that holds them.
 | 00403d30 | 139 | bit.cpp |
 | 00403e40 | 82 | bit.cpp |
 | 004053d0 | 220 | bit.cpp |
+| 00407310 | 13349 | bit.cpp |
 | 00411fc0 | 1621 | unattributed |
 | 00413d60 | 357 | career.cpp |
 | 00414770 | 61 | career.cpp |
@@ -683,6 +685,7 @@ Implemented routines and the Rust module that holds them.
 | 004cde80 | 107 | unattributed |
 | 004cdef0 | 109 | unattributed |
 | 004cf850 | 350 | unattributed |
+| 004d3160 | 783 | unattributed |
 | 004dabb0 | 298 | D3dTimer.cpp |
 | 004dad80 | 126 | D3dTimer.cpp |
 | 004dae00 | 96 | unattributed |

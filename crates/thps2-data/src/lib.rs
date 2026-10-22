@@ -6,6 +6,7 @@ pub mod career;
 pub mod collision;
 pub mod create;
 pub mod draw;
+pub mod effects;
 pub mod figure;
 pub mod fixes;
 pub mod font;

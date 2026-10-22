@@ -345,6 +345,7 @@ impl View {
                 figure: true,
                 mirrored,
                 flat: place.shadow,
+                clear: 0,
             };
             let invisible = u16::from_le_bytes([model.header[0], model.header[1]]) & 0x20 != 0;
             // a hidden part still hands its vertices and lights on, it only draws no faces

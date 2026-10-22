@@ -299,11 +299,13 @@ fn pane(
         }
         sum.map(|s| if triangle { s / 3 } else { s >> 2 })
     };
-    let shade = if triangle {
-        rgb[0].max(rgb[1]).max(rgb[2])
+    // quads pass the third byte for both of the last two channels
+    let colour = if triangle {
+        rgb
     } else {
-        rgb[0].max(rgb[2])
-    } >> 2;
+        [rgb[0], rgb[2], rgb[2]]
+    }
+    .map(|c| (c >> 2) as u8);
     Ok(Pane {
         breakable: flags & BREAKABLE != 0,
         textured: word & 0x40 == 0 && word & 1 != 0,
@@ -315,7 +317,7 @@ fn pane(
             corner(if triangle { 2 } else { 3 })?,
         ],
         normal,
-        shade,
+        colour,
     })
 }
 
@@ -386,24 +388,28 @@ pub struct Pane {
     /// particles fly out along.
     corners: [[i32; 3]; 4],
     normal: [i32; 3],
-    /// The brightest colour the particles take, quads pass green twice and drop red.
-    shade: i32,
+    /// The colour its particles start from, a quarter of the face colour.
+    colour: [u8; 3],
 }
 
-/// A glass particle as the generator sees it: its first corner's height, fall speed and floor.
+/// A falling glass triangle: three Q12 corners sharing one velocity, the colour it fades from
+/// and the colour drawn this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Particle {
-    y: i32,
-    vy: i32,
+    pub corners: [[i32; 3]; 3],
+    velocity: [i32; 3],
     floor: i32,
     bounces: u8,
     life: i32,
-    shade: i32,
+    colour: [u8; 3],
+    pub shown: [u8; 3],
 }
 
 const PARTICLE_GRAVITY: i32 = 10000;
 const PARTICLE_BOUNCES: u8 = 2;
-const PARTICLE_FADE: i32 = 4;
+const PARTICLE_FADE: u8 = 4;
+const PARTICLE_FLASH: [u8; 3] = [0x30, 0x30, 0x40];
+const PARTICLE_SPREAD: i32 = 100;
 /// Particles start this far in front of the face when they look for the floor below.
 const FLOOR_LEAD: i32 = 500;
 const FLOOR_DROP: i32 = 0xbb8000;
@@ -411,24 +417,33 @@ const FLOOR_DROP: i32 = 0xbb8000;
 impl Particle {
     /// One frame of the particle update, false once its colour has faded out.
     pub fn update(&mut self, rng: &mut Rng) -> bool {
-        self.y = self.y.wrapping_add(self.vy);
-        self.vy = self.vy.wrapping_add(PARTICLE_GRAVITY);
-        // past two bounces the fall no longer draws, so its speed is left alone
-        if self.floor < self.y && self.bounces < PARTICLE_BOUNCES {
-            self.y = self.floor - rng.next(50) * 0x1000;
-            rng.next(50);
-            rng.next(50);
-            self.vy = self.vy.wrapping_neg() >> 2;
-            self.bounces += 1;
+        for corner in &mut self.corners {
+            for (c, v) in corner.iter_mut().zip(self.velocity) {
+                *c = c.wrapping_add(v);
+            }
         }
-        if self.bounces < PARTICLE_BOUNCES {
-            rng.next(5);
+        let mut vy = self.velocity[1].wrapping_add(PARTICLE_GRAVITY);
+        if self.floor < self.corners[0][1] {
+            if self.bounces < PARTICLE_BOUNCES {
+                for corner in &mut self.corners {
+                    corner[1] = self.floor - rng.next(50) * 0x1000;
+                }
+                vy = vy.wrapping_neg() >> 2;
+                self.bounces += 1;
+            } else {
+                vy = 0;
+            }
+            self.velocity[0] >>= 1;
+            self.velocity[2] >>= 1;
         }
+        self.velocity[1] = vy;
+        let flash = self.bounces < PARTICLE_BOUNCES && rng.next(5) == 0;
+        self.shown = if flash { PARTICLE_FLASH } else { self.colour };
         self.life = (self.life - 1).max(0);
         if self.life == 0 {
-            self.shade = (self.shade - PARTICLE_FADE).max(0);
+            self.colour = self.colour.map(|c| c.saturating_sub(PARTICLE_FADE));
         }
-        self.shade != 0
+        self.colour != [0; 3]
     }
 }
 
@@ -525,19 +540,21 @@ impl Counted<'_> {
         });
         let away = calc_unit(std::array::from_fn(|i| spot[i] - centre[i]));
         let (out, spread) = (self.next(40), self.next(40));
-        let vy = away[1].wrapping_mul(spread) + pane.normal[1] * out;
-        self.next(201);
-        let y = (self.next(201) - 100) * 0x1000 + spot[1];
-        for _ in 0..7 {
-            self.next(201);
+        let velocity = std::array::from_fn(|a| away[a].wrapping_mul(spread) + pane.normal[a] * out);
+        let mut corners = [[0; 3]; 3];
+        for corner in &mut corners {
+            for (c, s) in corner.iter_mut().zip(spot) {
+                *c = (self.next(2 * PARTICLE_SPREAD + 1) - PARTICLE_SPREAD) * 0x1000 + s;
+            }
         }
         Particle {
-            y,
-            vy,
+            corners,
+            velocity,
             floor,
             bounces: 0,
             life: self.next(30) + 30,
-            shade: pane.shade,
+            colour: pane.colour,
+            shown: pane.colour,
         }
     }
 
@@ -616,6 +633,25 @@ pub fn shatter_draws(
     Ok((c.chunks, particles))
 }
 
+/// Face word bits a shatter clears, per pane: every broken face stops drawing, a textured one
+/// that breaks into shards keeps its half transparency.
+pub fn shatter_clears(panes: &[Pane]) -> Vec<u32> {
+    let mut shards = 0;
+    panes
+        .iter()
+        .map(|pane| {
+            if !pane.breakable {
+                return 0;
+            }
+            let shard = shards < SHARD_LIMIT && pane.textured;
+            if shards >= SHARD_LIMIT || pane.textured {
+                shards += 1;
+            }
+            if shard { 0x180 } else { 0x1c0 }
+        })
+        .collect()
+}
+
 /// The unit vector of the vector library, from the whole units of each axis.
 pub(crate) fn calc_unit(v: [i32; 3]) -> [i32; 3] {
     let len = whole_length(v);
@@ -629,6 +665,8 @@ pub struct CollisionWorld {
     items: Arc<[CollisionItem]>,
     shattered: Vec<usize>,
     hidden: Vec<bool>,
+    /// Face word bits shatters cleared, by item and face.
+    cleared: Vec<(usize, usize, u32)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -845,6 +883,7 @@ impl CollisionWorld {
             hidden: vec![false; items.len()],
             items: items.into(),
             shattered: Vec::new(),
+            cleared: Vec::new(),
         })
     }
 
@@ -888,6 +927,21 @@ impl CollisionWorld {
             self.shattered.push(index);
         }
         Some(panes)
+    }
+
+    /// Records the face bits a shatter of the item with this model checksum cleared.
+    pub fn clear_faces(&mut self, checksum: u32, masks: &[u32]) {
+        if let Some(index) = self.item_named(checksum) {
+            let faces = masks.iter().enumerate().filter(|m| *m.1 != 0);
+            self.cleared
+                .extend(faces.map(|(face, &mask)| (index, face, mask)));
+        }
+    }
+
+    /// Face word bits a shatter cleared on this face of this item.
+    pub fn cleared(&self, item: usize, face: usize) -> u32 {
+        let hits = self.cleared.iter().filter(|c| c.0 == item && c.1 == face);
+        hits.fold(0, |mask, c| mask | c.2)
     }
 
     /// The height a face's particles bounce at, found straight down from in front of its centre.

@@ -1,6 +1,7 @@
 use crate::{
     anim::AnimationTable,
     collision::CollisionWorld,
+    effects,
     figure::{
         Figure, HANGAR_LIGHT, HANGAR_LIGHT_SCALE, Placement, Shared, object_matrix, shadow_colour,
         shadow_matrix, tilted_basis,
@@ -300,20 +301,36 @@ impl Session {
             textures: &hangar.infos,
             bias: &render::hangar_bias,
             hidden: &|i| hidden.binary_search(&i).is_ok(),
+            cleared: &|item, face| self.run.world.as_ref().map_or(0, |w| w.cleared(item, face)),
         };
         let gamma = gamma_table(0);
         let mut polys = view.level(&level, &self.run.camera.matrix)?;
         polys.extend(self.props(hangar, &view)?);
         polys.extend(self.figure.iter().cloned());
-        let mut draws: Vec<FrameDraw> = view
-            .draws(&polys, view.fog([0, 0, 0]), &gamma)
-            .into_iter()
-            .map(|d| FrameDraw {
+        // the effects pass queues after the 3D pass, so its primitives lead their slots
+        let mut effects: Vec<(usize, effects::Prim)> = self
+            .run
+            .particles
+            .iter()
+            .map(|p| view.particle(p))
+            .enumerate()
+            .collect();
+        effects.sort_by(|a, b| b.1.slot.cmp(&a.1.slot).then(b.0.cmp(&a.0)));
+        let mut effects = effects.into_iter().map(|e| e.1).peekable();
+        let mut draws: Vec<FrameDraw> = Vec::new();
+        for d in view.draws(&polys, view.fog([0, 0, 0]), &gamma) {
+            while let Some(prim) = effects.next_if(|p| p.slot >= d.slot) {
+                draws.extend(Self::effect(&prim, &gamma));
+            }
+            draws.push(FrameDraw {
                 state: d.state(&hangar.infos),
                 texture: d.texture.map(|t| &hangar.textures[t as usize]),
                 vertices: d.vertices,
-            })
-            .collect();
+            });
+        }
+        for prim in effects {
+            draws.extend(Self::effect(&prim, &gamma));
+        }
         let size = [HANGAR_VIEWPORT.width as u32, HANGAR_VIEWPORT.height as u32];
         let sprite = |image: ImageId| {
             hangar
@@ -461,6 +478,15 @@ impl Session {
     }
 
     /// The props in their draw list order, from the object bank.
+    /// An effects primitive as the walker draws it, untextured.
+    fn effect<'h>(prim: &effects::Prim, gamma: &[u8; 256]) -> Option<FrameDraw<'h>> {
+        prim.draw(gamma).map(|(vertices, state)| FrameDraw {
+            vertices,
+            state,
+            texture: None,
+        })
+    }
+
     fn props(&self, hangar: &Hangar, view: &View) -> Result<Vec<Poly>, String> {
         // a prop without a model stays hidden
         let placed = self
@@ -496,6 +522,7 @@ impl Session {
             textures: &hangar.object_infos,
             bias: &render::hangar_bias,
             hidden: &|_| false,
+            cleared: &|_, _| 0,
         };
         let mut polys = view.items(&bank, &placed, &self.run.camera.matrix)?;
         for p in &mut polys {

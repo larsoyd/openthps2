@@ -75,6 +75,8 @@ pub(crate) struct Faces<'a> {
     pub mirrored: bool,
     /// One colour for every corner of untextured faces, as the shadow draws.
     pub flat: Option<u32>,
+    /// Face word bits a shatter cleared on the face being drawn.
+    pub clear: u32,
 }
 
 /// One polygon record as the 3D pass queues it, in its ordering table slot.
@@ -103,6 +105,8 @@ pub struct Level<'a> {
     /// Depth bias per model index.
     pub bias: &'a dyn Fn(usize) -> i32,
     pub hidden: &'a dyn Fn(usize) -> bool,
+    /// Face word bits shatters cleared, by item and face.
+    pub cleared: &'a dyn Fn(usize, usize) -> u32,
 }
 
 fn colour_table(scene: &Scene) -> Result<&[u8], String> {
@@ -344,7 +348,7 @@ impl View {
                 };
                 projected.push(p);
             }
-            let faces = Faces {
+            let mut faces = Faces {
                 textures: level.textures,
                 colours,
                 lights: None,
@@ -352,8 +356,10 @@ impl View {
                 figure: false,
                 mirrored: false,
                 flat: None,
+                clear: 0,
             };
             for (fi, face) in model.faces.iter().enumerate() {
+                faces.clear = (level.cleared)(index, fi);
                 let at = polys.len();
                 item_view
                     .face(&faces, &projected, face, &mut polys)
@@ -380,7 +386,7 @@ impl View {
         } else {
             source ^ 0x80
         };
-        let f = if ctx.flat.is_some() { f & !1 } else { f };
+        let f = if ctx.flat.is_some() { f & !1 } else { f } & !ctx.clear;
         if f & 0xc0 == 0 {
             return Ok(());
         }

@@ -1,7 +1,7 @@
 use crate::anim::{AnimState, AnimationTable};
 use crate::camera::{Camera, Moment, Tripod};
 use crate::career::{CareerEvent, CareerRun, GoalKind};
-use crate::collision::{Chunk, CollisionWorld, Hit, Particle, shatter_draws};
+use crate::collision::{Chunk, CollisionWorld, Hit, Particle, shatter_clears, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
 use crate::rng::Rng;
@@ -3942,6 +3942,7 @@ impl Run {
             match event {
                 WorldEvent::Kill(checksum) => {
                     if let Some(panes) = world.shatter(checksum) {
+                        world.clear_faces(checksum, &shatter_clears(&panes));
                         let (chunks, particles) =
                             shatter_draws(&panes, world, &mut self.skater.rng)?;
                         self.particles.splice(0..0, particles.into_iter().rev());

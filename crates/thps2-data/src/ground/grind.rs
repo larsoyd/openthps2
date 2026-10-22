@@ -14,6 +14,8 @@ const RAIL_POINT_SPAN: i32 = 0x1e;
 const NO_STICK_FRAMES: i32 = 5;
 const BLOCK_FRAMES: i32 = 15;
 const LIP_NO_STICK: i32 = 5;
+const SPARKS: usize = 9;
+const SPARK_DRAWS: usize = 5;
 /// How long after its press a buffered grind move can still start, in frame halves.
 const GRIND_TRICK_LIFE: i32 = 0x1d;
 const WALL_LOOK: i32 = 0x78;
@@ -197,6 +199,7 @@ impl Skater {
         (self.grind.start, self.grind.segment) = (hit.start, hit.segment);
         self.grind.side = hit.side;
         self.grind.contact = hit.point;
+        self.grind.sparks = false;
         let queued = self
             .grind_trick
             .filter(|t| self.frame_time - t.pressed <= GRIND_TRICK_LIFE && (lip || !t.lip_only));
@@ -228,6 +231,13 @@ impl Skater {
         pad: Pad,
     ) -> Result<(), String> {
         self.grind_time = self.now;
+        if self.grind.sparks {
+            // sparks are not drawn but their draws come first, the original skips them only with
+            // 250 particles alive
+            for _ in 0..SPARKS * SPARK_DRAWS {
+                self.rng.next(1);
+            }
+        }
         let rails = level.rails;
         let mut accel = [0; 3];
         self.count_rail_points();
@@ -319,6 +329,8 @@ impl Skater {
         let heading = self.grind.direction.map(|c| c * self.grind.board);
         if dot_q12(heading, self.forward) < 0 && self.position != self.old_position {
             self.grind.board = -self.grind.board;
+            self.switch_on_anim = !self.switch_on_anim;
+            self.turn_on_anim = !self.turn_on_anim;
         }
         self.forward = self.grind.direction.map(|c| c * self.grind.board);
         self.rail_basis();
@@ -393,12 +405,6 @@ impl Skater {
             return Ok(false);
         }
         let angle = self.grind.angle;
-        let bail = || {
-            format!(
-                "rail balance bail unsupported angle={angle} side={}",
-                self.grind.side
-            )
-        };
         let seg = self.grind.segment;
         let next = level
             .rails
@@ -408,30 +414,35 @@ impl Skater {
             norm(sub(level.rails.position(next), level.rails.position(seg))),
             self.velocity,
         );
-        if self.grind.side == 0 || (i32::from(self.grind.side) - 2) ^ angle ^ along >= 0 {
-            return Err(bail());
+        if self.grind.side != 0 && (i32::from(self.grind.side) - 2) ^ angle ^ along < 0 {
+            let across = self
+                .lateral
+                .map(|c| c * 20 * if angle >= 0 { -1 } else { 1 });
+            let probe = |y: i32| {
+                let p = self.position;
+                (
+                    [p[0] + across[0], p[1] + y, p[2] + across[2]],
+                    [p[0] - across[0], p[1] + y, p[2] - across[2]],
+                )
+            };
+            // the original probe also crosses the faces of created objects, which no query here sees
+            let (start, end) = probe(-LEDGE_PROBE);
+            if let Some(above) = level.world.query_filtered(start, end, false)? {
+                let (start, end) = probe(LEDGE_PROBE);
+                let hit = level
+                    .world
+                    .query_filtered(start, end, false)?
+                    .unwrap_or(above);
+                self.ledge_drop(level.table, angle, hit)?;
+                return Ok(true);
+            }
         }
-        let across = self
-            .lateral
-            .map(|c| c * 20 * if angle >= 0 { -1 } else { 1 });
-        let probe = |y: i32| {
-            let p = self.position;
-            (
-                [p[0] + across[0], p[1] + y, p[2] + across[2]],
-                [p[0] - across[0], p[1] + y, p[2] - across[2]],
-            )
-        };
-        let (start, end) = probe(-LEDGE_PROBE);
-        let Some(above) = level.world.query_filtered(start, end, false)? else {
-            return Err(bail());
-        };
-        let (start, end) = probe(LEDGE_PROBE);
-        let hit = level
-            .world
-            .query_filtered(start, end, false)?
-            .unwrap_or(above);
-        self.ledge_drop(level.table, angle, hit)?;
-        Ok(true)
+        let kind = usize::try_from(self.rail_bail)
+            .map_err(|_| format!("rail bail kind={} out of range", self.rail_bail))?;
+        self.rail_bail = 0;
+        self.grind.on_rail = false;
+        self.start_bail(level.table, level.tricks, kind, false)?;
+        Ok(false)
     }
 
     /// Turned an eighth toward the ledge, fitted to the face the probes found and sent back along

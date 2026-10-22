@@ -8,9 +8,9 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 348 (7.4%) | 204,116 (21.3%) |
-| Recovered | 220 (4.7%) | 84,178 (8.8%) |
-| Open | 4152 | 671,445 |
+| Implemented | 350 (7.4%) | 204,639 (21.3%) |
+| Recovered | 219 (4.6%) | 83,867 (8.7%) |
+| Open | 4151 | 671,233 |
 
 `████░░░░░░░░░░░░░░░░` 21.3% implemented by bytes
 
@@ -19,7 +19,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
 | unattributed | 2977 | 354,046 | 115 | 99 | `█░░░░░░░░░` 12% |
-| physics.cpp | 110 | 64,313 | 45 | 39 | `███████░░░` 71% |
+| physics.cpp | 110 | 64,313 | 47 | 38 | `███████░░░` 72% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
 | bit.cpp | 123 | 25,393 | 0 | 5 | `░░░░░░░░░░` 0% |
@@ -293,6 +293,7 @@ Implemented routines and the Rust module that holds them.
 | 00490420 | 43 | physics.cpp | anim.rs |
 | 00490450 | 46 | physics.cpp | anim.rs |
 | 00490480 | 49 | physics.cpp | anim.rs |
+| 004904d0 | 311 | physics.cpp | ground.rs |
 | 00490610 | 110 | physics.cpp | ground.rs |
 | 00490680 | 169 | physics.cpp | ground.rs |
 | 00490ef0 | 1482 | physics.cpp | grind.rs |
@@ -305,6 +306,7 @@ Implemented routines and the Rust module that holds them.
 | 00492ed0 | 70 | physics.cpp | ground.rs |
 | 00492f20 | 1080 | physics.cpp | ground.rs |
 | 00493370 | 2707 | physics.cpp | ground.rs |
+| 00493f40 | 212 | physics.cpp | grind.rs |
 | 00494180 | 141 | physics.cpp | grind.rs |
 | 00494210 | 5330 | physics.cpp | grind.rs |
 | 004956f0 | 197 | physics.cpp | ground.rs |
@@ -573,7 +575,6 @@ Implemented routines and the Rust module that holds them.
 | 0048fb20 | 189 | physics.cpp |
 | 0048ffc0 | 71 | physics.cpp |
 | 004904c0 | 11 | physics.cpp |
-| 004904d0 | 311 | physics.cpp |
 | 00490730 | 932 | physics.cpp |
 | 00490ae0 | 395 | physics.cpp |
 | 00490c70 | 442 | physics.cpp |

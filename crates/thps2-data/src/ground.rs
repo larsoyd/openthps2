@@ -572,6 +572,8 @@ pub struct Grind {
     pub ledge_branch: bool,
     /// The rail point the search found, where a lip trick plants.
     pub contact: [i32; 3],
+    /// The grind script asked for sparks, which draw random numbers every rail frame.
+    pub sparks: bool,
 }
 
 /// A gap started by one command point, ended by the command point with the end checksum.
@@ -2152,8 +2154,10 @@ impl Skater {
                     self.points_rate = i32::from(short(pc)?);
                     pc += 2;
                 }
-                // grind sound variant
-                0x29 => pc += 2,
+                0x29 => {
+                    self.grind.sparks = short(pc)? != 0;
+                    pc += 2;
+                }
                 0x2a => {
                     self.ollie_script = Some(scripts.offset(pc)?);
                     pc += 2;

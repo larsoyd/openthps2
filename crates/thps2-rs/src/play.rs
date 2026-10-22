@@ -1,4 +1,8 @@
-use std::{error::Error, path::Path};
+use std::{
+    error::Error,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use thps2_data::{
     ground::Pad,
@@ -45,8 +49,129 @@ pub fn capture(archive: &Archive, frames: u32, path: &Path) -> Result<(), Box<dy
     Ok(())
 }
 
+/// One log per run under the user's state directory, keeping the newest twenty.
+pub fn log_file() -> Result<(PathBuf, Box<dyn Write + Send + Sync>), String> {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
+        .or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = base.join("openthps2");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("log dir={} {e}", dir.display()))?;
+    let mut old: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("log dir={} {e}", dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("play-"))
+        })
+        .collect();
+    old.sort();
+    for path in old.iter().rev().skip(LOGS_KEPT - 1) {
+        let _ = std::fs::remove_file(path);
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let path = dir.join(format!("play-{secs}.log"));
+    let file = std::fs::File::create(&path).map_err(|e| format!("log={} {e}", path.display()))?;
+    Ok((path, Box::new(std::io::BufWriter::new(file))))
+}
+
+const LOGS_KEPT: usize = 20;
+/// Seconds of window frames each summary line covers.
+pub const LOG_PERIOD: f64 = 5.0;
+
+/// Timings of the play window, written as one summary line per period plus event lines.
+pub struct RunLog {
+    out: Box<dyn Write + Send + Sync>,
+    period: f64,
+    started: f64,
+    now: f64,
+    frames: Vec<f64>,
+    steps: Vec<f64>,
+    composes: Vec<f64>,
+}
+
+impl RunLog {
+    pub fn new(out: Box<dyn Write + Send + Sync>, period: f64) -> Self {
+        Self {
+            out,
+            period,
+            started: 0.0,
+            now: 0.0,
+            frames: Vec::new(),
+            steps: Vec::new(),
+            composes: Vec::new(),
+        }
+    }
+
+    /// A window frame at this many seconds into the run, closing the period once it has passed.
+    pub fn frame(&mut self, now: f64) {
+        self.frames.push((now - self.now) * 1000.0);
+        self.now = now;
+        if now - self.started >= self.period {
+            self.summary();
+        }
+    }
+
+    pub fn step(&mut self, ms: f64) {
+        self.steps.push(ms);
+    }
+
+    pub fn compose(&mut self, ms: f64) {
+        self.composes.push(ms);
+    }
+
+    pub fn event(&mut self, text: &str) {
+        self.line(text);
+    }
+
+    fn summary(&mut self) {
+        let elapsed = self.now - self.started;
+        let (frames, steps, composes) = (
+            sorted(std::mem::take(&mut self.frames)),
+            sorted(std::mem::take(&mut self.steps)),
+            sorted(std::mem::take(&mut self.composes)),
+        );
+        let text = format!(
+            "frames={} fps={:.1} frame_ms_p50={:.1} frame_ms_p99={:.1} frame_ms_max={:.1} \
+             steps={} step_ms_max={:.1} composed={} compose_ms_p50={:.1} compose_ms_max={:.1}",
+            frames.len(),
+            frames.len() as f64 / elapsed,
+            rank(&frames, 0.5),
+            rank(&frames, 0.99),
+            rank(&frames, 1.0),
+            steps.len(),
+            rank(&steps, 1.0),
+            composes.len(),
+            rank(&composes, 0.5),
+            rank(&composes, 1.0),
+        );
+        self.line(&text);
+        self.started = self.now;
+    }
+
+    // a log that cannot be written must not stop the game
+    fn line(&mut self, text: &str) {
+        let _ =
+            writeln!(self.out, "[play] t={:.2} {text}", self.now).and_then(|_| self.out.flush());
+    }
+}
+
+fn sorted(mut v: Vec<f64>) -> Vec<f64> {
+    v.sort_by(f64::total_cmp);
+    v
+}
+
+/// Nearest rank percentile, zero for an empty list.
+fn rank(sorted: &[f64], p: f64) -> f64 {
+    let k = (p * sorted.len() as f64).ceil() as usize;
+    sorted.get(k.max(1) - 1).copied().unwrap_or(0.0)
+}
+
 #[cfg(feature = "viewer")]
-pub use window::run;
+pub use window::{add, run};
 
 #[cfg(feature = "viewer")]
 mod window {
@@ -57,17 +182,23 @@ mod window {
         prelude::*,
         render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     };
+    use std::time::Instant;
     use thps2_data::{
         ground::Pad,
         hangar::{Hangar, Session},
         pkr::Archive,
     };
 
+    use super::{LOG_PERIOD, RunLog};
+
     #[derive(Resource)]
     struct Play {
         hangar: Hangar,
         session: Session,
         image: Option<Handle<Image>>,
+        log: RunLog,
+        /// A step ran since the last compose, so the frame needs drawing again.
+        fresh: bool,
     }
 
     /// Keyboard stand ins for the pad until the original bindings are ported.
@@ -89,8 +220,9 @@ mod window {
 
     pub fn run(archive: &Archive) -> Result<(), Box<dyn Error>> {
         let hangar = Hangar::load(archive)?;
-        let session = Session::start(&hangar)?;
         println!("[play] keys arrows=move z=ollie x=flip c=grab v=grind a,s=spin enter=menu");
+        let (path, out) = super::log_file()?;
+        println!("[play] log={}", path.display());
         let mut app = App::new();
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -100,21 +232,30 @@ mod window {
                 ..default()
             }),
             ..default()
-        }))
-        .insert_resource(Time::<Fixed>::from_hz(30.0))
-        .insert_resource(Play {
-            hangar,
-            session,
-            image: None,
-        })
-        .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, step)
-        .add_systems(Update, present);
+        }));
+        add(&mut app, hangar, RunLog::new(out, LOG_PERIOD))?;
         if app.run().is_success() {
             Ok(())
         } else {
             Err("play halted".into())
         }
+    }
+
+    /// The session on a 30 Hz fixed step, drawn into a sprite after each window frame.
+    pub fn add(app: &mut App, hangar: Hangar, log: RunLog) -> Result<(), String> {
+        let session = Session::start(&hangar)?;
+        app.insert_resource(Time::<Fixed>::from_hz(30.0))
+            .insert_resource(Play {
+                hangar,
+                session,
+                image: None,
+                log,
+                fresh: true,
+            })
+            .add_systems(Startup, setup)
+            .add_systems(FixedUpdate, step)
+            .add_systems(Update, present);
+        Ok(())
     }
 
     fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, mut play: ResMut<Play>) {
@@ -141,32 +282,60 @@ mod window {
         mut exit: MessageWriter<AppExit>,
     ) {
         let play = &mut *play;
-        if let Err(e) = play.session.step(&play.hangar, pad(&keys)) {
+        let before = play.session.run.skater.session;
+        let frames = play.session.run.frames;
+        let started = Instant::now();
+        let stepped = play.session.step(&play.hangar, pad(&keys));
+        play.log.step(started.elapsed().as_secs_f64() * 1000.0);
+        play.fresh = true;
+        if let Err(e) = stepped {
+            play.log.event(&format!("halted error={e}"));
             eprintln!("[play] halted error={e}");
             exit.write(AppExit::error());
+            return;
+        }
+        let run = &play.session.run;
+        let after = run.skater.session;
+        if after.ended && !before.ended {
+            let row = after.entered.map_or("none".into(), |r| r.to_string());
+            let event = format!("run_end score={} table_row={row}", run.skater.panel.score);
+            play.log.event(&event);
+        }
+        if after.menu && !before.menu {
+            play.log.event("end_menu");
+        }
+        if run.frames < frames {
+            play.log.event("retry");
         }
     }
 
     fn present(
-        play: Res<Play>,
+        time: Res<Time>,
+        mut play: ResMut<Play>,
         mut images: ResMut<Assets<Image>>,
         mut exit: MessageWriter<AppExit>,
     ) {
-        let Some(image) = play.image.as_ref().and_then(|h| images.get_mut(h)) else {
-            return;
-        };
-        match play.session.compose(&play.hangar) {
-            Ok(raster) => {
-                let rgba: Vec<u8> = super::rgb(&raster)
-                    .chunks(3)
-                    .flat_map(|c| [c[0], c[1], c[2], 255])
-                    .collect();
-                image.data = Some(rgba);
-            }
-            Err(e) => {
-                eprintln!("[play] halted error={e}");
-                exit.write(AppExit::error());
+        let play = &mut *play;
+        let image = play.image.as_ref().and_then(|h| images.get_mut(h));
+        if let Some(image) = image.filter(|_| std::mem::take(&mut play.fresh)) {
+            let started = Instant::now();
+            let composed = play.session.compose(&play.hangar);
+            play.log.compose(started.elapsed().as_secs_f64() * 1000.0);
+            match composed {
+                Ok(raster) => {
+                    let rgba: Vec<u8> = super::rgb(&raster)
+                        .chunks(3)
+                        .flat_map(|c| [c[0], c[1], c[2], 255])
+                        .collect();
+                    image.data = Some(rgba);
+                }
+                Err(e) => {
+                    play.log.event(&format!("halted error={e}"));
+                    eprintln!("[play] halted error={e}");
+                    exit.write(AppExit::error());
+                }
             }
         }
+        play.log.frame(time.elapsed_secs_f64());
     }
 }

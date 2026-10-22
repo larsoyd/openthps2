@@ -3855,7 +3855,7 @@ pub fn step(
                 (s.grind.angle, s.grind.rate, s.grind.heat) = (0, 0, 0);
             }
         }
-        State::Grind => s.lip_spin = false,
+        State::Grind | State::Lip => s.lip_spin = false,
         State::Wall => (s.lip_spin, s.grind.last_rail) = (false, None),
         State::Vert => s.lip_spin = true,
         _ => {}

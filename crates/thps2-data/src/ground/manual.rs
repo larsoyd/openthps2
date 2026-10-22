@@ -7,7 +7,10 @@ const WINDOW: u16 = 0x3ff;
 const NO_DIAGONALS: u16 = 0x400;
 const GROUND_MOVE: u16 = 0x2000;
 const NEEDS_SPECIAL: u16 = 0x8000;
-const GRIND_BUTTON: u8 = 12;
+pub(super) const GRIND_BUTTON: u8 = 12;
+/// Key flag of a move that only starts on a lip, which keeps its press a second longer.
+const LIP_ONLY: u16 = 0x4000;
+const LIP_PRESS_GRACE: i32 = 0x3c;
 const STAT_MANUAL: usize = 9;
 const MANUAL_FRICTION: i32 = 20;
 pub(super) const MANUAL_KICK: i32 = 4000;
@@ -27,6 +30,14 @@ pub struct Balance {
     pub time: i32,
     pub kick: i32,
     pub armed: bool,
+}
+
+/// A grind button move waiting for the next rail start, which plays it instead of a grind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GrindTrick {
+    pub script: usize,
+    pub pressed: i32,
+    pub lip_only: bool,
 }
 
 /// An air move waiting for the running trick to finish.
@@ -58,7 +69,7 @@ impl Skater {
     }
 
     /// Walks the key table in order, a sequence move that misses its window or matches ends the walk.
-    fn match_keys(
+    pub(super) fn match_keys(
         &mut self,
         level: &Level,
         rules: Rules,
@@ -154,10 +165,18 @@ impl Skater {
             return Ok(());
         }
         if last == GRIND_BUTTON {
-            return Err(format!(
-                "buffered grind trick script={:#x} unsupported",
-                entry.script
-            ));
+            let lip_only = entry.flags & LIP_ONLY != 0;
+            let pressed = if lip_only {
+                (time + LIP_PRESS_GRACE).min(now - 1)
+            } else {
+                time
+            };
+            self.grind_trick = Some(GrindTrick {
+                script: entry.script,
+                pressed,
+                lip_only,
+            });
+            return Ok(());
         }
         if entry.flags & GROUND_MOVE == 0 {
             self.manual_pending = None;

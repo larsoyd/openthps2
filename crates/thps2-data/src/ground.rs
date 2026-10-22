@@ -16,7 +16,7 @@ mod pickups;
 mod session;
 mod wall;
 
-pub use manual::{Balance, QueuedTrick};
+pub use manual::{Balance, GrindTrick, QueuedTrick};
 pub use objects::{Prop, PropModels, ScriptObject};
 pub use pickups::{LETTERS, Pickup};
 pub use session::{SESSION_TICKS, Session};
@@ -43,6 +43,10 @@ pub const LEAN_PROBE_REACH: i32 = 0x5a;
 pub const WALL_TURN: i32 = 0x19;
 pub const WALL_PUSH: i32 = 0xcd;
 pub const HEAD_ON_DOT: i32 = 0xb50;
+/// A lip trick plants this far along up from the rail point.
+const LIP_RAISE: i32 = 0x1e;
+/// The board turn whose late frames flip the stance once the next animation starts.
+const ANIM_TURNED: u16 = 0x82;
 pub const LATE_OLLIE_FRAMES: i32 = 0x14;
 pub const LANDING_TIMER: i32 = 0xf;
 pub const CROUCH_LEAN_LEFT_FRAMES: i32 = 0xf;
@@ -66,6 +70,7 @@ pub const STAT_SPEED: usize = 3;
 pub const STAT_SPIN: usize = 4;
 pub const STAT_LANDING: usize = 5;
 pub const STAT_SWITCH: usize = 6;
+const STAT_LIP: usize = 8;
 pub const TONY_HAWK_STATS: [i32; 11] = [7, 5, 2, 6, 8, 5, 3, 3, 6, 5, 0];
 const SWITCH_WEIGHT: [i32; 11] = [50, 50, 100, 20, 50, 100, 100, 80, 100, 100, 30];
 const STAT_CAP: [i32; 11] = [100, 100, 130, 110, 100, 130, 100, 130, 130, 130, 100];
@@ -352,6 +357,8 @@ pub enum State {
     Wall,
     /// Sliding along a rail chain.
     Grind,
+    /// Holding a lip trick on the coping, where position and velocity stay put.
+    Lip,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -506,6 +513,14 @@ pub struct Skater {
     pub landing_bail: i16,
     pub presses: Presses,
     pub air_queue: std::collections::VecDeque<QueuedTrick>,
+    pub grind_trick: Option<GrindTrick>,
+    /// The rules of the frame being run, for stats a trick script reads.
+    pub rules: Option<Rules>,
+    /// Lip stat scaled hold limit a lip trick bails past, zero for none.
+    pub lip_limit: i32,
+    /// The next animation turns the skater around, or flips the stance.
+    pub turn_on_anim: bool,
+    pub switch_on_anim: bool,
     /// Manual kind, 1 on the tail and 2 on the nose, the move waiting to start one, whether it
     /// started from rolling, its friction and its balance.
     pub manual: u8,
@@ -554,6 +569,8 @@ pub struct Grind {
     /// Set at the grind start from the ledge side, the travel sign and the approach. Trick script
     /// op 0x34 branches on it once.
     pub ledge_branch: bool,
+    /// The rail point the search found, where a lip trick plants.
+    pub contact: [i32; 3],
 }
 
 /// A gap started by one command point, ended by the command point with the end checksum.
@@ -883,6 +900,11 @@ impl Skater {
             landing_bail: 0,
             presses: Presses::default(),
             air_queue: Default::default(),
+            grind_trick: None,
+            rules: None,
+            lip_limit: 0,
+            turn_on_anim: false,
+            switch_on_anim: false,
             manual: 0,
             manual_pending: None,
             from_ground: false,
@@ -937,6 +959,17 @@ impl Skater {
         end: i32,
         pingpong: i32,
     ) -> Result<(), String> {
+        // every animation start first settles a finished turn and the flips scripts asked for
+        if self.anim.id == ANIM_TURNED && self.anim.frame > 0xf {
+            self.switched = !self.switched;
+        }
+        if std::mem::take(&mut self.switch_on_anim) {
+            self.switched = !self.switched;
+        }
+        if std::mem::take(&mut self.turn_on_anim) {
+            self.forward = self.forward.map(|c| -c);
+            self.lateral = self.lateral.map(|c| -c);
+        }
         self.anim.run(table, id, start, end, pingpong as i8)
     }
 
@@ -1051,7 +1084,7 @@ impl Skater {
         Ok(())
     }
 
-    /// Follow up of a finished animation by id, with the trick and stance ids left unsupported.
+    /// Follow up of a finished animation by id, with the turn and stance ids left unsupported.
     fn finish_anim(&mut self, table: &AnimationTable, anim: AnimState) -> Result<(), String> {
         match anim.id {
             ANIM_OLLIE | ANIM_NOLLIE => {
@@ -1086,17 +1119,20 @@ impl Skater {
                 }
             }
             ANIM_AIR => self.set_anim(table, ANIM_AIR)?,
-            0x22
-            | 0x30
-            | 0x7b..=0x7e
-            | 0x93..=0x95
-            | 0x97
-            | 0x98
-            | 0xa8
-            | 0xb5
-            | 0x82
-            | 0xa2
-            | 0xa3 => {
+            0x22 | 0x30 | 0x7b..=0x7e | 0x93..=0x95 | 0x97 | 0x98 | 0xa8 | 0xb5 => {
+                if self.crouching {
+                    self.run_anim(
+                        table,
+                        ANIM_CROUCH,
+                        CROUCH_PINGPONG,
+                        CROUCH_END,
+                        CROUCH_PINGPONG,
+                    )?;
+                } else {
+                    self.run_anim(table, ANIM_CROUCH, CROUCH_PINGPONG, 0, -1)?;
+                }
+            }
+            0x82 | 0xa2 | 0xa3 => {
                 return Err(format!("finished animation id={} unsupported", anim.id));
             }
             _ => {
@@ -1234,7 +1270,11 @@ impl Skater {
 
     /// Riding backwards turns the board round to fakie.
     fn fakie_flip(&mut self) -> bool {
-        if self.anim.id == ANIM_NO_FAKIE || dot_q12(self.forward, self.velocity) <= FAKIE_DOT {
+        if self.anim.id == ANIM_NO_FAKIE
+            || self.turn_on_anim
+            || self.switch_on_anim
+            || dot_q12(self.forward, self.velocity) <= FAKIE_DOT
+        {
             return false;
         }
         self.forward = self.forward.map(|c| -c);
@@ -1587,7 +1627,7 @@ impl Skater {
                 State::Air | State::Vert => 0x20,
                 State::Grind => 2,
                 State::Wall => 4,
-                State::Stopped | State::VertPop => 0,
+                State::Stopped | State::VertPop | State::Lip => 0,
             }
         };
         let mut kept = Vec::with_capacity(self.gaps.len());
@@ -2191,9 +2231,56 @@ impl Skater {
                     let (base, growth) = (i32::from(short(pc)?), i32::from(short(pc + 2)?));
                     let held = self.hold_time >> 12;
                     let rate = held * held * growth / 1000 + ((self.frame.scale * base) >> 8);
-                    self.add_held_points(rate);
                     pc += 4;
+                    let hold = self.hold_time + self.frame.hold_delta;
+                    if self.lip_limit != 0 {
+                        let rules = self.rules.ok_or("lip hold without the frame rules")?;
+                        let stat = rules.stat(STAT_LIP, self.stance());
+                        if (stat * 0x71 + 2000) * self.lip_limit / 10000 < hold >> 12 {
+                            (self.hold_time, self.velocity[1]) = (hold, 0);
+                            let kind = usize::try_from(self.landing_bail).map_err(|_| {
+                                format!("lip bail kind={} out of range", self.landing_bail)
+                            })?;
+                            return self.start_bail(table, scripts, kind, false);
+                        }
+                    }
+                    self.add_held_points(rate);
                 }
+                0x49 => {
+                    self.lip_limit = i32::from(short(pc)?);
+                    pc += 2;
+                    self.hold_time = 0;
+                    self.velocity = [0, -self.velocity[1], 0];
+                    self.grind.on_rail = false;
+                    self.state = State::Lip;
+                    self.position = add(self.grind.contact, self.up.map(|c| c * LIP_RAISE))?;
+                    self.trick_running = false;
+                }
+                0x4a => {
+                    if self.grind.side == 0 {
+                        self.trick_landed = true;
+                        self.set_state(State::Air);
+                    } else {
+                        self.jumped = false;
+                        self.set_state(State::Ground);
+                        self.trick_landed = true;
+                        self.commit_combo()?;
+                    }
+                    self.velocity[1] = (((self.hold_time >> 12) * 3) / 2 + 40) << 12;
+                }
+                0x48 => {
+                    let target = self.script_frame(short(pc)?);
+                    let dir = i32::from(self.anim.direction);
+                    if target * dir <= i32::from(self.anim.frame) * dir || self.anim.finished {
+                        pc = scripts.offset(pc + 2)?;
+                    } else {
+                        pc += 4;
+                    }
+                }
+                0x4d => self.turn_on_anim = true,
+                0x35 => self.switch_on_anim = true,
+                // lip sounds by rail kind
+                0x4f => pc += 8,
                 // a trick database value, how near its end a trick may take a rail and the nollie
                 // flag, none of which this port reads
                 0x2d | 0x4e | 0x51 => pc += 2,
@@ -3314,6 +3401,7 @@ pub fn native_state(state: State) -> u8 {
         State::Grind => 4,
         State::Wall => 5,
         State::Stopped => 7,
+        State::Lip => 8,
     }
 }
 
@@ -3540,6 +3628,7 @@ pub fn step(
         s.jump_block = 0;
     }
     s.frame = frame;
+    s.rules = Some(rules);
     s.grind_up = if pad.grind { 0 } else { s.grind_up + 1 };
     if !matches!(s.state, State::Air | State::Vert)
         && frame.time - s.landed_at > (frame.scale * 15) >> 8
@@ -3549,7 +3638,7 @@ pub fn step(
     s.anim.tick_at(frame.scale, frame.time)?;
     if s.on_ground() {
         s.turn_input(table, rules, pad, frame)?;
-    } else if s.state != State::Grind {
+    } else if !matches!(s.state, State::Grind | State::Lip) {
         s.air_turn(table, pad, frame)?;
     }
     s.accel = [0; 3];
@@ -3594,6 +3683,11 @@ pub fn step(
             s.grind_frame(level, rules, frame, pad)?;
             Ok(Outcome::Grinding)
         }
+        State::Lip => {
+            s.old_position = s.position;
+            s.handplant();
+            Ok(Outcome::Grinding)
+        }
     }?;
     if dispatched == State::Ground {
         s.balance_frame(level, rules, pad, frame)?;
@@ -3602,7 +3696,9 @@ pub fn step(
         s.bail_drag(frame);
     }
     s.settle_manual();
-    s.try_grind(level, rules, pad)?;
+    if s.state != State::Lip {
+        s.try_grind(level, rules, pad)?;
+    }
     s.sweep_triggers(level)?;
     s.integrate(rules, frame)?;
     if !matches!(s.state, State::Air | State::Vert | State::VertPop) {

@@ -8,18 +8,18 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 344 (7.3%) | 200,867 (20.9%) |
-| Recovered | 223 (4.7%) | 86,985 (9.1%) |
-| Open | 4153 | 671,887 |
+| Implemented | 348 (7.4%) | 204,116 (21.3%) |
+| Recovered | 220 (4.7%) | 84,178 (8.8%) |
+| Open | 4152 | 671,445 |
 
-`████░░░░░░░░░░░░░░░░` 20.9% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 21.3% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
 | unattributed | 2977 | 354,046 | 115 | 99 | `█░░░░░░░░░` 12% |
-| physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
+| physics.cpp | 110 | 64,313 | 45 | 39 | `███████░░░` 71% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
 | bit.cpp | 123 | 25,393 | 0 | 5 | `░░░░░░░░░░` 0% |
@@ -288,16 +288,19 @@ Implemented routines and the Rust module that holds them.
 | 0048f690 | 131 | physics.cpp | ground.rs |
 | 0048f720 | 152 | physics.cpp | manual.rs |
 | 004900b0 | 549 | physics.cpp | ground.rs |
+| 004902e0 | 267 | physics.cpp | ground.rs |
 | 004903f0 | 40 | physics.cpp | anim.rs |
 | 00490420 | 43 | physics.cpp | anim.rs |
 | 00490450 | 46 | physics.cpp | anim.rs |
 | 00490480 | 49 | physics.cpp | anim.rs |
 | 00490610 | 110 | physics.cpp | ground.rs |
 | 00490680 | 169 | physics.cpp | ground.rs |
+| 00490ef0 | 1482 | physics.cpp | grind.rs |
 | 004914d0 | 502 | physics.cpp | grind.rs |
 | 00491780 | 1010 | physics.cpp | ground.rs |
 | 00491c10 | 124 | physics.cpp | grind.rs |
 | 00492290 | 367 | physics.cpp | manual.rs |
+| 004925e0 | 1195 | physics.cpp | manual.rs |
 | 00492a90 | 131 | physics.cpp | script.rs |
 | 00492ed0 | 70 | physics.cpp | ground.rs |
 | 00492f20 | 1080 | physics.cpp | ground.rs |
@@ -311,6 +314,7 @@ Implemented routines and the Rust module that holds them.
 | 00496550 | 5117 | physics.cpp | ground.rs |
 | 00497960 | 306 | physics.cpp | ground.rs |
 | 00497f40 | 5285 | physics.cpp | ground.rs |
+| 004995d0 | 305 | physics.cpp | grind.rs |
 | 0049a280 | 3240 | physics.cpp | ground.rs |
 | 0049b010 | 1224 | physics.cpp | ground.rs |
 | 0049b500 | 1477 | physics.cpp | ground.rs |
@@ -568,12 +572,11 @@ Implemented routines and the Rust module that holds them.
 | 0048f8f0 | 548 | physics.cpp |
 | 0048fb20 | 189 | physics.cpp |
 | 0048ffc0 | 71 | physics.cpp |
-| 004902e0 | 267 | physics.cpp |
 | 004904c0 | 11 | physics.cpp |
 | 004904d0 | 311 | physics.cpp |
 | 00490730 | 932 | physics.cpp |
 | 00490ae0 | 395 | physics.cpp |
-| 00490ef0 | 1482 | physics.cpp |
+| 00490c70 | 442 | physics.cpp |
 | 004916d0 | 172 | physics.cpp |
 | 00491b80 | 129 | physics.cpp |
 | 00491c90 | 270 | physics.cpp |
@@ -582,7 +585,6 @@ Implemented routines and the Rust module that holds them.
 | 00492190 | 255 | physics.cpp |
 | 00492400 | 233 | physics.cpp |
 | 00492560 | 118 | physics.cpp |
-| 004925e0 | 1195 | physics.cpp |
 | 00492ea0 | 41 | physics.cpp |
 | 00493e10 | 289 | physics.cpp |
 | 00494090 | 213 | physics.cpp |
@@ -593,7 +595,6 @@ Implemented routines and the Rust module that holds them.
 | 00497aa0 | 272 | physics.cpp |
 | 00497bb0 | 568 | physics.cpp |
 | 00497df0 | 321 | physics.cpp |
-| 004995d0 | 305 | physics.cpp |
 | 00499710 | 2710 | physics.cpp |
 | 0049a1b0 | 41 | physics.cpp |
 | 0049a1e0 | 98 | physics.cpp |

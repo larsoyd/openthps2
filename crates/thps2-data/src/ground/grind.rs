@@ -13,6 +13,9 @@ const BALANCE_FALL: i32 = 4000;
 const RAIL_POINT_SPAN: i32 = 0x1e;
 const NO_STICK_FRAMES: i32 = 5;
 const BLOCK_FRAMES: i32 = 15;
+const LIP_NO_STICK: i32 = 5;
+/// How long after its press a buffered grind move can still start, in frame halves.
+const GRIND_TRICK_LIFE: i32 = 0x1d;
 const WALL_LOOK: i32 = 0x78;
 
 fn sub(a: V3, b: V3) -> V3 {
@@ -58,11 +61,67 @@ impl Skater {
         if self.trick_running {
             return Err("rail start while a trick script runs unsupported".into());
         }
+        let lip = self.velocity[1] < 0
+            && self.up[1].abs() < 3000
+            && self.forward[1] > 0x800
+            && self.last_normal[1].abs() < 0x5dc
+            && self.lateral[1].abs() < 0x800;
+        self.match_keys(level, rules, pad, self.frame_time)?;
         if !self.combo {
             self.grind.found = None;
             return Ok(());
         }
-        self.start_grind(level, rules, pad)
+        self.start_grind(level, rules, pad, lip)
+    }
+
+    /// The handplant hold: the heading tips down a little until near level, then up and the
+    /// lateral axis are rebuilt around it.
+    pub(super) fn handplant(&mut self) {
+        self.grind.no_stick = LIP_NO_STICK;
+        self.frame_accel = [0; 3];
+        if self.forward[1] > 0xda7 {
+            self.forward[1] += 300;
+        }
+        self.forward = norm(self.forward);
+        self.up = norm(cross_q12(short(self.lateral), short(self.forward)));
+        self.lateral = cross_q12(short(self.forward), short(self.up));
+    }
+
+    /// A lip trick on a rail linked to a trick object scores the gap a command point ends there.
+    fn check_lip_object(&self, level: &Level) -> Result<(), String> {
+        let t = level.triggers;
+        let start = self.grind.start;
+        let mut node = start;
+        let object = loop {
+            let links = t.links(node);
+            if let Some(&o) = links
+                .iter()
+                .take(2)
+                .find(|&&l| matches!(t.kind(l), 0xc | 0xe))
+            {
+                break o;
+            }
+            match level.rails.next(node) {
+                Some(n) if n != start => node = n,
+                _ => return Ok(()),
+            }
+        };
+        let Some(checksum) = t.checksum(object) else {
+            return Ok(());
+        };
+        let ends_here = (0..t.nodes.len()).find(|&i| {
+            t.is_command_point(i)
+                && t.nodes[i]
+                    .raw
+                    .windows(4)
+                    .any(|w| w == checksum.to_le_bytes())
+        });
+        match ends_here {
+            Some(i) => Err(format!(
+                "lip gap of command point={i} at trick object={object} unsupported"
+            )),
+            None => Ok(()),
+        }
     }
 
     fn search_rails(&mut self, level: &Level, pad: Pad) -> Result<(), String> {
@@ -84,10 +143,19 @@ impl Skater {
 
     /// Onto the rail point: the grind script by approach and pad, the velocity along the rail plus
     /// a push from the speed stat.
-    fn start_grind(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<(), String> {
+    fn start_grind(
+        &mut self,
+        level: &Level,
+        rules: Rules,
+        pad: Pad,
+        lip: bool,
+    ) -> Result<(), String> {
         let hit = self.grind.found.take().unwrap();
         let travel = hit.direction.map(|c| -c);
         self.set_anim(level.table, ANIM_AIR)?;
+        if lip {
+            (self.turn_on_anim, self.switch_on_anim, self.armed) = (false, false, false);
+        }
         self.grind.latch = false;
         self.position = [hit.point[0], hit.point[1] - RAIL_STAND, hit.point[2]];
         self.grind.on_rail = true;
@@ -126,16 +194,28 @@ impl Skater {
         let side = i32::from(hit.side);
         self.grind.ledge_branch =
             side != 0 && (((1 - hit.sign) ^ side) >> 1 ^ i32::from(self.grind.outer)) != 0;
-        let script = level.tricks.grind_script(index)?;
-        self.start_script(script);
+        (self.grind.start, self.grind.segment) = (hit.start, hit.segment);
+        self.grind.side = hit.side;
+        self.grind.contact = hit.point;
+        let queued = self
+            .grind_trick
+            .filter(|t| self.frame_time - t.pressed <= GRIND_TRICK_LIFE && (lip || !t.lip_only));
+        if let Some(t) = queued {
+            (self.trick_button, self.trick_pressed) = (manual::GRIND_BUTTON, t.pressed);
+            self.start_script(t.script);
+            self.grind_trick = None;
+        } else {
+            self.start_script(level.tricks.grind_script(index)?);
+        }
         self.run_script(level.table, level.tricks)?;
+        if self.state == State::Lip {
+            return self.check_lip_object(level);
+        }
         self.set_state(State::Grind);
         let along = dot_q12(travel, self.velocity);
         let k = ((rules.stat(STAT_SPEED, self.stance()) + 100) * 5000) / 10000;
         self.velocity = std::array::from_fn(|i| mul_q12(travel[i], along) + travel[i] * k / 10);
-        (self.grind.start, self.grind.segment) = (hit.start, hit.segment);
         (self.grind.kind, self.grind.direction) = (hit.kind, hit.direction);
-        self.grind.side = hit.side;
         Ok(())
     }
 

@@ -8,6 +8,7 @@ pub use skaters::{HIGH_SCORE_INITIALS, SKATERS};
 use fresh::{HIGH_SCORE_ENTRIES, HIGH_SCORE_SIZE, HIGH_SCORES, INITIALS, TIPS_ON, TIPS_SHOWN};
 
 use crate::card::{CARD_HEADER, CardIcons};
+use crate::ground::Rules;
 use crate::score::{Gap, HANGAR_GAPS, hangar_gap};
 use crate::trig::Triggers;
 
@@ -151,6 +152,14 @@ fn u32_at(b: &[u8], at: usize) -> u32 {
 }
 
 impl Progress {
+    /// A new career's record: the stat points of the skater table and nothing got yet.
+    pub fn starting(skater: &Skater) -> Self {
+        Self {
+            stats: skater.stats,
+            ..Self::default()
+        }
+    }
+
     fn read(raw: &[u8; PROGRESS_SIZE]) -> Self {
         Self {
             tapes: raw[0],
@@ -551,6 +560,15 @@ impl CareerRun {
             }
         }
         Ok(())
+    }
+
+    /// A single player run reads the stat points of the skater's career record.
+    pub fn rules(&self, base: Rules) -> Rules {
+        let mut stats = base.stats;
+        for (stat, &points) in stats.iter_mut().zip(&self.progress.stats) {
+            *stat = i32::from(points);
+        }
+        Rules { stats, ..base }
     }
 
     pub fn give_goal(&mut self, goal: usize) -> Result<(), String> {

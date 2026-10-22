@@ -3793,6 +3793,7 @@ impl Run {
     }
 
     pub fn frame(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
+        let rules = self.career.as_ref().map_or(rules, |c| c.rules(rules));
         let outcome = self.advance(level, rules, pad)?;
         self.follow(level)?;
         Ok(outcome)

@@ -2056,9 +2056,12 @@ impl Skater {
     }
 
     /// A wall in the air pushes the board off with a quarter of its normal and at times a random kick.
+    /// Fresh off a rail it also yaws a sixteenth of a turn either way and keeps rails off longer.
     fn air_bounce(&mut self, world: &CollisionWorld, hit: &Hit) -> Result<(), String> {
         if self.grind.no_stick != 0 {
-            return Err("air wall bounce while rails are held off unsupported".into());
+            self.grind.no_stick = 10;
+            let angle = (self.rng.next(2) << 9) - 0x100;
+            self.rotate(self.frame_basis, angle)?;
         }
         let normal = hit.normal.map(i32::from);
         (self.last_normal, self.smoothed_up, self.same_normal_time) = (WORLD_UP, WORLD_UP, 0);

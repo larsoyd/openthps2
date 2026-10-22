@@ -8,21 +8,21 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 378 (8.0%) | 215,381 (22.4%) |
-| Recovered | 211 (4.5%) | 79,079 (8.2%) |
-| Open | 4131 | 665,279 |
+| Implemented | 388 (8.2%) | 218,389 (22.8%) |
+| Recovered | 208 (4.4%) | 77,500 (8.1%) |
+| Open | 4124 | 663,850 |
 
-`████░░░░░░░░░░░░░░░░` 22.4% implemented by bytes
+`█████░░░░░░░░░░░░░░░` 22.8% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 123 | 94 | `█░░░░░░░░░` 13% |
-| physics.cpp | 110 | 64,313 | 48 | 37 | `███████░░░` 72% |
+| unattributed | 2977 | 354,046 | 127 | 92 | `█░░░░░░░░░` 13% |
+| physics.cpp | 110 | 64,313 | 49 | 36 | `███████░░░` 73% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
-| bit.cpp | 123 | 25,393 | 6 | 3 | `█░░░░░░░░░` 5% |
+| bit.cpp | 123 | 25,393 | 9 | 3 | `█░░░░░░░░░` 9% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
@@ -55,7 +55,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | PCMovie.cpp | 7 | 4,977 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickscript.cpp | 2 | 4,585 | 1 | 0 | `█████████░` 95% |
 | create_stitch.cpp | 15 | 4,319 | 0 | 0 | `░░░░░░░░░░` 0% |
-| ob.cpp | 29 | 4,297 | 6 | 3 | `████░░░░░░` 45% |
+| ob.cpp | 29 | 4,297 | 8 | 3 | `█████░░░░░` 50% |
 | soundlib.cpp | 14 | 4,264 | 0 | 0 | `░░░░░░░░░░` 0% |
 | Image.cpp | 32 | 4,213 | 2 | 0 | `██░░░░░░░░` 21% |
 | powerup.cpp | 14 | 4,208 | 6 | 0 | `████████░░` 78% |
@@ -147,8 +147,11 @@ Implemented routines and the Rust module that holds them.
 | 00403410 | 511 | unattributed | objects.rs |
 | 00403f00 | 71 | bit.cpp | ground.rs |
 | 00403f70 | 20 | bit.cpp | ground.rs |
+| 004051c0 | 458 | bit.cpp | collision.rs |
 | 00406200 | 255 | bit.cpp | ground.rs |
 | 00406330 | 171 | bit.cpp | ground.rs |
+| 004069a0 | 365 | bit.cpp | collision.rs |
+| 00406d00 | 171 | bit.cpp | collision.rs |
 | 00406e30 | 474 | bit.cpp | collision.rs |
 | 00407050 | 384 | bit.cpp | collision.rs |
 | 0040b060 | 315 | unattributed | grind.rs |
@@ -279,11 +282,14 @@ Implemented routines and the Rust module that holds them.
 | 00475700 | 305 | mmu.cpp | card.rs |
 | 0047b400 | 730 | mmu.cpp | rec.rs |
 | 004801d0 | 31 | ob.cpp | ground.rs |
+| 004802f0 | 181 | ob.cpp | pickups.rs |
+| 004803b0 | 38 | ob.cpp | pickups.rs |
 | 00480430 | 37 | ob.cpp | pickups.rs |
 | 00480460 | 361 | ob.cpp | pickups.rs |
 | 00480730 | 340 | ob.cpp | anim.rs |
 | 00480950 | 709 | ob.cpp | anim.rs |
 | 00480d90 | 436 | ob.cpp | figure.rs |
+| 00481150 | 119 | unattributed | pickups.rs |
 | 0048a7e0 | 749 | pal.cpp | materials.rs |
 | 0048b760 | 371 | panel.cpp | hud.rs |
 | 0048bae0 | 1037 | panel.cpp | hud.rs |
@@ -318,6 +324,7 @@ Implemented routines and the Rust module that holds them.
 | 004904d0 | 311 | physics.cpp | ground.rs |
 | 00490610 | 110 | physics.cpp | ground.rs |
 | 00490680 | 169 | physics.cpp | ground.rs |
+| 00490730 | 932 | physics.cpp | ground.rs |
 | 00490ef0 | 1482 | physics.cpp | grind.rs |
 | 004914d0 | 502 | physics.cpp | grind.rs |
 | 00491780 | 1010 | physics.cpp | ground.rs |
@@ -381,6 +388,9 @@ Implemented routines and the Rust module that holds them.
 | 004aa5d0 | 663 | rail.cpp | rail.rs |
 | 004aa8c0 | 1608 | rail.cpp | rail.rs |
 | 004aaf70 | 2622 | unattributed | rail.rs |
+| 004add10 | 336 | unattributed | collision.rs |
+| 004adee0 | 311 | unattributed | collision.rs |
+| 004ae020 | 97 | unattributed | collision.rs |
 | 004ae090 | 1689 | Shatter.cpp | collision.rs |
 | 004ae730 | 1980 | unattributed | collision.rs |
 | 004af0b0 | 212 | unattributed | collision.rs |
@@ -599,7 +609,6 @@ Implemented routines and the Rust module that holds them.
 | 0048fb20 | 189 | physics.cpp |
 | 0048ffc0 | 71 | physics.cpp |
 | 004904c0 | 11 | physics.cpp |
-| 00490730 | 932 | physics.cpp |
 | 00490ae0 | 395 | physics.cpp |
 | 00490c70 | 442 | physics.cpp |
 | 004916d0 | 172 | physics.cpp |
@@ -633,8 +642,6 @@ Implemented routines and the Rust module that holds them.
 | 004ab9c0 | 21 | unattributed |
 | 004ad620 | 303 | unattributed |
 | 004ad9f0 | 17 | unattributed |
-| 004add10 | 336 | unattributed |
-| 004adee0 | 311 | unattributed |
 | 004b0cd0 | 101 | skatmgr.cpp |
 | 004b1430 | 109 | skatmgr.cpp |
 | 004baeb0 | 157 | unattributed |

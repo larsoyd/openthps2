@@ -11,6 +11,8 @@ const ACTIVE: u16 = 0xffff;
 const BOB_HEIGHT: i32 = 50;
 const REACH: u16 = 300;
 const TAPE_REACH: u16 = 500;
+/// Past this rough distance the object walk suspends a powerup until the skater comes back.
+const SUSPEND_DISTANCE: i32 = 13000;
 
 /// A powerup a trigger node places: a letter, the secret tape, a cash icon or a level pickup.
 #[derive(Clone, Debug)]
@@ -94,6 +96,12 @@ impl Pickup {
     /// Counts the timer down and bobs above the base point while the skater is near. False once
     /// the pickup is gone.
     pub fn update(&mut self, skater: V3, scale: i32) -> bool {
+        let distance = rough_distance(skater, self.position);
+        // a suspended powerup loses its glow and its shadow for good and runs nothing
+        if distance > SUSPEND_DISTANCE {
+            (self.shadow, self.glow) = (false, false);
+            return true;
+        }
         if self.timer != ACTIVE {
             self.timer = self.timer.saturating_sub(1);
             if self.timer == 0 {
@@ -104,7 +112,7 @@ impl Pickup {
         if self.hidden {
             return true;
         }
-        if rough_distance(skater, self.position) > crate::render::HANGAR_VIEWPORT.far {
+        if distance > crate::render::HANGAR_VIEWPORT.far {
             (self.shadow, self.glow) = (false, false);
             return true;
         }

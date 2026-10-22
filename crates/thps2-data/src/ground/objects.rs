@@ -132,6 +132,7 @@ pub struct Prop {
     pulsed: bool,
     /// Particles of its own shatter, for the run to take into its list.
     pub(super) particles: Vec<Particle>,
+    pub(super) chunks: Vec<Chunk>,
 }
 
 impl Prop {
@@ -166,6 +167,7 @@ impl Prop {
             registers: [0; 6],
             pulsed: false,
             particles: Vec::new(),
+            chunks: Vec::new(),
         }
     }
 
@@ -410,8 +412,7 @@ impl Prop {
             .ok_or_else(|| format!("prop node={} shatters without a known model", self.node))?;
         let m = crate::pose::euler(self.angles);
         let placed: Vec<Pane> = panes.iter().map(|p| p.placed(&m, self.position)).collect();
-        let (_, particles) = shatter_draws(&placed, level.world, &mut s.rng)?;
-        self.particles = particles;
+        (self.chunks, self.particles) = shatter_draws(&placed, level.world, &mut s.rng)?;
         Ok(())
     }
 

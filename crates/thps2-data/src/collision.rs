@@ -438,6 +438,9 @@ const LEAF_DRAWS: [i32; 15] = [
     100, 100, 100, 96, 2, 160, 30, 48, 45, 175, 20, 2, 4096, 4096, 4096,
 ];
 const CENTRED_LEAF: usize = 7;
+const LEAF_LIFE: usize = 6;
+const LEAF_RIBBON: usize = 11;
+const CHUNK_LIFE: i32 = 45;
 
 type V3 = [i32; 3];
 
@@ -480,14 +483,33 @@ impl Pane {
     }
 }
 
+/// A flying shard of broken glass, an effect object with a ribbon trailing half of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Chunk {
+    life: i32,
+    ribbon: bool,
+}
+
+impl Chunk {
+    /// Effect objects it holds: itself, and the ribbon with its four segments.
+    pub fn bits(&self) -> usize {
+        if self.ribbon { 6 } else { 1 }
+    }
+
+    /// Counts down and dies the frame after reaching zero.
+    pub fn update(&mut self) -> bool {
+        self.life -= 1;
+        self.life >= 0
+    }
+}
+
 struct Counted<'a> {
     rng: &'a mut Rng,
-    draws: u32,
+    chunks: Vec<Chunk>,
 }
 
 impl Counted<'_> {
     fn next(&mut self, n: i32) -> i32 {
-        self.draws += 1;
         self.rng.next(n)
     }
 
@@ -540,23 +562,34 @@ impl Counted<'_> {
             self.shard([keep, ends[2], ends[1]], depth - 1, centre);
             return;
         }
+        // a leaf on the face centre has no direction to fly and dies at once with its ribbon
         let centred = whole_length(sub(centroid([p1, p2, p3]), centre)) == 0;
+        let mut drawn = [0; LEAF_DRAWS.len()];
         for (k, &n) in LEAF_DRAWS.iter().enumerate() {
             if !(centred && k == CENTRED_LEAF) {
-                self.next(n);
+                drawn[k] = self.next(n);
             }
+        }
+        if !centred {
+            self.chunks.push(Chunk {
+                life: drawn[LEAF_LIFE] + CHUNK_LIFE,
+                ribbon: drawn[LEAF_RIBBON] != 0,
+            });
         }
     }
 }
 
-/// Draws the random numbers a shatter takes for its shards and particles, returning the count
+/// Draws the random numbers a shatter takes for its shards and particles, returning the chunks
 /// and the particles that keep drawing while they fall.
 pub fn shatter_draws(
     panes: &[Pane],
     world: &CollisionWorld,
     rng: &mut Rng,
-) -> Result<(u32, Vec<Particle>), String> {
-    let mut c = Counted { rng, draws: 0 };
+) -> Result<(Vec<Chunk>, Vec<Particle>), String> {
+    let mut c = Counted {
+        rng,
+        chunks: Vec::new(),
+    };
     let (mut shards, mut particles) = (0, Vec::new());
     for pane in panes {
         let split = u32::from(c.next(5) == 0);
@@ -580,7 +613,7 @@ pub fn shatter_draws(
             }
         }
     }
-    Ok((c.draws, particles))
+    Ok((c.chunks, particles))
 }
 
 /// The unit vector of the vector library, from the whole units of each axis.

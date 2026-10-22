@@ -1,7 +1,7 @@
 use crate::anim::{AnimState, AnimationTable};
 use crate::camera::{Camera, Moment, Tripod};
 use crate::career::{CareerEvent, CareerRun, GoalKind};
-use crate::collision::{CollisionWorld, Hit, Particle, shatter_draws};
+use crate::collision::{Chunk, CollisionWorld, Hit, Particle, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
 use crate::rng::Rng;
@@ -414,6 +414,8 @@ pub struct Skater {
     pub fall: i32,
     /// Ground distance below the origin minus the standing height at frame start, Q12.
     pub clearance: i32,
+    /// Where the skater stood after the last clearance probe, the fallback when one misses.
+    pub probe_point: V3,
     /// Turn rate in Q12 angle units per frame times 4096.
     pub turn: i32,
     pub lean: i32,
@@ -619,6 +621,9 @@ pub struct Grind {
     pub side: u8,
     /// The rail approached from the outside of the last ground position, kept while on one rail.
     pub outer: bool,
+    /// The stance the grind scripts are picked for, taken on a new rail and flipped in place by
+    /// each grind that starts mirrored.
+    pub stance: bool,
     /// Set at the grind start from the ledge side, the travel sign and the approach. Trick script
     /// op 0x34 branches on it once.
     pub ledge_branch: bool,
@@ -880,6 +885,7 @@ impl Skater {
             lip_gap: None,
             fall: 0,
             clearance: 0,
+            probe_point: [0; 3],
             turn: 0,
             lean: 0,
             anim: AnimState::default(),
@@ -3104,15 +3110,40 @@ impl Skater {
         self.stick_slack = (self.stick_slack - 5).max(0);
         (self.old_position, self.frame_basis) = (self.position, self.basis_matrix());
         let below = add(self.position, [0, UNSTICK_SPAN * 4096, 0])?;
-        let Some(hit) = world.query_filtered(self.position, below, false)? else {
-            return Err(
-                "ground unstick fallback unsupported, nothing within 8000 units below".into(),
-            );
-        };
-        self.clearance = hit.position_fixed[1] - self.position[1] - STANDING_HEIGHT * 4096;
-        self.follow_light(world.shade(&hit)?);
+        match world.query_filtered(self.position, below, false)? {
+            Some(hit) => {
+                self.clearance = hit.position_fixed[1] - self.position[1] - STANDING_HEIGHT * 4096;
+                self.follow_light(world.shade(&hit)?);
+            }
+            None => self.unstick(world)?,
+        }
+        self.probe_point = self.position;
         if !self.bailing {
             self.board_hidden = false;
+        }
+        Ok(())
+    }
+
+    /// Nothing below: stand on ground found from 300 units above to 100 below, else take the
+    /// probe point's x or z back where ground lies 400 units under it, else go back to the probe
+    /// point with the travel turned. The move then starts from the new spot.
+    fn unstick(&mut self, world: &CollisionWorld) -> Result<(), String> {
+        let [x, y, z] = self.position;
+        let near = world.query_filtered([x, y - 300 * 4096, z], [x, y + 100 * 4096, z], false)?;
+        let deep = |p: V3| world.query_filtered(p, [p[0], p[1] + 400 * 4096, p[2]], false);
+        let [px, _, pz] = self.probe_point;
+        if let Some(hit) = near {
+            self.position = hit.position_fixed;
+            self.position[1] -= STANDING_HEIGHT * 4096;
+            self.old_position = self.position;
+        } else if deep([px, y, z])?.is_some() {
+            (self.position[0], self.old_position[0]) = (px, px);
+        } else if deep([x, y, pz])?.is_some() {
+            (self.position[2], self.old_position[2]) = (pz, pz);
+        } else {
+            (self.position, self.old_position) = (self.probe_point, self.probe_point);
+            let vx = -(self.velocity[2] / 2);
+            (self.velocity[0], self.velocity[2]) = (vx, vx / 2);
         }
         Ok(())
     }
@@ -3696,6 +3727,7 @@ pub struct Run {
     pub pickups: Vec<Pickup>,
     /// Glass particles, the newest first, which draw random numbers right after the skaters.
     pub particles: Vec<Particle>,
+    pub chunks: Vec<Chunk>,
     /// The follow camera, which moves in the overlay pass after each frame.
     pub camera: Camera,
     pub career: Option<CareerRun>,
@@ -3732,6 +3764,7 @@ impl Run {
             props: Vec::new(),
             pickups: Vec::new(),
             particles: Vec::new(),
+            chunks: Vec::new(),
             camera,
             career,
         };
@@ -3801,6 +3834,7 @@ impl Run {
         self.apply_world_events(level)?;
         let rng = &mut self.skater.rng;
         self.particles.retain_mut(|p| p.update(rng));
+        self.chunks.retain_mut(Chunk::update);
         self.skater.sparks.retain_mut(|s| {
             s.age += 1;
             s.age < s.life
@@ -3816,6 +3850,7 @@ impl Run {
             prop.update(&mut self.skater, &live, self.vb)?;
             let shards = std::mem::take(&mut prop.particles);
             self.particles.splice(0..0, shards.into_iter().rev());
+            self.chunks.append(&mut prop.chunks);
         }
         for object in &mut self.objects {
             object.update(&mut self.skater, level.triggers, frame.hold_delta)?;
@@ -3838,7 +3873,12 @@ impl Run {
             .iter()
             .map(|p| usize::from(p.shadow) + usize::from(p.glow))
             .sum();
-        pickups + self.particles.len() + self.skater.sparks.len() + self.skater.dust.clouds()
+        let chunks: usize = self.chunks.iter().map(Chunk::bits).sum();
+        pickups
+            + self.particles.len()
+            + chunks
+            + self.skater.sparks.len()
+            + self.skater.dust.clouds()
     }
 
     /// The display pass after a frame, before the trick text: a requested blood spray throws
@@ -3884,8 +3924,10 @@ impl Run {
             match event {
                 WorldEvent::Kill(checksum) => {
                     if let Some(panes) = world.shatter(checksum) {
-                        let (_, particles) = shatter_draws(&panes, world, &mut self.skater.rng)?;
+                        let (chunks, particles) =
+                            shatter_draws(&panes, world, &mut self.skater.rng)?;
                         self.particles.splice(0..0, particles.into_iter().rev());
+                        self.chunks.extend(chunks);
                     }
                 }
                 WorldEvent::Regions(r) => {

@@ -183,6 +183,7 @@ impl Skater {
         let across = dot_q12(travel, self.lateral);
         if self.grind.last_rail != Some(hit.start) {
             self.grind.outer = dot_q12(travel, perp) > 0;
+            self.grind.stance = self.switched;
         }
         let square = across.abs() < 0xb33;
         let ahead = if square {
@@ -191,11 +192,6 @@ impl Skater {
             across < 0
         };
         self.grind.last_rail = Some(hit.start);
-        let index = usize::from(self.grind.outer)
-            + 2 * (usize::from(square)
-                + 2 * (usize::from(ahead ^ self.mirrored)
-                    + 2 * (usize::from(self.switched ^ self.mirrored)
-                        + 2 * usize::from(crate::input::direction(pad)))));
         self.grind.board = 1;
         let side = i32::from(hit.side);
         self.grind.ledge_branch =
@@ -212,6 +208,12 @@ impl Skater {
             self.start_script(t.script);
             self.grind_trick = None;
         } else {
+            self.grind.stance ^= self.mirrored;
+            let index = usize::from(self.grind.outer)
+                + 2 * (usize::from(square)
+                    + 2 * (usize::from(ahead ^ self.mirrored)
+                        + 2 * (usize::from(self.grind.stance)
+                            + 2 * usize::from(crate::input::direction(pad)))));
             self.start_script(level.tricks.grind_script(index)?);
         }
         self.lip_gap = self.lip_gap_target(level)?;

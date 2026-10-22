@@ -495,11 +495,7 @@ fn calc_unit(v: [i32; 3]) -> [i32; 3] {
             .map(|&c| ((c >> 12) as i16 as i32).pow(2))
             .fold(0i32, i32::wrapping_add),
     );
-    if len == 0 {
-        [0; 3]
-    } else {
-        v.map(|c| c / len)
-    }
+    if len == 0 { [0; 3] } else { v.map(|c| c / len) }
 }
 
 /// The level geometry shared by every run, and the items this run has shattered or hidden.

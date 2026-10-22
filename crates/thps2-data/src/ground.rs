@@ -428,6 +428,9 @@ pub struct Skater {
     pub blood_sprays: u32,
     /// Where the follow camera stood after the last frame, the air pitch turns by it.
     pub camera: V3,
+    /// The basis kept with the old position as the state handler starts, a jump before it still
+    /// sees the one from the frame before.
+    pub frame_basis: [i32; 9],
     /// Frame time since up has been held alone, zero while it is not.
     pub up_since: i32,
     /// Angle between the velocity and the lip face summed while riding it, 1024 per quarter turn.
@@ -857,6 +860,7 @@ impl Skater {
             spins: 0,
             blood_sprays: 0,
             camera: [0; 3],
+            frame_basis: [0; 9],
             up_since: 0,
             lip_angle: 0,
             bailing: false,
@@ -1024,8 +1028,9 @@ impl Skater {
         table: &AnimationTable,
         scripts: &TrickScripts,
         rules: Rules,
-        held: bool,
+        pad: Pad,
     ) -> Result<(), String> {
+        let held = pad.jump;
         let anim = self.anim;
         if !self.crouching {
             if anim.id == ANIM_CROUCH {
@@ -1076,7 +1081,7 @@ impl Skater {
                 self.armed = false;
                 self.set_anim(table, ANIM_IDLE)?;
             } else if self.armed {
-                self.ollie(table, rules)?;
+                self.ollie(table, rules, pad)?;
             }
             self.charge = 0;
             return Ok(());
@@ -1160,10 +1165,7 @@ impl Skater {
         Ok(())
     }
 
-    fn ollie(&mut self, table: &AnimationTable, rules: Rules) -> Result<(), String> {
-        if self.state == State::Grind {
-            return Err("ollie off a rail unsupported".into());
-        }
+    fn ollie(&mut self, table: &AnimationTable, rules: Rules, pad: Pad) -> Result<(), String> {
         if self.manual != 0 {
             if self.ollie_script.is_some() {
                 return Err("ollie out of a manual into a queued move unsupported".into());
@@ -1175,9 +1177,17 @@ impl Skater {
         self.jumped = true;
         self.vert_jump = self.vert;
         self.pop_speed = speed_of(self.velocity)?;
+        if self.grind.on_rail {
+            self.ollie_off_rail(pad)?;
+        }
         let wallie = self.state == State::Wall;
         if wallie {
             self.wallie(rules)?;
+        }
+        if self.state == State::Grind
+            && let Some(pc) = self.ollie_script
+        {
+            self.start_script(pc);
         }
         let (ollie, air) = (
             rules.stat(STAT_OLLIE, self.stance()),
@@ -2765,9 +2775,10 @@ impl Skater {
         Ok(())
     }
 
-    /// Heading within 45 degrees of the wall normal, with a speed condition on some paths.
+    /// Heading within 45 degrees of the wall normal, never while bailing, with a speed condition on
+    /// some paths.
     fn head_on(&self, normal: V3, needs_speed: bool) -> Result<bool, String> {
-        if self.anim.id == ANIM_WALL_HIT {
+        if self.anim.id == ANIM_WALL_HIT || self.bailing {
             return Ok(false);
         }
         if needs_speed {
@@ -2912,7 +2923,7 @@ impl Skater {
     /// Frame setup shared by both states, probing the ground distance below the origin.
     fn begin_frame(&mut self, world: &CollisionWorld) -> Result<(), String> {
         self.stick_slack = (self.stick_slack - 5).max(0);
-        self.old_position = self.position;
+        (self.old_position, self.frame_basis) = (self.position, self.basis_matrix());
         let below = add(self.position, [0, UNSTICK_SPAN * 4096, 0])?;
         let Some(hit) = world.query_filtered(self.position, below, false)? else {
             return Err(
@@ -3736,7 +3747,7 @@ pub fn step(
     s.push(table, rules, pad)?;
     s.check_time();
     if !s.bailing {
-        s.jump_input(table, level.tricks, rules, pad.jump)?;
+        s.jump_input(table, level.tricks, rules, pad)?;
     }
     s.trick_input(level, rules, pad, frame.time)?;
     if !s.bailing {
@@ -3775,13 +3786,13 @@ pub fn step(
             Ok(outcome)
         }
         State::Grind => {
-            s.old_position = s.position;
+            (s.old_position, s.frame_basis) = (s.position, s.basis_matrix());
             s.grind.heat += frame.hold_delta;
             s.grind_frame(level, rules, frame, pad)?;
             Ok(Outcome::Grinding)
         }
         State::Lip => {
-            s.old_position = s.position;
+            (s.old_position, s.frame_basis) = (s.position, s.basis_matrix());
             s.handplant();
             Ok(Outcome::Grinding)
         }

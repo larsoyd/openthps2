@@ -283,7 +283,11 @@ impl Session {
     /// The frame's draws as the original issues them: the level by depth, then the overlay
     /// newest first.
     pub fn draws<'h>(&self, hangar: &'h Hangar) -> Result<Vec<FrameDraw<'h>>, String> {
-        let view = View::new(self.run.camera.eye, &self.run.camera.matrix, HANGAR_VIEWPORT);
+        let view = View::new(
+            self.run.camera.eye,
+            &self.run.camera.matrix,
+            HANGAR_VIEWPORT,
+        );
         let hidden: Vec<usize> = self
             .run
             .world
@@ -420,7 +424,11 @@ impl Session {
             )
         })?;
         let pose = hangar.figure.rig.pose(frame);
-        let view = View::new(self.run.camera.eye, &self.run.camera.matrix, HANGAR_VIEWPORT);
+        let view = View::new(
+            self.run.camera.eye,
+            &self.run.camera.matrix,
+            HANGAR_VIEWPORT,
+        );
         let basis = tilted_basis(s.basis_matrix(), s.balance.angle);
         let place = Placement {
             pose: &pose,

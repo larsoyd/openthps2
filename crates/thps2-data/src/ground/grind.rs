@@ -13,6 +13,9 @@ const BALANCE_FALL: i32 = 4000;
 const RAIL_POINT_SPAN: i32 = 0x1e;
 const NO_STICK_FRAMES: i32 = 5;
 const BLOCK_FRAMES: i32 = 15;
+/// A rail ollie keeps rails off for as long as it keeps the skater from sticking.
+const RAIL_OLLIE_BLOCK: i32 = 5;
+const RAIL_OLLIE_STEER: i32 = 200;
 const LIP_NO_STICK: i32 = 5;
 const SPARKS: usize = 9;
 const SPARK_DRAWS: usize = 5;
@@ -476,6 +479,27 @@ impl Skater {
             self.leave_rail(level.table)?;
         }
         Ok(())
+    }
+
+    /// Jumping off a rail keeps only the speed along it, faces down the rail and steers by left
+    /// or right through the last kept frame basis.
+    pub(super) fn ollie_off_rail(&mut self, pad: Pad) -> Result<(), String> {
+        let g = &mut self.grind;
+        (g.on_rail, g.found, g.no_stick, g.block) =
+            (false, None, NO_STICK_FRAMES, RAIL_OLLIE_BLOCK);
+        (self.trick_running, self.script) = (false, None);
+        self.forward = self.grind.direction;
+        self.rail_basis();
+        let along = dot_q12(self.grind.direction, self.velocity);
+        self.velocity = self.grind.direction.map(|c| mul_q12(c, along));
+        let steer = if pad.right {
+            RAIL_OLLIE_STEER
+        } else if pad.left {
+            -RAIL_OLLIE_STEER
+        } else {
+            0
+        };
+        self.rotate(self.frame_basis, steer)
     }
 
     /// Off the rail into the air, a blocked rail and the script's exit move or the air animation.

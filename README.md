@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024_edition-bf3112.svg" alt="Rust 2024 edition"></a>
-  <a href="https://bevyengine.org/"><img src="https://img.shields.io/badge/Engine-Bevy_0.18-b6963c.svg" alt="Bevy 0.18"></a>
+  <a href="https://bevyengine.org/"><img src="https://img.shields.io/badge/Engine-Bevy_0.20-b6963c.svg" alt="Bevy 0.20"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-c6c7c9.svg" alt="MIT license"></a>
   <a href="#status"><img src="https://img.shields.io/badge/Status-in_development-4e3938.svg" alt="In development"></a>
   <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-23.2%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>

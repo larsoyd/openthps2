@@ -179,7 +179,7 @@ fn setup(
             far: 32767.0 * 1.5,
             near_clip_plane: Vec4::new(0.0, 0.0, -1.0, -(v[4] as f32)),
         }),
-        Tonemapping::None,
+        Tonemapping::Linear,
         Msaa::Off,
     ));
     let mesh_data = std::mem::take(&mut input.meshes);

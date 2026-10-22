@@ -1237,9 +1237,6 @@ impl Skater {
 
     fn ollie(&mut self, table: &AnimationTable, rules: Rules, pad: Pad) -> Result<(), String> {
         if self.manual != 0 {
-            if self.ollie_script.is_some() {
-                return Err("ollie out of a manual into a queued move unsupported".into());
-            }
             (self.trick_running, self.script, self.manual_pending) = (false, None, None);
             self.balance.kick = 0;
         }
@@ -1283,6 +1280,12 @@ impl Skater {
                 self.pop_entered = self.frame_time;
             }
             _ => self.set_state(State::Air),
+        }
+        // a move queued in the manual starts in place of the ollie's own animation
+        if self.manual != 0
+            && let Some(pc) = self.ollie_script
+        {
+            self.start_script(pc);
         }
         self.pop_time = self.frame_time;
         if self.script.is_some() {

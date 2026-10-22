@@ -563,6 +563,8 @@ pub struct Skater {
     pub wall_time: i32,
     /// Bail kinds the script sets for falling off a rail and for landing mid move.
     pub rail_bail: i16,
+    /// Frames before its animation's end from which a running trick may still take a rail.
+    pub grind_window: i32,
     pub landing_bail: i16,
     pub presses: Presses,
     pub air_queue: std::collections::VecDeque<QueuedTrick>,
@@ -982,6 +984,7 @@ impl Skater {
             grind_up: 0,
             wall_time: 0,
             rail_bail: 0,
+            grind_window: 0,
             landing_bail: 0,
             presses: Presses::default(),
             air_queue: Default::default(),
@@ -2073,7 +2076,7 @@ impl Skater {
         self.trick_points = DEFAULT_TRICK_POINTS;
         self.anim.speed = 0x10000;
         self.script_return = None;
-        (self.rail_bail, self.landing_bail) = (0, 0);
+        (self.rail_bail, self.landing_bail, self.grind_window) = (0, 0, 0);
         (self.manual_pending, self.ollie_script) = (None, None);
         self.hold_time = 0;
     }
@@ -2478,7 +2481,11 @@ impl Skater {
                 0x4f => pc += 8,
                 // a trick database value and how near its end a trick may take a rail, which this
                 // port does not read
-                0x2d | 0x51 => pc += 2,
+                0x2d => {
+                    self.grind_window = i32::from(short(pc)?).abs();
+                    pc += 2;
+                }
+                0x51 => pc += 2,
                 0x4e if std::mem::take(&mut self.nollie) => pc = scripts.offset(pc)?,
                 0x4e => pc += 2,
                 0x55 => {

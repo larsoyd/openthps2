@@ -62,8 +62,14 @@ impl Skater {
         if self.state == State::Ground {
             (self.spins, self.spin_angle) = (0, 0);
         }
+        if self.trick_running && !self.script_ended && !self.in_grind_window() {
+            let kind = usize::try_from(self.rail_bail)
+                .map_err(|_| format!("rail bail kind={} out of range", self.rail_bail))?;
+            self.rail_bail = 0;
+            return self.start_bail(level.table, level.tricks, kind, false);
+        }
         if self.trick_running {
-            return Err("rail start while a trick script runs unsupported".into());
+            self.trick_landed = true;
         }
         let lip = self.velocity[1] < 0
             && self.up[1].abs() < 3000
@@ -76,6 +82,21 @@ impl Skater {
             return Ok(());
         }
         self.start_grind(level, rules, pad, lip)
+    }
+
+    /// A running trick takes a rail only within its window of frames before the animation ends.
+    fn in_grind_window(&self) -> bool {
+        let (frame, end, w) = (
+            i32::from(self.anim.frame),
+            i32::from(self.anim.end),
+            self.grind_window,
+        );
+        w != 0
+            && if self.anim.direction == 1 {
+                frame >= end - w
+            } else {
+                frame <= end + w
+            }
     }
 
     /// The handplant hold: the heading tips down a little until near level, then up and the

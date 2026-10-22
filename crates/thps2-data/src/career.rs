@@ -215,6 +215,8 @@ pub enum CareerEvent {
     Gap(i16),
     Land(Vec<String>),
     TakeOff,
+    /// A script's goal counter op.
+    GoalCounter,
 }
 
 const GOAL_GAP: u16 = 1;
@@ -245,6 +247,8 @@ pub struct CareerRun {
     pub trick_gap_mask: u32,
     /// The gap checklist of the level, one bit per gap in table order.
     pub gap_bits: [u32; 3],
+    /// Destroy goal count, 99 once the goal is given.
+    pub destroyed: i32,
 }
 
 impl CareerRun {
@@ -284,6 +288,7 @@ impl CareerRun {
             goal_gap_mask: 0,
             trick_gap_mask: 0,
             gap_bits: [0; 3],
+            destroyed: 0,
         })
     }
 
@@ -331,6 +336,7 @@ impl CareerRun {
         match event {
             CareerEvent::Gap(id) => self.award_gap(id),
             CareerEvent::Land(names) => self.land(&names),
+            CareerEvent::GoalCounter => self.count_destroyed(),
             CareerEvent::TakeOff => {
                 (self.pending_goal_gap, self.pending_trick_gap) = (None, None);
                 Ok(())
@@ -458,6 +464,22 @@ impl CareerRun {
             Some(n) if self.level_pickups_got == self.level_pickups => self.give_goal(n),
             _ => Ok(()),
         }
+    }
+
+    /// One more for the destroy goal, given at its target count, after which the count reads 99.
+    fn count_destroyed(&mut self) -> Result<(), String> {
+        let Some(n) = self.goal_of(GoalKind::Destroy) else {
+            return Ok(());
+        };
+        if self.got(n) {
+            return Ok(());
+        }
+        self.destroyed += 1;
+        if self.destroyed == self.goals()[n].target {
+            self.destroyed = 99;
+            self.give_goal(n)?;
+        }
+        Ok(())
     }
 
     pub fn tape(&mut self) -> Result<(), String> {

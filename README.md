@@ -37,7 +37,7 @@ The interactive session uses an original-style software renderer at 640×480, pr
 gameplay renderer are planned. Career-save handling and goal logic are partially implemented, but a playable career,
 the full front end, audio, particles and other playable levels remain unfinished.
 
-<!-- progress --> 19.7% of the executable implemented by bytes (318 of 4720 functions), 9.0% more recovered. <!-- /progress -->
+<!-- progress --> 19.7% of the executable implemented by bytes (319 of 4720 functions), 9.0% more recovered. <!-- /progress -->
 Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md), which also distinguishes recovered behavior from
 code that has been ported.
 

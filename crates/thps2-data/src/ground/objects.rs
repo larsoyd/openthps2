@@ -9,7 +9,7 @@ const LABEL: u16 = 0x4104;
 const WAIT: u16 = 0x4280;
 const WAIT_FOR_SIGNAL: u16 = 0x4281;
 const PULSE: u16 = 0x42b4;
-const CAREER_MESSAGE: u16 = 0x42c0;
+const GOAL_COUNTER: u16 = 0x42c0;
 const SOUND: u16 = 0x4507;
 const SOUND_AT: u16 = 0x4508;
 const SOUND_STOP: u16 = 0x4509;
@@ -605,8 +605,11 @@ impl ScriptObject {
                     self.wait = (self.value(s)? << 12) as u32;
                     return Ok(());
                 }
-                // single session shows no career messages
-                CAREER_MESSAGE => self.pc += 1,
+                GOAL_COUNTER => {
+                    self.pc += 1;
+                    s.career_events
+                        .push(crate::career::CareerEvent::GoalCounter);
+                }
                 // sound is not part of the rewrite yet
                 SOUND => self.pc += 1,
                 SOUND_AT => self.pc += 2,

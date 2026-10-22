@@ -8,9 +8,9 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 318 (6.7%) | 189,147 (19.7%) |
+| Implemented | 319 (6.8%) | 189,330 (19.7%) |
 | Recovered | 217 (4.6%) | 86,064 (9.0%) |
-| Open | 4185 | 684,528 |
+| Open | 4184 | 684,345 |
 
 `████░░░░░░░░░░░░░░░░` 19.7% implemented by bytes
 
@@ -28,7 +28,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
 | create.cpp | 54 | 18,174 | 0 | 0 | `░░░░░░░░░░` 0% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
-| panel.cpp | 37 | 14,181 | 17 | 1 | `██████░░░░` 63% |
+| panel.cpp | 37 | 14,181 | 18 | 1 | `██████░░░░` 64% |
 | career.cpp | 81 | 13,988 | 25 | 7 | `███░░░░░░░` 27% |
 | trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
@@ -255,6 +255,7 @@ Implemented routines and the Rust module that holds them.
 | 0048d090 | 1455 | panel.cpp | hud.rs |
 | 0048d710 | 135 | panel.cpp | manual.rs |
 | 0048d7c0 | 104 | panel.cpp | pickups.rs |
+| 0048d8a0 | 183 | panel.cpp | career.rs |
 | 0048ddc0 | 1346 | panel.cpp | tricktext.rs |
 | 0048e320 | 142 | panel.cpp | tricktext.rs |
 | 0048e3b0 | 623 | panel.cpp | score.rs |

@@ -242,7 +242,8 @@ pub fn advance_ground(
                 | Outcome::Airborne
                 | Outcome::Grinding
                 | Outcome::Ended
-                | Outcome::Retry,
+                | Outcome::Retry
+                | Outcome::Frozen,
             ) => motion.frames = frame,
             Err(error) => motion.halted = Some(format!("frame={frame} {error}")),
         }

@@ -125,6 +125,8 @@ const FALLBACK_ANIM: u16 = 0x2e;
 pub const RAIL_MODE: u8 = 4;
 /// Frames follow the frame time back and forth between two frames.
 pub const SWING_MODE: u8 = 3;
+/// The frame holds still while the end and pingpong checks still run.
+pub const HOLD_MODE: u8 = 2;
 
 impl AnimState {
     /// Runs an animation from start to end at one design frame per frame, minus one meaning the last frame.
@@ -196,16 +198,19 @@ impl AnimState {
 
     /// Advances by speed times the Q8 frame scale, flipping at a pingpong end or finishing.
     pub fn tick(&mut self, scale: i32) -> Result<(), String> {
-        if self.mode != 0 && self.mode != RAIL_MODE {
+        if !matches!(self.mode, 0 | HOLD_MODE | RAIL_MODE) {
             return Err(format!("animation mode={} unsupported", self.mode));
         }
-        if self.mode == 0 && self.at_end() {
+        if self.mode != RAIL_MODE && self.at_end() {
             if self.pingpong < 1 {
                 self.finished = true;
             } else {
                 (self.end, self.pingpong) = (self.pingpong, self.end);
                 self.direction = -self.direction;
             }
+        }
+        if self.mode == HOLD_MODE {
+            return Ok(());
         }
         let step = (self.speed * scale) >> 8;
         let mut cursor = (i32::from(self.frame) << 16) | i32::from(self.fraction);

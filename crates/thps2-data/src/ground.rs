@@ -389,6 +389,8 @@ pub struct Skater {
     /// Set by a nollie, read once by a trick script branch, gone after an ollie or a settled
     /// frame on the ground.
     pub nollie: bool,
+    /// A bail script holds the physics still, the animation and the script keep running.
+    pub frozen: bool,
     /// Downward travel accumulated while airborne, Q12.
     pub fall: i32,
     /// Ground distance below the origin minus the standing height at frame start, Q12.
@@ -632,6 +634,8 @@ pub enum Outcome {
     Ended,
     /// The end menu picked Retry, the caller starts a new run.
     Retry,
+    /// A trick script held the physics still this frame.
+    Frozen,
 }
 
 type V3 = [i32; 3];
@@ -840,6 +844,7 @@ impl Skater {
             switched: false,
             mirrored: false,
             nollie: false,
+            frozen: false,
             fall: 0,
             clearance: 0,
             turn: 0,
@@ -1980,7 +1985,7 @@ impl Skater {
         kind: usize,
         lift: bool,
     ) -> Result<(), String> {
-        self.bail_lift = lift;
+        (self.bail_lift, self.frozen) = (lift, false);
         self.gravity_percent = 100;
         (self.armed, self.charge, self.grind_trick) = (false, 0, None);
         self.air_queue.clear();
@@ -2201,6 +2206,18 @@ impl Skater {
                         + 1;
                 }
                 0x22 => self.switched = !self.switched,
+                0x0e => {
+                    self.frozen = short(pc)? != 0;
+                    pc += 2;
+                }
+                0x43 if self.switched => pc = scripts.offset(pc)?,
+                0x43 => pc += 2,
+                0x42 => {
+                    let n = i32::from(short(pc)?);
+                    let side = crate::rail::norm([self.lateral[0], 0, self.lateral[2]]);
+                    self.position = add(self.position, side.map(|c| c.wrapping_mul(n)))?;
+                    pc += 2;
+                }
                 0x57 => self.mirrored = true,
                 0x21 => {
                     let turn = rot_y_matrix(i32::from(short(pc)?) & 0xfff);
@@ -2333,6 +2350,7 @@ impl Skater {
                 }
                 0x12 if self.trick_held() => pc = scripts.offset(pc)?,
                 0x12 => pc += 2,
+                0x13 => self.anim.mode = crate::anim::HOLD_MODE,
                 0x14 => self.anim.mode = 0,
                 0x17 => {
                     let (base, growth) = (i32::from(short(pc)?), i32::from(short(pc + 2)?));
@@ -3907,6 +3925,55 @@ pub fn step_with(
     if dispatched == State::Ground && frame.time - s.landed_at > (20 * frame.scale) >> 8 {
         s.start_manual(level, rules, true)?;
     }
+    let outcome = if s.frozen {
+        Outcome::Frozen
+    } else {
+        let outcome = dispatch(level, s, props, rules, frame, pad)?;
+        if dispatched == State::Ground {
+            s.balance_frame(level, rules, pad, frame)?;
+        }
+        if s.bailing {
+            s.bail_drag(frame);
+        }
+        outcome
+    };
+    s.settle_manual();
+    s.head_contact(level.world)?;
+    if s.state != State::Lip {
+        s.try_grind(level, rules, pad)?;
+    }
+    s.sweep_triggers(level)?;
+    if s.frozen {
+        s.frame_accel = [0; 3];
+    } else {
+        s.integrate(rules, frame)?;
+    }
+    if !matches!(s.state, State::Air | State::Vert | State::VertPop) {
+        (s.air_since, s.gravity_percent) = (0, 100);
+    } else if s.air_since == 0 {
+        s.air_since = s.frame_time;
+    }
+    if s.up[1] < -3800 {
+        s.upright_y = s.position[1];
+    }
+    if s.state == State::Ground {
+        s.ground_y = s.position[1];
+    }
+    if s.state == s.previous_state && matches!(s.state, State::Ground | State::Stopped) {
+        s.nollie = false;
+    }
+    Ok(outcome)
+}
+
+/// The state's own physics handler.
+fn dispatch(
+    level: &Level,
+    s: &mut Skater,
+    props: &mut [Prop],
+    rules: Rules,
+    frame: FrameScale,
+    pad: Pad,
+) -> Result<Outcome, String> {
     match s.state {
         State::Ground => {
             (s.lip_spin, s.grind.last_rail) = (false, None);
@@ -3919,7 +3986,7 @@ pub fn step_with(
         State::Vert => s.lip_spin = true,
         _ => {}
     }
-    let outcome = match s.state {
+    match s.state {
         State::Ground | State::Stopped | State::Vert => {
             ground_step(level, s, props, rules, frame, pad)
         }
@@ -3943,33 +4010,5 @@ pub fn step_with(
             s.handplant();
             Ok(Outcome::Grinding)
         }
-    }?;
-    if dispatched == State::Ground {
-        s.balance_frame(level, rules, pad, frame)?;
     }
-    if s.bailing {
-        s.bail_drag(frame);
-    }
-    s.settle_manual();
-    s.head_contact(level.world)?;
-    if s.state != State::Lip {
-        s.try_grind(level, rules, pad)?;
-    }
-    s.sweep_triggers(level)?;
-    s.integrate(rules, frame)?;
-    if !matches!(s.state, State::Air | State::Vert | State::VertPop) {
-        (s.air_since, s.gravity_percent) = (0, 100);
-    } else if s.air_since == 0 {
-        s.air_since = s.frame_time;
-    }
-    if s.up[1] < -3800 {
-        s.upright_y = s.position[1];
-    }
-    if s.state == State::Ground {
-        s.ground_y = s.position[1];
-    }
-    if s.state == s.previous_state && matches!(s.state, State::Ground | State::Stopped) {
-        s.nollie = false;
-    }
-    Ok(outcome)
 }

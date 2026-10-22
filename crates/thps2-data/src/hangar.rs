@@ -19,7 +19,7 @@ use crate::{
     pre::Pre,
     psx::Scene,
     rail::Rails,
-    raster::{BLEND_ONE, BLEND_ZERO, DrawState, Raster, Texture},
+    raster::{BLEND_ONE, BLEND_ZERO, DrawState, Fan, Raster, Texture},
     render::{self, HANGAR_VIEWPORT, Placed, Poly, TextureInfo, View},
     script::TrickScripts,
     sprite::Sprite,
@@ -575,9 +575,17 @@ impl Session {
             HANGAR_VIEWPORT.height as usize,
         );
         raster.clear(CLEAR, 0.0);
-        for d in self.draws(hangar)? {
-            raster.fan(&d.vertices, &d.state, d.texture)?;
-        }
+        let draws = self.draws(hangar)?;
+        let fans: Vec<Fan> = draws
+            .iter()
+            .map(|d| Fan {
+                vertices: &d.vertices,
+                state: &d.state,
+                texture: d.texture,
+            })
+            .collect();
+        let bands = std::thread::available_parallelism().map_or(1, usize::from);
+        raster.fans(&fans, bands)?;
         Ok(raster)
     }
 }

@@ -156,6 +156,79 @@ impl Raster {
         state: &DrawState,
         texture: Option<&Texture>,
     ) -> Result<(), String> {
+        self.rows(0, self.height).fan(v, state, texture)
+    }
+
+    /// Draws the fans in order, the screen split into bands of rows drawn side by side. Every
+    /// band sees every fan, so each pixel goes through the same steps as one pass would take.
+    pub fn fans(&mut self, fans: &[Fan], bands: usize) -> Result<(), String> {
+        let rows = self.height.div_ceil(bands.clamp(1, self.height.max(1)));
+        let (width, height) = (self.width, self.height);
+        let chunk = rows * width;
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = self
+                .colour
+                .chunks_mut(chunk)
+                .zip(self.depth.chunks_mut(chunk))
+                .enumerate()
+                .map(|(k, (colour, depth))| {
+                    let top = k * rows;
+                    let mut band = Rows {
+                        width,
+                        height,
+                        top,
+                        bottom: top + colour.len() / width,
+                        colour,
+                        depth,
+                    };
+                    scope.spawn(move || {
+                        fans.iter()
+                            .try_for_each(|f| band.fan(f.vertices, f.state, f.texture))
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .try_for_each(|w| w.join().map_err(|_| "[raster] band panicked".to_string())?)
+        })
+    }
+
+    fn rows(&mut self, top: usize, bottom: usize) -> Rows<'_> {
+        Rows {
+            width: self.width,
+            height: self.height,
+            top,
+            bottom,
+            colour: &mut self.colour,
+            depth: &mut self.depth,
+        }
+    }
+}
+
+/// One draw call for a banded pass.
+pub struct Fan<'a> {
+    pub vertices: &'a [ScreenVertex],
+    pub state: &'a DrawState,
+    pub texture: Option<&'a Texture>,
+}
+
+/// The rows top..bottom of a target height rows tall, indexed from top.
+struct Rows<'a> {
+    width: usize,
+    height: usize,
+    top: usize,
+    bottom: usize,
+    colour: &'a mut [u16],
+    depth: &'a mut [u16],
+}
+
+impl Rows<'_> {
+    fn fan(
+        &mut self,
+        v: &[ScreenVertex],
+        state: &DrawState,
+        texture: Option<&Texture>,
+    ) -> Result<(), String> {
         if let [a, b] = v {
             return self.line(*a, *b, state);
         }
@@ -178,7 +251,11 @@ impl Raster {
             if x < 0.0 || y < 0.0 || x >= self.width as f32 || y >= self.height as f32 {
                 continue;
             }
-            let at = y as usize * self.width + x as usize;
+            let (x, y) = (x as usize, y as usize);
+            if !(self.top..self.bottom).contains(&y) {
+                continue;
+            }
+            let at = (y - self.top) * self.width + x;
             let depth = quantise_depth(a.z + (b.z - a.z) * t);
             if state.depth_test && !depth_passes(state.depth_func, depth, self.depth[at])? {
                 continue;
@@ -234,7 +311,10 @@ impl Raster {
             (v.iter().map(|p| p.y).fold(f32::MIN, f32::max).ceil() as usize).min(self.height);
         let [vx, vy, vw, vh] = state.viewport.unwrap_or([0, 0, self.width, self.height]);
         let (min_x, max_x) = (min_x.max(vx), max_x.min(vx + vw));
-        let (min_y, max_y) = (min_y.max(vy), max_y.min(vy + vh));
+        let (min_y, max_y) = (
+            min_y.max(vy).max(self.top),
+            max_y.min(vy + vh).min(self.bottom),
+        );
         let colours = v.map(|p| unpack_argb(p.diffuse));
         for py in min_y..max_y {
             for px in min_x..max_x {
@@ -253,7 +333,7 @@ impl Raster {
                     (0..3).map(|i| w[i] * v[i].rhw * f(i)).sum::<f32>() / q
                 };
                 let z: f32 = (0..3).map(|i| w[i] * v[i].z).sum();
-                let at = py * self.width + px;
+                let at = (py - self.top) * self.width + px;
                 let depth = quantise_depth(z);
                 if state.depth_test && !depth_passes(state.depth_func, depth, self.depth[at])? {
                     continue;

@@ -3346,7 +3346,10 @@ impl Run {
         self.ticks += 2;
         self.skater.text_events.clear();
         if self.skater.session.ended {
-            let retry = self.skater.session.end_screens(pad);
+            let retry = self
+                .skater
+                .session
+                .end_screens(pad, self.skater.panel.score)?;
             return Ok(if retry {
                 Outcome::Retry
             } else {

@@ -143,7 +143,14 @@ pub struct EndScreens {
 }
 
 impl EndScreens {
-    pub fn pass(&mut self, font: &Font, run: &Run, high_score: i32) -> Result<Vec<Prim>, String> {
+    /// The fonts are the message font the screens draw with and the trick font the best combo
+    /// lines are measured in.
+    pub fn pass(
+        &mut self,
+        [font, trick_font]: [&Font; 2],
+        run: &Run,
+        high_score: i32,
+    ) -> Result<Vec<Prim>, String> {
         let session = &run.skater.session;
         if !session.ended {
             *self = Self::default();
@@ -157,16 +164,11 @@ impl EndScreens {
         let slides = self.slides.get_or_insert_with(Slides::new);
         slides.step();
         let panel = &run.skater.panel;
-        if !panel.history.is_empty() {
-            return Err(format!(
-                "[hud] statistics after scored tricks unsupported tricks={} landed and best combo are not counted",
-                panel.history.len()
-            ));
-        }
         let mut prims =
             mess(1, PROMPT, 0xc0).draw(font, CENTRE_X, 222, "Press ENTER to continue")?;
         prims.extend(mess(1, TITLE, 0x100).draw(font, CENTRE_X, 40, "Statistics")?);
-        let values = [panel.score, high_score, panel.landed];
+        // a score at or above the table's top takes its place before the screen reads it
+        let values = [panel.score, high_score.max(panel.score), panel.landed];
         for ((index, y), label) in ROWS
             .iter()
             .zip(["Total Score", "High Score", "Tricks Landed"])
@@ -196,7 +198,10 @@ impl EndScreens {
                     best.tricks, best.points
                 );
                 prims.extend(mess(1, GREY, 0xdc).draw(font, CENTRE_X, 115, &line)?);
-                for (k, text) in best.lines.iter().enumerate() {
+                for (k, text) in crate::tricktext::lines(trick_font, &best.shown)
+                    .iter()
+                    .enumerate()
+                {
                     prims.extend(mess(1, GREY, 0xbc).draw(
                         font,
                         CENTRE_X,

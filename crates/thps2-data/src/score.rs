@@ -149,12 +149,12 @@ pub struct Panel {
     pub best: Option<BestCombo>,
 }
 
-/// The run's highest scoring combo: its trick count, points and the trick lines listed under it.
+/// The run's highest scoring combo: its trick count, points and the combo its lines show.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BestCombo {
     pub tricks: i32,
     pub points: i32,
-    pub lines: [String; 3],
+    pub shown: Shown,
 }
 
 impl Panel {
@@ -226,11 +226,26 @@ impl Panel {
         self.history[slot].2
     }
 
+    /// Every entry of a landed combo counts as a landed trick, a higher total becomes the best
+    /// combo while a tie keeps the older one.
     pub fn commit(&mut self, style: Style) {
         if self.entries.is_empty() {
             return;
         }
-        self.pending += self.total(style);
+        let (tricks, points) = (self.entries.len() as i32, self.total(style));
+        self.landed += tricks;
+        if points > self.best.as_ref().map_or(0, |b| b.points) {
+            let shown = Shown {
+                entries: self.entries.clone(),
+                style,
+            };
+            self.best = Some(BestCombo {
+                tricks,
+                points,
+                shown,
+            });
+        }
+        self.pending += points;
         self.entries.clear();
         self.delay = COUNT_UP_DELAY;
     }

@@ -35,17 +35,20 @@ impl Default for Session {
 impl Session {
     /// The statistics screen and then the end menu each take a fresh jump press, the second one
     /// picks Retry. Other menu items are not part of the rewrite yet.
-    pub(super) fn end_screens(&mut self, pad: Pad) -> bool {
+    pub(super) fn end_screens(&mut self, pad: Pad, score: i32) -> Result<bool, String> {
         let pressed = pad.jump && !self.jump_held;
         self.jump_held = pad.jump;
         if !pressed {
-            return false;
+            return Ok(false);
         }
         if self.menu {
-            return true;
+            return Ok(true);
+        }
+        if score >= LOWEST_HIGH_SCORE {
+            return Err(format!("high score entry unsupported score={score}"));
         }
         self.menu = true;
-        false
+        Ok(false)
     }
 
     /// Time is up once the run clock passes the limit, reaching it is not enough.
@@ -64,6 +67,9 @@ impl Session {
         format!("{min}:{sec:02}")
     }
 }
+
+/// The last entry of the Hangar's default high score table, a score that reaches it is entered.
+const LOWEST_HIGH_SCORE: i32 = 5000;
 
 impl Skater {
     /// Rolling outside a manual or stopped, the only states the run can end in.

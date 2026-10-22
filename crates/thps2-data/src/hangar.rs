@@ -282,9 +282,11 @@ impl Session {
         let time = self.run.clock.current().time;
         let fonts = [&hangar.time_font, &hangar.score_font];
         self.overlay = hud::panels(fonts, s, &tricks, time, self.run.vb)?;
-        let screens = self
-            .screens
-            .pass(&hangar.mess_font, &self.run, HIGH_SCORE)?;
+        let screens = self.screens.pass(
+            [&hangar.mess_font, &hangar.trick_font],
+            &self.run,
+            HIGH_SCORE,
+        )?;
         self.overlay
             .extend(screens.into_iter().map(|p| Overlay::Glyph(FontId::Mess, p)));
         Ok(())

@@ -65,7 +65,7 @@ impl Skater {
     }
 
     /// Forward along the face, up out of it.
-    fn fit_basis(&mut self, n: V3) {
+    pub(super) fn fit_basis(&mut self, n: V3) {
         self.forward = normalize(project_onto_plane(self.forward, n));
         self.up = n;
         self.lateral = short(cross_q12(short(self.forward), short(n)));

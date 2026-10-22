@@ -2422,17 +2422,17 @@ impl Skater {
         frame: FrameScale,
         hit: &Hit,
     ) -> Result<(), String> {
-        if self.state == State::Stopped {
-            return Err("stopped lip contact unsupported".into());
-        }
         let held = self.up_since != 0 && frame.time - self.up_since >= 5;
-        if held && hit.face_flags & 0x80 == 0 {
+        if held && hit.face_flags & 0x80 == 0 && !self.bailing {
             let quarter = speed_of(self.velocity)? / 4;
             let [nx, _, nz] = hit.normal.map(i32::from);
             self.velocity[0] -= mul_q12(nx, quarter);
             self.velocity[2] -= mul_q12(nz, quarter);
             self.velocity[1] /= 2;
-            (self.spin_angle, self.spins) = (0, 0);
+            // a stopped skater keeps the half spins of its last turn
+            if self.state == State::Ground {
+                (self.spin_angle, self.spins) = (0, 0);
+            }
             self.set_state(State::Air);
             self.open_combo();
             self.landing_timer = LANDING_TIMER;
@@ -2441,7 +2441,7 @@ impl Skater {
             self.jumped = true;
             return Ok(());
         }
-        if !self.jumped {
+        if !self.jumped && !self.bailing {
             self.set_anim(table, ANIM_AIR)?;
             self.jumped = true;
         }
@@ -2918,7 +2918,14 @@ impl Skater {
                 self.position = self.old_position;
                 return self.wall_contact(table, normal, true);
             }
-            return self.settle_on(world, hit, normal, false, frame);
+            self.settle_on(world, hit, normal, false, frame)?;
+            // a floor met off a lip ride takes the floor's basis at once
+            if self.state == State::Vert {
+                self.fit_basis(normal);
+                (self.smoothed_up, self.same_normal_time) = (normal, 0x19000);
+            }
+            self.set_state(State::Ground);
+            return Ok(());
         }
         if hit.distance_units <= length >> 12 {
             return self.settle_on(world, hit, normal, true, frame);
@@ -3198,6 +3205,8 @@ pub fn ground_step(
     if let Some(contact) = contact {
         s.wall_branch(world, table, &contact, length, frame)?;
     }
+    // a floor met by the move ends a lip ride before the ground probe
+    let vert = vert && s.state == State::Vert;
     s.fast = speed_of(s.velocity)? > stat_speed(rules.stat(STAT_SPEED, s.stance()), 0x186);
     let ignore_lips = s.state == State::Ground && (s.velocity[1] > 0 || s.forward[1] < 1);
     let start = add(s.position, scaled(s.up, 0x46)?)?;
@@ -3278,9 +3287,7 @@ pub fn ground_step(
         s.ground_normal = normal;
         accel = add(accel, s.slope_gravity)?;
         let mut v = reproject(s.velocity, normal)?;
-        if stopped {
-            s.position = s.old_position;
-        } else if !s.bailing {
+        if !stopped && !s.bailing {
             let sideways = dot_q12(v, s.lateral);
             v = std::array::from_fn(|a| v[a] - mul_q12(sideways, s.lateral[a]));
             let along = dot_q12(v, s.forward);
@@ -3308,6 +3315,10 @@ pub fn ground_step(
         s.velocity = v;
     } else {
         accel = add(accel, [0, GRAVITY, 0])?;
+    }
+    // a frame that starts stopped ends where it began, whatever state the contact left
+    if stopped {
+        s.position = s.old_position;
     }
     if grounded && !vert {
         free_move = post_contact_probes(world, table, s)?;

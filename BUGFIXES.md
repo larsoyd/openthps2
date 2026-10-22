@@ -20,6 +20,20 @@ features. An entry documents its own scope; it is not a claim that the whole gam
 | Implementation | [Fix selection](crates/thps2-data/src/fixes.rs), [trick text](crates/thps2-data/src/tricktext.rs), [scoring](crates/thps2-data/src/score.rs). |
 | Historical comparison | `Fixes::ORIGINAL` disables the correction for internal original-behavior comparisons. This is not a public gameplay option or a universal original-engine mode. |
 
+### CFG-001: keyboard binding shared by two actions
+
+| Field | Decision and evidence |
+| --- | --- |
+| Affected edition | Windows USA rerelease, the currently supported original data set. |
+| Original behavior | When `TH2_OPT.CFG` is loaded, a key already bound to another action is rejected only when it sits in a different slot of that action's list. The same key in the same slot position is accepted, so two actions share one key. |
+| Corrected behavior | A key bound to another action in any slot is rejected, and the controls fall back to their defaults as for every other rejected binding. Valid files load unchanged. |
+| Concrete comparison | With `JUMP=PAD2,SPACE,RETURN`, the original keeps `GRIND=PAD2,V`, so both actions react to keypad 2, while `GRIND=V,PAD2` resets the controls. The correction resets both cases. |
+| Intended default | Enabled. `Fixes::default()` selects `Fixes::ALL`, including `key_clash`. |
+| Fidelity impact | Only options files that bind one key to two actions are affected. Gameplay, scoring, saves and the written file layout are unchanged. |
+| Validation | Original runs with both files show the accepted and the rejected case. Loading and saving every recorded options file reproduces the original's output with `Fixes::ORIGINAL`, and the corrected loader resets the same-slot case. |
+| Implementation | [Fix selection](crates/thps2-data/src/fixes.rs), [options loader](crates/thps2-data/src/options.rs). |
+| Historical comparison | `Fixes::ORIGINAL` disables the correction for internal original-behavior comparisons. This is not a public gameplay option. |
+
 ## Policy for future fixes
 
 Update this register in the same change that implements a confirmed original-game correction. Use a stable identifier

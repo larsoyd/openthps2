@@ -28,8 +28,9 @@ pub const WALL_REACH: i32 = 0x1e;
 const WALL_REACH_BAILING: i32 = 100;
 pub const BOUNCE_REACH: i32 = 10;
 const BOUNCE_REACH_BAILING: i32 = 70;
-pub const HEAD_REACH: i32 = 0x3c;
 pub const UNSTICK_SPAN: i32 = 8000;
+const HEAD_REACH: i32 = 0x3c;
+const HEAD_TURN: i32 = 0x200;
 const SHADOW_REACH: i32 = 4000;
 pub const NORMAL_HOLD_LIMIT: i32 = 0x18000;
 pub const FAKIE_DOT: i32 = 0x5000;
@@ -2745,6 +2746,26 @@ impl Skater {
         self.wall_response(normal, WALL_TURN)
     }
 
+    /// A face within reach above a rolling or stopped skater rights the board and pushes off it.
+    fn head_contact(&mut self, world: &CollisionWorld) -> Result<(), String> {
+        if !matches!(self.state, State::Ground | State::Stopped)
+            || (self.up[0] == 0 && self.up[2] == 0)
+        {
+            return Ok(());
+        }
+        let top = add(self.position, scaled(self.up, HEAD_REACH)?)?;
+        let Some(hit) = world.query(self.position, top)? else {
+            return Ok(());
+        };
+        self.up = WORLD_UP;
+        self.forward = crate::rail::norm(self.forward);
+        self.lateral = crate::rail::norm(cross_q12(short(self.forward), short(self.up)));
+        self.forward = cross_q12(short(self.up), short(self.lateral));
+        self.wall_response(hit.normal.map(i32::from), HEAD_TURN)?;
+        self.same_normal_time = 0;
+        Ok(())
+    }
+
     /// Removes the into wall velocity, pushes off and snaps the heading almost parallel to the wall.
     fn wall_response(&mut self, normal: V3, turn: i32) -> Result<(), String> {
         let d = dot_q12(self.velocity, normal);
@@ -3034,18 +3055,6 @@ fn wall_probe(
     Ok((world.query_filtered(old, end, false)?, length))
 }
 
-fn head_probe(world: &CollisionWorld, s: &Skater) -> Result<(), String> {
-    if (s.up[0] != 0 || s.up[2] != 0)
-        && let Some(hit) = world.query(s.position, add(s.position, scaled(s.up, HEAD_REACH)?)?)?
-    {
-        return Err(format!(
-            "ground head contact unsupported item={} face={}",
-            hit.item_index, hit.face_index
-        ));
-    }
-    Ok(())
-}
-
 /// Both shoulder bounces, restoring the entry position when both sides push back.
 fn bounce_probes(
     world: &CollisionWorld,
@@ -3068,7 +3077,7 @@ fn bounce_probes(
     Ok(true)
 }
 
-/// Shoulder bounces, the upside down check of the rolling state and the head probe.
+/// Shoulder bounces and the upside down check of the rolling state.
 fn post_contact_probes(
     world: &CollisionWorld,
     table: &AnimationTable,
@@ -3078,7 +3087,6 @@ fn post_contact_probes(
     if s.state == State::Ground && s.up[1] > 1000 {
         return Err("ground upside down bail unsupported".into());
     }
-    head_probe(world, s)?;
     Ok(bounced)
 }
 
@@ -3278,7 +3286,7 @@ fn land(level: &Level, s: &mut Skater, rules: Rules, pad: Pad, hit: &Hit) -> Res
         s.same_normal_time = 0;
         s.smooth_basis();
     }
-    head_probe(world, s)
+    Ok(())
 }
 
 /// Fast landings are judged by how the board lines up with the travel, sideways ones and drops past
@@ -3804,6 +3812,7 @@ pub fn step(
         s.bail_drag(frame);
     }
     s.settle_manual();
+    s.head_contact(level.world)?;
     if s.state != State::Lip {
         s.try_grind(level, rules, pad)?;
     }

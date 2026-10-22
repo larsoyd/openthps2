@@ -267,17 +267,19 @@ impl Skater {
     ) -> Result<(), String> {
         self.grind_time = self.now;
         if self.grind.sparks && self.effects_live < EFFECT_LIMIT {
-            // sparks are not drawn but their spread and life draws come first
+            let basis = crate::figure::object_matrix(self.basis_matrix().map(|v| v as i16));
+            let aim = crate::effects::aim(basis);
             for _ in 0..SPARKS {
-                self.rng.next(40);
-                self.rng.next(450);
-                self.rng.next(900);
+                let speed = -(self.rng.next(40) + 20);
+                let spread = [self.rng.next(450) - 225, self.rng.next(900) - 450];
                 let life = self.rng.next(5) as u16 + 1;
-                self.rng.next(0x9f);
+                let green = ((self.rng.next(0x9f) >> 5) + 2) << 4;
+                let line =
+                    crate::effects::RailSpark::thrown(self.position, aim, spread, speed, green);
                 self.sparks.push(Spark {
                     age: 0,
                     life,
-                    blood: None,
+                    flight: Some(crate::effects::Flight::Rail(line)),
                 });
             }
         }

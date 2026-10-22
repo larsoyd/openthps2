@@ -11,7 +11,7 @@ use crate::{
     ground::{Level, Outcome, Pad, PropModels, Rules, Run, TONY_HAWK_STATS},
     hud::{self, EndScreens, FontId, ImageId, Overlay},
     input::KeyTable,
-    materials::{TONY_HAWK_LOGOS, apply_logos, resolve_textures},
+    materials::{TONY_HAWK_DECK, TONY_HAWK_LOGOS, apply_deck, apply_logos, resolve_textures},
     pkr::Archive,
     pose::{PoseRecord, Rig},
     pre::Pre,
@@ -204,7 +204,20 @@ fn load_figure(archive: &Archive) -> Result<(Figure, Vec<crate::materials::Surfa
     };
     let scene = load_scene(archive, "data/HAWK2.PSX")?;
     let rig = Rig::from_scene(&load_scene(archive, "data/SK2ANIM.PSX")?)?;
-    let materials = resolve_textures(archive, &scene.texture_checksums, &scene, "Hangar")?;
+    let mut materials = resolve_textures(archive, &scene.texture_checksums, &scene, "Hangar")?;
+    let model_header = text("data/HAWK2.PSH")?;
+    let board = crate::figure::part_names(&model_header)?
+        .iter()
+        .position(|p| p == "BOARD")
+        .and_then(|i| scene.models.get(i))
+        .ok_or("[figure] no model for part=BOARD")?;
+    apply_deck(
+        &mut materials,
+        archive,
+        board,
+        &scene.texture_checksums,
+        TONY_HAWK_DECK,
+    )?;
     let surfaces: Vec<_> = materials.iter().map(|t| t.surface_1555()).collect();
     let infos = materials
         .iter()
@@ -215,13 +228,7 @@ fn load_figure(archive: &Archive) -> Result<(Figure, Vec<crate::materials::Surfa
             opaque: s.pixels.iter().all(|p| p & 0x8000 != 0),
         })
         .collect();
-    let figure = Figure::new(
-        scene,
-        rig,
-        &text("data/HAWK2.PSH")?,
-        &text("data/SK2ANIM.PSH")?,
-        infos,
-    )?;
+    let figure = Figure::new(scene, rig, &model_header, &text("data/SK2ANIM.PSH")?, infos)?;
     Ok((figure, surfaces))
 }
 
@@ -314,9 +321,24 @@ impl Session {
         polys.extend(self.figure.iter().cloned());
         // the effects pass queues after the 3D pass, so its primitives lead their slots
         let particles = self.run.particles.iter().map(|p| view.particle(p));
-        let blood = self.run.skater.sparks.iter().rev();
-        let blood = blood.filter_map(|s| s.blood.as_ref().and_then(|b| view.blood(b)));
-        let mut effects: Vec<(usize, effects::Prim)> = particles.chain(blood).enumerate().collect();
+        let sparks = || {
+            self.run
+                .skater
+                .sparks
+                .iter()
+                .rev()
+                .filter_map(|s| s.flight.as_ref())
+        };
+        let rails = sparks().filter_map(|f| match f {
+            effects::Flight::Rail(line) => view.rail_spark(line),
+            effects::Flight::Blood(_) => None,
+        });
+        let blood = sparks().filter_map(|f| match f {
+            effects::Flight::Blood(drop) => view.blood(drop),
+            effects::Flight::Rail(_) => None,
+        });
+        let queued = particles.chain(rails).chain(blood);
+        let mut effects: Vec<(usize, effects::Prim)> = queued.enumerate().collect();
         effects.sort_by(|a, b| b.1.slot.cmp(&a.1.slot).then(b.0.cmp(&a.0)));
         let mut effects = effects.into_iter().map(|e| e.1).peekable();
         let mut draws: Vec<FrameDraw> = Vec::new();

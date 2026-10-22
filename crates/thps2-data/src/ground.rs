@@ -377,13 +377,13 @@ pub enum State {
     Lip,
 }
 
-/// A rail or blood spark, an effect object that counts against the live limit. Blood thrown
-/// where the skater's head can be found carries its flight.
+/// A rail or blood spark, an effect object that counts against the live limit, with its
+/// flight when the run knows where it starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Spark {
     pub age: u16,
     pub life: u16,
-    pub blood: Option<crate::effects::Blood>,
+    pub flight: Option<crate::effects::Flight>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3856,9 +3856,12 @@ impl Run {
         let rng = &mut self.skater.rng;
         self.particles.retain_mut(|p| p.update(rng));
         self.chunks.retain_mut(Chunk::update);
+        let at = self.skater.position;
         self.skater.sparks.retain_mut(|s| {
-            if let Some(blood) = &mut s.blood {
-                blood.update();
+            match &mut s.flight {
+                Some(crate::effects::Flight::Blood(blood)) => blood.update(),
+                Some(crate::effects::Flight::Rail(line)) => line.update(at),
+                None => {}
             }
             s.age += 1;
             s.age < s.life
@@ -3936,7 +3939,7 @@ impl Run {
             s.sparks.push(Spark {
                 age: 0,
                 life,
-                blood,
+                flight: blood.map(crate::effects::Flight::Blood),
             });
         }
         Ok(())

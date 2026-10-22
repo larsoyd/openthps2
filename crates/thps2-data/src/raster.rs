@@ -156,10 +156,51 @@ impl Raster {
         state: &DrawState,
         texture: Option<&Texture>,
     ) -> Result<(), String> {
+        if let [a, b] = v {
+            return self.line(*a, *b, state);
+        }
         for i in 1..v.len().saturating_sub(1) {
             self.triangle([v[0], v[i], v[i + 1]], state, texture)?;
         }
         Ok(())
+    }
+
+    /// A two vertex list is a line: one pixel a step along its longer axis, the last end left out.
+    fn line(&mut self, a: ScreenVertex, b: ScreenVertex, state: &DrawState) -> Result<(), String> {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let steps = dx.abs().max(dy.abs()).round() as usize;
+        let (ca, cb) = (unpack_argb(a.diffuse), unpack_argb(b.diffuse));
+        // halfway pixels round toward the smaller coordinate
+        let snap = |q: f32| (q - 0.5).ceil();
+        for i in 0..steps {
+            let t = i as f32 / steps as f32;
+            let (x, y) = (snap(a.x + dx * t), snap(a.y + dy * t));
+            if x < 0.0 || y < 0.0 || x >= self.width as f32 || y >= self.height as f32 {
+                continue;
+            }
+            let at = y as usize * self.width + x as usize;
+            let depth = quantise_depth(a.z + (b.z - a.z) * t);
+            if state.depth_test && !depth_passes(state.depth_func, depth, self.depth[at])? {
+                continue;
+            }
+            let src: Rgba = std::array::from_fn(|c| ca[c] + (cb[c] - ca[c]) * t);
+            self.colour[at] = pack(self.blended(src, at, state)?);
+            if state.depth_write {
+                self.depth[at] = depth;
+            }
+        }
+        Ok(())
+    }
+
+    fn blended(&self, src: Rgba, at: usize, state: &DrawState) -> Result<Rgba, String> {
+        if !state.blend {
+            return Ok(src);
+        }
+        let dst = unpack565(self.colour[at]);
+        let (fs, fd) = (factor(state.src, src)?, factor(state.dst, src)?);
+        Ok(std::array::from_fn(|c| {
+            (src[c] * fs[c] + dst[c] * fd[c]).clamp(0.0, 1.0)
+        }))
     }
 
     fn triangle(
@@ -244,14 +285,7 @@ impl Raster {
                     combine(state.colour_op, 2)?,
                     combine(state.alpha_op, 3)?,
                 ];
-                let out = if state.blend {
-                    let dst = unpack565(self.colour[at]);
-                    let (fs, fd) = (factor(state.src, src)?, factor(state.dst, src)?);
-                    std::array::from_fn(|c| (src[c] * fs[c] + dst[c] * fd[c]).clamp(0.0, 1.0))
-                } else {
-                    src
-                };
-                self.colour[at] = pack(out);
+                self.colour[at] = pack(self.blended(src, at, state)?);
                 if state.depth_write {
                     self.depth[at] = depth;
                 }

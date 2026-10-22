@@ -8,36 +8,36 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 391 (8.3%) | 220,349 (23.0%) |
-| Recovered | 215 (4.6%) | 93,107 (9.7%) |
-| Open | 4114 | 646,283 |
+| Implemented | 396 (8.4%) | 222,631 (23.2%) |
+| Recovered | 218 (4.6%) | 93,607 (9.8%) |
+| Open | 4106 | 643,501 |
 
-`█████░░░░░░░░░░░░░░░` 23.0% implemented by bytes
+`█████░░░░░░░░░░░░░░░` 23.2% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
 | unattributed | 2977 | 354,046 | 129 | 96 | `█░░░░░░░░░` 14% |
-| physics.cpp | 110 | 64,313 | 49 | 36 | `███████░░░` 73% |
+| physics.cpp | 110 | 64,313 | 50 | 36 | `███████░░░` 73% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
 | bit.cpp | 123 | 25,393 | 10 | 4 | `█░░░░░░░░░` 10% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
-| create.cpp | 54 | 18,174 | 3 | 0 | `█░░░░░░░░░` 12% |
+| create.cpp | 54 | 18,174 | 5 | 0 | `██░░░░░░░░` 21% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
 | panel.cpp | 37 | 14,181 | 18 | 1 | `██████░░░░` 64% |
 | career.cpp | 81 | 13,988 | 38 | 9 | `█████░░░░░` 48% |
 | trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 10 | `██░░░░░░░░` 22% |
-| spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
+| spool.cpp | 41 | 12,775 | 7 | 1 | `████░░░░░░` 36% |
 | Menu.cpp | 51 | 10,954 | 0 | 0 | `░░░░░░░░░░` 0% |
 | competition.cpp | 30 | 10,871 | 0 | 2 | `░░░░░░░░░░` 0% |
 | playsel.cpp | 37 | 10,008 | 0 | 0 | `░░░░░░░░░░` 0% |
 | video.cpp | 28 | 10,005 | 4 | 14 | `██░░░░░░░░` 23% |
-| d3dtex.cpp | 20 | 9,174 | 8 | 0 | `██████░░░░` 57% |
+| d3dtex.cpp | 20 | 9,174 | 9 | 0 | `██████░░░░` 61% |
 | EquipSel.cpp | 44 | 8,492 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickwin.cpp | 17 | 8,388 | 0 | 0 | `░░░░░░░░░░` 0% |
 | camera.cpp | 22 | 8,285 | 4 | 0 | `████████░░` 77% |
@@ -47,7 +47,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
 | baddy.cpp | 10 | 6,545 | 5 | 0 | `████████░░` 80% |
 | trickdb.cpp | 22 | 6,398 | 13 | 2 | `█████████░` 89% |
-| FrontEnd2.cpp | 10 | 6,381 | 0 | 2 | `░░░░░░░░░░` 0% |
+| FrontEnd2.cpp | 10 | 6,381 | 0 | 3 | `░░░░░░░░░░` 0% |
 | WinMain.cpp | 13 | 5,956 | 0 | 3 | `░░░░░░░░░░` 0% |
 | appwin.cpp | 12 | 5,751 | 0 | 0 | `░░░░░░░░░░` 0% |
 | m3dcolij.cpp | 6 | 5,728 | 2 | 1 | `███████░░░` 71% |
@@ -62,7 +62,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | statwin.cpp | 13 | 4,153 | 0 | 0 | `░░░░░░░░░░` 0% |
 | FontTools.cpp | 20 | 4,086 | 8 | 1 | `██████░░░░` 56% |
 | dust.cpp | 7 | 3,770 | 7 | 0 | `██████████` 100% |
-| commonfe.cpp | 26 | 3,710 | 0 | 0 | `░░░░░░░░░░` 0% |
+| commonfe.cpp | 26 | 3,710 | 1 | 1 | `█░░░░░░░░░` 5% |
 | rail.cpp | 14 | 3,610 | 5 | 2 | `███████░░░` 73% |
 | CreEdit.cpp | 9 | 3,519 | 0 | 0 | `░░░░░░░░░░` 0% |
 | platform.cpp | 4 | 3,463 | 3 | 0 | `██████████` 97% |
@@ -155,7 +155,7 @@ Implemented routines and the Rust module that holds them.
 | 00406d00 | 171 | bit.cpp | collision.rs |
 | 00406e30 | 474 | bit.cpp | collision.rs |
 | 00407050 | 384 | bit.cpp | collision.rs |
-| 0040b060 | 315 | unattributed | grind.rs |
+| 0040b060 | 315 | unattributed | effects.rs |
 | 0040b650 | 1409 | camera.cpp | camera.rs |
 | 0040bd40 | 249 | camera.cpp | camera.rs |
 | 0040be70 | 508 | unattributed | camera.rs |
@@ -200,11 +200,14 @@ Implemented routines and the Rust module that holds them.
 | 00416380 | 300 | career.cpp | input.rs |
 | 00416740 | 55 | career.cpp | career.rs |
 | 004170d0 | 258 | career.cpp | fresh.rs |
+| 00418480 | 187 | commonfe.cpp | materials.rs |
 | 0041db50 | 105 | unattributed | create.rs |
 | 0041dc60 | 78 | unattributed | create.rs |
 | 0041ddb0 | 228 | cre_texset.cpp | create.rs |
 | 0041dea0 | 4264 | cre_texset.cpp | create.rs |
 | 0041ef50 | 272 | cre_texset.cpp | create.rs |
+| 0041f900 | 892 | create.cpp | materials.rs |
+| 00420420 | 666 | create.cpp | materials.rs |
 | 00422f20 | 1097 | create.cpp | create.rs |
 | 00423370 | 850 | create.cpp | create.rs |
 | 004236d0 | 302 | create.cpp | fresh.rs |
@@ -355,6 +358,7 @@ Implemented routines and the Rust module that holds them.
 | 0049c060 | 716 | physics.cpp | ground.rs |
 | 0049c330 | 1172 | physics.cpp | ground.rs |
 | 0049c7d0 | 120 | physics.cpp | ground.rs |
+| 0049c8d0 | 160 | physics.cpp | effects.rs |
 | 0049d080 | 612 | physics.cpp | ground.rs |
 | 0049d480 | 690 | physics.cpp | ground.rs |
 | 0049d9c0 | 271 | physics.cpp | ground.rs |
@@ -494,6 +498,7 @@ Implemented routines and the Rust module that holds them.
 | 004d9630 | 592 | d3dtex.cpp | font.rs |
 | 004d9950 | 1465 | d3dtex.cpp | sprite.rs |
 | 004d9f50 | 770 | d3dtex.cpp | materials.rs |
+| 004da260 | 377 | d3dtex.cpp | materials.rs |
 | 004da3e0 | 23 | d3dtex.cpp | materials.rs |
 | 004da680 | 242 | unattributed | bitmap.rs |
 | 004da780 | 184 | unattributed | font.rs |
@@ -550,6 +555,7 @@ Implemented routines and the Rust module that holds them.
 | 00416980 | 127 | career.cpp |
 | 00416f80 | 43 | career.cpp |
 | 00417330 | 145 | unattributed |
+| 004182e0 | 78 | commonfe.cpp |
 | 00419420 | 57 | unattributed |
 | 00419600 | 627 | competition.cpp |
 | 0041b540 | 69 | competition.cpp |
@@ -565,6 +571,7 @@ Implemented routines and the Rust module that holds them.
 | 00452de0 | 28 | unattributed |
 | 00452ff0 | 3985 | FrontEnd2.cpp |
 | 004544a0 | 615 | FrontEnd2.cpp |
+| 004547f0 | 315 | FrontEnd2.cpp |
 | 00458500 | 400 | unattributed |
 | 0045c390 | 130 | unattributed |
 | 004628f0 | 182 | unattributed |
@@ -650,6 +657,7 @@ Implemented routines and the Rust module that holds them.
 | 004ad9f0 | 17 | unattributed |
 | 004b0cd0 | 101 | skatmgr.cpp |
 | 004b1430 | 109 | skatmgr.cpp |
+| 004b4e00 | 107 | spool.cpp |
 | 004baeb0 | 157 | unattributed |
 | 004bb240 | 132 | unattributed |
 | 004bb2d0 | 262 | unattributed |
@@ -750,4 +758,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 0040b1d0, 0040f850, 00457940, 0046d160, 0049fef0, 004a07e0, 004b9860, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0
+Status entries outside the function inventory: 0040b1d0, 0040f850, 00457940, 0046d160, 0049fef0, 004a07e0, 004b9860, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d66f0, 004d68b0

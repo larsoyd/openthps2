@@ -192,3 +192,60 @@ pub fn apply_logos(
     }
     Ok(())
 }
+
+/// Tony Hawk's first deck as the deck table names it.
+pub const TONY_HAWK_DECK: &str = "s2dBi01a.bmp";
+
+/// Paints the chosen deck over the board texture with the most colours and returns its checksum.
+/// The game reads the deck's in-game bitmap, its third letter g where the table has d.
+pub fn apply_deck(
+    textures: &mut [Texture],
+    archive: &Archive,
+    board: &crate::psx::Model,
+    checksums: &[u32],
+    deck: &str,
+) -> Result<u32, String> {
+    let mut used: Vec<u32> = Vec::new();
+    for face in &board.faces {
+        if let Some(c) = face.texture_index.and_then(|i| checksums.get(i as usize))
+            && !used.contains(c)
+        {
+            used.push(*c);
+        }
+    }
+    let colours = |checksum: u32| {
+        let t = textures.iter().find(|t| t.checksum == checksum)?;
+        let mut pixels = t.surface_1555().pixels;
+        pixels.sort_unstable();
+        pixels.dedup();
+        Some(pixels.len())
+    };
+    let mut best = None;
+    for &c in &used {
+        let n = colours(c).ok_or_else(|| format!("[deck] board texture={c:08X} not loaded"))?;
+        if best.is_none_or(|(_, m)| n > m) {
+            best = Some((c, n));
+        }
+    }
+    let (checksum, _) = best.ok_or("[deck] board has no texture")?;
+    let path = format!("data/{}g{}", &deck[..2], &deck[3..]);
+    let entry = archive
+        .entries()
+        .iter()
+        .find(|e| e.path().eq_ignore_ascii_case(&path))
+        .ok_or_else(|| format!("[deck] checksum={checksum:08X} missing={path}"))?;
+    let image = Bitmap::parse(archive.read(entry.path()).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("[deck] entry={path} {e}"))?;
+    let texture = textures
+        .iter_mut()
+        .find(|t| t.checksum == checksum)
+        .unwrap();
+    if [image.width, image.height] != texture.logical_size {
+        return Err(format!(
+            "[deck] entry={path} size={}x{} board={}x{}",
+            image.width, image.height, texture.logical_size[0], texture.logical_size[1]
+        ));
+    }
+    texture.source = TextureSource::Bitmap { path, image };
+    Ok(checksum)
+}

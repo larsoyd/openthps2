@@ -52,6 +52,72 @@ pub fn spray_origin(world: &CollisionWorld, hook: V3) -> Result<SprayOrigin, Str
     })
 }
 
+/// The flight of a spark the run threw.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flight {
+    Blood(Blood),
+    Rail(RailSpark),
+}
+
+/// Two argument arc tangent in 4096 units per turn, truncated.
+fn ratan2(y: i32, x: i32) -> i32 {
+    (f64::from(y).atan2(f64::from(x)) * 651.898_628_763_671_2) as i32
+}
+
+/// Pitch and yaw of a drawing matrix, as the skater's angles are kept.
+pub fn aim(m: [i16; 9]) -> [i32; 2] {
+    let m = m.map(i32::from);
+    let flat = crate::skater::sqrt_int(m[8] * m[8] + m[2] * m[2]);
+    [ratan2(-m[5], flat), ratan2(m[2], m[8])]
+}
+
+const RAIL_SPARK_DROP: i32 = 0x19000;
+const RAIL_SPARK_FALL: i32 = 0x1000;
+const RAIL_SPARK_RED: u8 = 0x80;
+
+/// A rail spark: a point below the skater's feet that it carries along, thrown along the board's
+/// aim, drawn as a line from where it was to where it is, fading from red to black.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RailSpark {
+    offset: V3,
+    velocity: V3,
+    pub ends: [V3; 2],
+    pub green: u8,
+}
+
+impl RailSpark {
+    pub fn thrown(at: V3, aim: [i32; 2], spread: [i32; 2], speed: i32, green: i32) -> Self {
+        let (pitch, yaw) = (aim[0] + spread[0], aim[1] + spread[1]);
+        let reach = (rcos(pitch) * speed) >> 12;
+        let offset = [0, RAIL_SPARK_DROP, 0];
+        let start = std::array::from_fn(|a| offset[a] + at[a]);
+        Self {
+            offset,
+            velocity: [
+                -(reach * rsin(yaw)),
+                rsin(pitch) * speed,
+                -(reach * rcos(yaw)),
+            ],
+            ends: [start, start],
+            green: green as u8,
+        }
+    }
+
+    /// Moves with the skater: both ends sit on its new position, the old offset and the new.
+    pub fn update(&mut self, skater: V3) {
+        let place = |o: V3| -> V3 { std::array::from_fn(|a| o[a].wrapping_add(skater[a])) };
+        self.ends[1] = place(self.offset);
+        let accel = [0, RAIL_SPARK_FALL, 0];
+        let axes = self.offset.iter_mut().zip(&mut self.velocity).zip(accel);
+        for ((o, v), a) in axes {
+            *o = o.wrapping_add(*v);
+            let sped = v.wrapping_add(a);
+            *v = sped - (sped >> 3);
+        }
+        self.ends[0] = place(self.offset);
+    }
+}
+
 /// A drop of a blood spray: Q12 flight with its own fall, damped by an eighth a frame, a dot
 /// of one or two pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,12 +173,12 @@ const EFFECTS_ABR: u8 = 1;
 /// The handlers drop a primitive wider or taller than these.
 const MAX_SPAN: [f32; 2] = [1024.0, 512.0];
 
-/// A PS1 primitive the effects pass puts in the ordering table: its screen corners, flat colour,
-/// slot and the depth the PC handler draws it at.
+/// A PS1 primitive the effects pass puts in the ordering table: its screen corners, flat colour
+/// or a colour per corner for a line, slot and the depth the PC handler draws it at.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Prim {
     pub corners: Vec<[i16; 2]>,
-    pub rgb: [u8; 3],
+    pub colours: Vec<[u8; 3]>,
     pub semi: bool,
     pub abr: u8,
     pub slot: i32,
@@ -172,7 +238,7 @@ impl View {
         let (slot, z) = self.slot_depth(depth);
         Prim {
             corners,
-            rgb: p.shown,
+            colours: vec![p.shown; 3],
             semi: true,
             abr: EFFECTS_ABR,
             slot,
@@ -192,8 +258,29 @@ impl View {
         let (right, down) = (x.wrapping_add(b.size), y.wrapping_add(b.size));
         Some(Prim {
             corners: vec![[x, y], [right, y], [right, down], [x, down]],
-            rgb: BLOOD_RGB,
+            colours: vec![BLOOD_RGB; 4],
             semi: false,
+            abr: EFFECTS_ABR,
+            slot,
+            z,
+        })
+    }
+}
+
+impl View {
+    /// A rail spark's line when both ends sit between the near and far planes, additive, slotted
+    /// by the nearer end.
+    pub fn rail_spark(&self, s: &RailSpark) -> Option<Prim> {
+        let [(now, d0), (was, d1)] = s.ends.map(|e| self.gte(self.relative(e), -0x400));
+        let (near, far) = (self.viewport.near, self.viewport.far);
+        if [d0, d1].iter().any(|&d| d < near || d > far) {
+            return None;
+        }
+        let (slot, z) = self.slot_depth(d0.min(d1));
+        Some(Prim {
+            corners: vec![now, was],
+            colours: vec![[RAIL_SPARK_RED, s.green, 0], [0; 3]],
+            semi: true,
             abr: EFFECTS_ABR,
             slot,
             z,
@@ -209,7 +296,8 @@ impl Prim {
             let v = self.corners.iter().map(|c| f32::from(c[a]));
             v.clone().fold(f32::MIN, f32::max) - v.fold(f32::MAX, f32::min)
         };
-        if span(0) > MAX_SPAN[0] || span(1) > MAX_SPAN[1] {
+        // the line handler draws without the size gate
+        if self.corners.len() != 2 && (span(0) > MAX_SPAN[0] || span(1) > MAX_SPAN[1]) {
             return None;
         }
         let (alpha, blend) = match (self.semi, self.abr) {
@@ -219,12 +307,15 @@ impl Prim {
             (true, 2) => (0, 4),
             (true, _) => (0x40, 2),
         };
-        let [r, g, b] = self.rgb.map(|c| u32::from(gamma[usize::from(c)]));
-        let diffuse = alpha << 24 | r << 16 | g << 8 | b;
         let vertices = self
             .corners
             .iter()
-            .map(|c| ScreenVertex {
+            .zip(&self.colours)
+            .map(|(c, rgb)| {
+                let [r, g, b] = rgb.map(|c| u32::from(gamma[usize::from(c)]));
+                (c, alpha << 24 | r << 16 | g << 8 | b)
+            })
+            .map(|(c, diffuse)| ScreenVertex {
                 x: f32::from(c[0]),
                 y: f32::from(c[1]),
                 z: self.z,

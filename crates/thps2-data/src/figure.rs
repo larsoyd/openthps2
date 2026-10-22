@@ -94,7 +94,7 @@ pub fn shadow_colour(brightness: i32) -> u32 {
 }
 
 /// Part names of a model header file, as the defines list them, without the skater prefix.
-fn part_names(header: &str) -> Result<Vec<String>, String> {
+pub(crate) fn part_names(header: &str) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
     for line in header.lines().filter(|l| l.starts_with("#define ")) {
         let mut words = line.split_whitespace().skip(1);

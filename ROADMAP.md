@@ -12,7 +12,7 @@ modern platforms and community creation. Current progress is in [PROGRESS.md](PR
 - **Original audio** - sound effects, music and movies from your own game data, with independent volumes and playlists
   of your own music. Improved from the original which was plagued with bugs due to the DirectSound wrappers for the audio routines that were originally written around the PlayStation’s SPU (Sound Processing Unit)
 - **Compatible saves and parks** - career saves and created parks that load in both OpenTHPS2 and the original game (as long as both are built for the Classic Renderer),
-  plus automatic backups and portable profiles.
+  plus automatic backups (autosave) and portable profiles.
 
 ## Platforms and presentation
 

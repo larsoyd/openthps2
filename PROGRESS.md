@@ -8,8 +8,8 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 356 (7.5%) | 208,946 (21.8%) |
-| Recovered | 214 (4.5%) | 79,809 (8.3%) |
+| Implemented | 357 (7.6%) | 209,300 (21.8%) |
+| Recovered | 213 (4.5%) | 79,455 (8.3%) |
 | Open | 4150 | 670,984 |
 
 `████░░░░░░░░░░░░░░░░` 21.8% implemented by bytes
@@ -18,7 +18,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 117 | 97 | `█░░░░░░░░░` 13% |
+| unattributed | 2977 | 354,046 | 118 | 96 | `█░░░░░░░░░` 13% |
 | physics.cpp | 110 | 64,313 | 48 | 37 | `███████░░░` 72% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
@@ -340,6 +340,7 @@ Implemented routines and the Rust module that holds them.
 | 0049f780 | 1875 | platform.cpp | objects.rs |
 | 004a03e0 | 802 | platform.cpp | objects.rs |
 | 004a1060 | 469 | unattributed | objects.rs |
+| 004a12d0 | 354 | unattributed | objects.rs |
 | 004a7c50 | 1275 | powerup.cpp | pickups.rs |
 | 004a8300 | 789 | powerup.cpp | pickups.rs |
 | 004a8620 | 195 | powerup.cpp | pickups.rs |
@@ -608,7 +609,6 @@ Implemented routines and the Rust module that holds them.
 | 0049d8a0 | 283 | physics.cpp |
 | 0049dad0 | 168 | physics.cpp |
 | 0049e570 | 268 | physics.cpp |
-| 004a12d0 | 354 | unattributed |
 | 004aa410 | 16 | rail.cpp |
 | 004aa420 | 16 | rail.cpp |
 | 004ab9c0 | 21 | unattributed |

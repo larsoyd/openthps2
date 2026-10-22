@@ -1775,10 +1775,8 @@ impl Skater {
                                     WorldEvent::Visible(checksum, false)
                                 });
                             }
-                            kind @ (MOVING_OBJECT | SIGNALLED_OBJECT) if !loud => {
-                                return Err(format!(
-                                    "command point node={node} quiet kill of node={link} kind={kind} unsupported"
-                                ));
+                            MOVING_OBJECT | SIGNALLED_OBJECT if !loud => {
+                                self.world_events.push(WorldEvent::Die(link))
                             }
                             MOVING_OBJECT | SIGNALLED_OBJECT => self
                                 .world_events
@@ -2603,6 +2601,10 @@ impl Skater {
             1 | 5 => {
                 if !braking || speed < (i32::from(anim.frame) << 12) + threshold {
                     self.anim.reverse();
+                    // a fast slide that ends still braking picks one of two sounds at random
+                    if self.brake_mode == 1 && braking {
+                        self.rng.next(0x80);
+                    }
                     self.brake_mode = if self.brake_mode == 1 { 3 } else { 6 };
                 }
                 self.push_cooldown = 2;
@@ -3155,6 +3157,7 @@ pub fn brake_threshold(ground_normal: V3) -> i32 {
 pub fn ground_step(
     level: &Level,
     s: &mut Skater,
+    props: &mut [Prop],
     rules: Rules,
     frame: FrameScale,
     pad: Pad,
@@ -3173,6 +3176,12 @@ pub fn ground_step(
     let half_push = frame_part(accel, frame.scale_squared)?.map(|c| c / 2);
     let travel = add(frame_part(s.velocity, frame.scale)?, half_push)?;
     s.position = add(s.position, travel)?;
+    for prop in props.iter_mut() {
+        if prop.bumped(level.props, s.old_position, s.position) {
+            let push = s.velocity;
+            prop.knock(s, push)?;
+        }
+    }
     if !vert
         && !s.bailing
         && s.fakie_flip()
@@ -3546,6 +3555,8 @@ pub enum WorldEvent {
     Prop(usize),
     /// A kill reached the objects of this node, with the skater's velocity when it was sent.
     Touch(usize, V3),
+    /// A quiet kill reached the objects of this node.
+    Die(usize),
     Signal(usize),
     /// A pulse reached the powerup of this node.
     Pickup(usize),
@@ -3670,7 +3681,7 @@ impl Run {
             ..*level
         };
         let frame = self.clock.current();
-        let outcome = step(&live, &mut self.skater, rules, frame, pad)?;
+        let outcome = step_with(&live, &mut self.skater, &mut self.props, rules, frame, pad)?;
         self.skater.probe_shadow(live.world)?;
         self.take_pickup()?;
         self.clock.end_frame(self.vb);
@@ -3755,6 +3766,14 @@ impl Run {
                 WorldEvent::Prop(node) => self
                     .props
                     .insert(0, Prop::new(node, &level.triggers.object(node)?)),
+                WorldEvent::Die(node) => {
+                    if self.props.iter().any(|p| p.node == node) {
+                        return Err(format!("quiet kill of prop node={node} unsupported"));
+                    }
+                    for object in self.objects.iter_mut().filter(|o| o.node == node) {
+                        object.die(&mut self.skater, level.triggers)?;
+                    }
+                }
                 WorldEvent::Touch(node, push) => {
                     if self.objects.iter().any(|o| o.node == node) {
                         return Err(format!(
@@ -3800,6 +3819,18 @@ impl Run {
 pub fn step(
     level: &Level,
     s: &mut Skater,
+    rules: Rules,
+    frame: FrameScale,
+    pad: Pad,
+) -> Result<Outcome, String> {
+    step_with(level, s, &mut [], rules, frame, pad)
+}
+
+/// One skater frame among the level's props, which the ground move can knock over.
+pub fn step_with(
+    level: &Level,
+    s: &mut Skater,
+    props: &mut [Prop],
     rules: Rules,
     frame: FrameScale,
     pad: Pad,
@@ -3861,7 +3892,9 @@ pub fn step(
         _ => {}
     }
     let outcome = match s.state {
-        State::Ground | State::Stopped | State::Vert => ground_step(level, s, rules, frame, pad),
+        State::Ground | State::Stopped | State::Vert => {
+            ground_step(level, s, props, rules, frame, pad)
+        }
         State::Air => air_step(level, s, rules, frame, pad),
         State::Wall => wall::wall_step(level, s, rules, frame),
         State::VertPop => {

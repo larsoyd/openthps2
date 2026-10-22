@@ -55,6 +55,8 @@ const TURN_MIN: i16 = 0x28;
 #[derive(Clone, Debug, Default)]
 pub struct PropModels {
     sizes: HashMap<u32, [u16; 3]>,
+    /// Model box corners in whole units, the smallest then the largest.
+    boxes: HashMap<u32, [[i32; 3]; 2]>,
     panes: HashMap<u32, Vec<Pane>>,
 }
 
@@ -65,11 +67,13 @@ impl PropModels {
             .iter()
             .find(|c| c.kind == crate::collision::COLOUR_TABLE_KIND)
             .map(|c| c.payload.as_slice());
-        let (mut sizes, mut panes) = (HashMap::new(), HashMap::new());
+        let (mut sizes, mut boxes, mut panes) = (HashMap::new(), HashMap::new(), HashMap::new());
         for m in &scene.models {
             let w = |k: usize| i16::from_le_bytes([m.header[12 + 2 * k], m.header[13 + 2 * k]]);
             let size = [0, 1, 2].map(|a| w(2 * a).wrapping_sub(w(2 * a + 1)) as u16);
             sizes.entry(m.checksum).or_insert(size);
+            let corner = |k: usize| [0, 1, 2].map(|a| i32::from(w(2 * a + k)));
+            boxes.entry(m.checksum).or_insert([corner(1), corner(0)]);
             if let Entry::Vacant(e) = panes.entry(m.checksum) {
                 e.insert(
                     model_panes(m, colours)
@@ -77,7 +81,11 @@ impl PropModels {
                 );
             }
         }
-        Ok(Self { sizes, panes })
+        Ok(Self {
+            sizes,
+            boxes,
+            panes,
+        })
     }
 }
 
@@ -460,6 +468,22 @@ impl Prop {
     }
 
     /// A kill knocks a bouncy prop off with the skater's speed, turning it toward random angles.
+    /// A bouncy prop at rest whose model box comes within twenty units of the skater's move.
+    pub(super) fn bumped(&self, models: &PropModels, from: V3, to: V3) -> bool {
+        if self.kind == 0 || self.bouncing || self.dead {
+            return false;
+        }
+        let Some([min, max]) = self.model.and_then(|m| models.boxes.get(&m)) else {
+            return false;
+        };
+        (0..3).all(|a| {
+            let (lo, hi) = (from[a].min(to[a]), from[a].max(to[a]));
+            let reach = 20 << 12;
+            (min[a] << 12) + self.position[a] <= hi + reach
+                && lo - reach <= (max[a] << 12) + self.position[a]
+        })
+    }
+
     pub(super) fn knock(&mut self, s: &mut Skater, push: [i32; 3]) -> Result<(), String> {
         if self.kind == 0 || self.bouncing || self.dead {
             return Err(format!(
@@ -642,6 +666,7 @@ pub struct ScriptObject {
     labels: [Option<usize>; 8],
     wait: u32,
     active: bool,
+    dead: bool,
 }
 
 impl ScriptObject {
@@ -653,7 +678,17 @@ impl ScriptObject {
             labels: [None; 8],
             wait: 0,
             active: true,
+            dead: false,
         }
+    }
+
+    /// Dying pulses the links once and stops the script.
+    pub(super) fn die(&mut self, s: &mut Skater, triggers: &Triggers) -> Result<(), String> {
+        if !std::mem::replace(&mut self.dead, true) {
+            s.pulse_links(triggers, self.node, 0)?;
+        }
+        self.active = false;
+        Ok(())
     }
 
     fn word(&mut self) -> Result<u16, String> {

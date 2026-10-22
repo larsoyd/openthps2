@@ -10,8 +10,8 @@
   <rect width="640" height="34" rx="17" fill="#c6c7c9"/>
   <g clip-path="url(#track)">
     <rect x="2" y="2" width="636" height="30" fill="#2a2223"/>
-    <rect x="140" y="2" width="53" height="30" fill="#8d8f93"/>
-    <rect x="2" y="2" width="138" height="30" fill="url(#done)"/>
+    <rect x="141" y="2" width="53" height="30" fill="#8d8f93"/>
+    <rect x="2" y="2" width="139" height="30" fill="url(#done)"/>
   </g>
   <text x="320.0" y="22.0" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="14" font-weight="bold" fill="#ffffff" stroke="#000000" stroke-width="3" paint-order="stroke">21.8% reimplemented, 8.3% more recovered</text>
 </svg>

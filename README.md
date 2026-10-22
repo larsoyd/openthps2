@@ -36,7 +36,7 @@ Career mode is on its way. Goals, cash, pickups and the career save format alrea
 hood, but there is no career menu yet. Menus, audio, the other levels and multiplayer are still to come, and some moves
 can still end a session with a message about an unsupported situation.
 
-<!-- progress --> 21.8% of the executable implemented by bytes (356 of 4720 functions), 8.3% more recovered. <!-- /progress -->
+<!-- progress --> 21.8% of the executable implemented by bytes (357 of 4720 functions), 8.3% more recovered. <!-- /progress -->
 Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 
 ## Highlights

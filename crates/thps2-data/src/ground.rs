@@ -423,6 +423,8 @@ pub struct Skater {
     /// Turn within the current half turn on the ground, a lip or in the air, and the half turns done.
     pub spin_angle: i32,
     pub spins: i32,
+    /// Bails that asked for a blood spray, whose sparks this port does not throw yet.
+    pub blood_sprays: u32,
     /// Frame time since up has been held alone, zero while it is not.
     pub up_since: i32,
     /// Angle between the velocity and the lip face summed while riding it, 1024 per quarter turn.
@@ -848,6 +850,7 @@ impl Skater {
             quiet_since: 0,
             spin_angle: 0,
             spins: 0,
+            blood_sprays: 0,
             up_since: 0,
             lip_angle: 0,
             bailing: false,
@@ -2330,8 +2333,7 @@ impl Skater {
                 0x2d | 0x4e | 0x51 => pc += 2,
                 // clears the spin lock, which no ported op sets
                 0x3c => {}
-                // asks for a blood splat, which is only drawn
-                0x30 => {}
+                0x30 => self.blood_sprays += 1,
                 0x4b if dot_q12(self.forward, self.velocity) < -0x800 => pc = scripts.offset(pc)?,
                 0x4b => pc += 2,
                 0x4c if scripts.byte(pc) == Some(native_state(self.state)) => {

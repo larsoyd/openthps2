@@ -1,6 +1,5 @@
 use crate::{
     anim::AnimationTable,
-    camera::{Camera, Moment, Tripod},
     collision::CollisionWorld,
     figure::{
         Figure, HANGAR_LIGHT, HANGAR_LIGHT_SCALE, Placement, Shared, object_matrix, shadow_colour,
@@ -228,7 +227,6 @@ fn load_figure(archive: &Archive) -> Result<(Figure, Vec<crate::materials::Surfa
 /// One single session: the run, the camera following it and the end screens, one frame at a time.
 pub struct Session {
     pub run: Run,
-    pub camera: Camera,
     pub fixes: Fixes,
     screens: EndScreens,
     text: TrickText,
@@ -242,14 +240,8 @@ impl Session {
     pub fn start(hangar: &Hangar) -> Result<Self, String> {
         let level = hangar.level();
         let run = Run::start(&level, hangar.triggers.restart_named("Start")?)?;
-        let camera = Camera::settled(
-            &Tripod::of(&run.skater),
-            level.world,
-            crate::ground::DESIGN_FRAME.scale,
-        )?;
         Ok(Self {
             run,
-            camera,
             fixes: Fixes::default(),
             screens: EndScreens::default(),
             text: TrickText::default(),
@@ -273,15 +265,6 @@ impl Session {
         let tricks = self
             .text
             .pass(&hangar.trick_font, &mut self.run.skater, self.fixes)?;
-        let s = &self.run.skater;
-        let moment = Moment {
-            step: self.run.clock.current().scale,
-            time_up: s.session.time_up,
-            orbit: s.session.time_up && s.session.wind < 40 && s.idle(),
-            paused: s.session.ended,
-        };
-        let world = self.run.world.as_ref().unwrap_or(level.world);
-        self.camera.update(&Tripod::of(s), world, moment)?;
         self.figure = self.figure_polys(hangar)?;
         let s = &self.run.skater;
         let time = self.run.clock.current().time;
@@ -300,7 +283,7 @@ impl Session {
     /// The frame's draws as the original issues them: the level by depth, then the overlay
     /// newest first.
     pub fn draws<'h>(&self, hangar: &'h Hangar) -> Result<Vec<FrameDraw<'h>>, String> {
-        let view = View::new(self.camera.eye, &self.camera.matrix, HANGAR_VIEWPORT);
+        let view = View::new(self.run.camera.eye, &self.run.camera.matrix, HANGAR_VIEWPORT);
         let hidden: Vec<usize> = self
             .run
             .world
@@ -314,7 +297,7 @@ impl Session {
             hidden: &|i| hidden.binary_search(&i).is_ok(),
         };
         let gamma = gamma_table(0);
-        let mut polys = view.level(&level, &self.camera.matrix)?;
+        let mut polys = view.level(&level, &self.run.camera.matrix)?;
         polys.extend(self.props(hangar, &view)?);
         polys.extend(self.figure.iter().cloned());
         let mut draws: Vec<FrameDraw> = view
@@ -437,7 +420,7 @@ impl Session {
             )
         })?;
         let pose = hangar.figure.rig.pose(frame);
-        let view = View::new(self.camera.eye, &self.camera.matrix, HANGAR_VIEWPORT);
+        let view = View::new(self.run.camera.eye, &self.run.camera.matrix, HANGAR_VIEWPORT);
         let basis = tilted_basis(s.basis_matrix(), s.balance.angle);
         let place = Placement {
             pose: &pose,
@@ -505,7 +488,7 @@ impl Session {
             bias: &render::hangar_bias,
             hidden: &|_| false,
         };
-        let mut polys = view.items(&bank, &placed, &self.camera.matrix)?;
+        let mut polys = view.items(&bank, &placed, &self.run.camera.matrix)?;
         for p in &mut polys {
             p.texture = p.texture.map(|t| t + hangar.object_textures as u32);
         }

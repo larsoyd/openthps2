@@ -1,4 +1,5 @@
 use crate::anim::{AnimState, AnimationTable};
+use crate::camera::{Camera, Moment, Tripod};
 use crate::career::{CareerEvent, CareerRun, GoalKind};
 use crate::collision::{CollisionWorld, Hit, Particle, shatter_draws};
 use crate::input::{KeyTable, Presses};
@@ -425,6 +426,8 @@ pub struct Skater {
     pub spins: i32,
     /// Bails that asked for a blood spray, whose sparks this port does not throw yet.
     pub blood_sprays: u32,
+    /// Where the follow camera stood after the last frame, the air pitch turns by it.
+    pub camera: V3,
     /// Frame time since up has been held alone, zero while it is not.
     pub up_since: i32,
     /// Angle between the velocity and the lip face summed while riding it, 1024 per quarter turn.
@@ -851,6 +854,7 @@ impl Skater {
             spin_angle: 0,
             spins: 0,
             blood_sprays: 0,
+            camera: [0; 3],
             up_since: 0,
             lip_angle: 0,
             bailing: false,
@@ -1436,11 +1440,10 @@ impl Skater {
         Ok(())
     }
 
-    /// The original flips the pitch when the forward axis points away from the camera. Until the
-    /// camera is ported it is taken to trail the skater along the level velocity.
+    /// The original flips the pitch when the forward axis points away from the camera.
     fn facing_from_camera(&self) -> bool {
-        let [x, _, z] = self.velocity;
-        dot_q12(self.forward, [x, 0, z]) > 0
+        let away = std::array::from_fn(|i| self.position[i].wrapping_sub(self.camera[i]));
+        dot_q12(self.forward, away) > 0
     }
 
     /// Pitch about the lateral axis keeping the point 70 units up the old up axis in place, skipped
@@ -2026,6 +2029,8 @@ impl Skater {
         (self.last_normal, self.smoothed_up, self.same_normal_time) = (WORLD_UP, WORLD_UP, 0);
         self.smooth_basis();
         self.position = world.move_retrying(self.position, add(hit.position_fixed, normal)?)?;
+        // a bounce out of a vert pop ends it
+        self.set_state(State::Air);
         self.jumped = true;
         self.wall_response(normal, WALL_TURN)?;
         self.velocity = add(self.velocity, normal.map(|c| c / 4))?;
@@ -3487,6 +3492,8 @@ pub struct Run {
     pub pickups: Vec<Pickup>,
     /// Glass particles, the newest first, which draw random numbers right after the skaters.
     pub particles: Vec<Particle>,
+    /// The follow camera, which moves in the overlay pass after each frame.
+    pub camera: Camera,
     pub career: Option<CareerRun>,
 }
 
@@ -3509,6 +3516,7 @@ impl Run {
         skater.pulse_links(level.triggers, restart.node_index, 0)?;
         let mut clock = FrameClock::default();
         clock.reset(0);
+        let camera = Camera::settled(&Tripod::of(&skater), level.world, DESIGN_FRAME.scale)?;
         let mut run = Self {
             skater,
             clock,
@@ -3519,6 +3527,7 @@ impl Run {
             props: Vec::new(),
             pickups: Vec::new(),
             particles: Vec::new(),
+            camera,
             career,
         };
         run.apply_world_events(level)?;
@@ -3528,6 +3537,26 @@ impl Run {
     }
 
     pub fn frame(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
+        let outcome = self.advance(level, rules, pad)?;
+        self.follow(level)?;
+        Ok(outcome)
+    }
+
+    fn follow(&mut self, level: &Level) -> Result<(), String> {
+        let s = &self.skater;
+        let moment = Moment {
+            step: self.clock.current().scale,
+            time_up: s.session.time_up,
+            orbit: s.session.time_up && s.session.wind < 40 && s.idle(),
+            paused: s.session.ended,
+        };
+        let world = self.world.as_ref().unwrap_or(level.world);
+        self.camera.update(&Tripod::of(s), world, moment)?;
+        self.skater.camera = self.camera.position;
+        Ok(())
+    }
+
+    fn advance(&mut self, level: &Level, rules: Rules, pad: Pad) -> Result<Outcome, String> {
         self.ticks += 2;
         self.skater.text_events.clear();
         if self.skater.session.ended {

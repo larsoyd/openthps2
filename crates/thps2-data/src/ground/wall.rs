@@ -15,7 +15,7 @@ const WALL_REACH: i32 = 0x74;
 
 impl Skater {
     /// A wall hit with the grind button held rides the wall, unless the approach is head on,
-    /// the face overhangs or the skater is tipped.
+    /// the face overhangs, the skater is tipped or a trick is still in its move.
     pub(super) fn enter_wall(&mut self, level: &Level, hit: &Hit) -> Result<(), String> {
         let (world, table, scripts) = (level.world, level.table, level.tricks);
         let n = hit.normal.map(i32::from);
@@ -24,12 +24,10 @@ impl Skater {
         if n[1] > OVERHANG
             || dot_q12(heading, flat_normal).abs() >= HEAD_ON
             || self.up[1] >= RIDE_UPRIGHT
+            || (self.trick_running && !self.script_ended)
         {
             self.position = self.old_position;
             return self.start_bail(table, scripts, 0, false);
-        }
-        if self.trick_running && !self.script_ended {
-            return Err("wallride during a trick move bail unsupported".into());
         }
         self.script_ended = true;
         self.set_state(State::Wall);

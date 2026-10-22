@@ -46,7 +46,7 @@ Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 - **Modern displays** - high resolutions, widescreen and high refresh rates, with the original 30 Hz simulation kept intact.
 - **Improved Draw Distance and Memory** - The default renderer running on your GPU offer improvements like no limits on draw distance or memory allowing for larger skate parks, more content, and more.
 - **Bugs fixed** - clear mistakes of the original are corrected and listed in [BUGFIXES.md](BUGFIXES.md).
-- **Your saves keep working** - career saves and created parks from the original game stay compatible with OpenTHPS2.
+- **Your saves keep working** - career saves and created parks made for the Classic Renderer stay compatible with the original and OpenTHPS2.
 - **Made for modding** - custom skaters, levels and trick scripts are part of the plan from the start.
 
 Faithful comes first: anything that changes how the game plays, such as cheats or mods, will always be

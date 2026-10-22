@@ -49,7 +49,7 @@ Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 - **Your saves keep working** - career saves and created parks from the original game stay compatible with OpenTHPS2.
 - **Made for modding** - custom skaters, levels and trick scripts are part of the plan from the start.
 
-Faithful comes first: anything that changes how the game plays, such as cheats or rebalanced physics, will always be
+Faithful comes first: anything that changes how the game plays, such as cheats or mods, will always be
 something you switch on yourself. Everything that is planned is in the [roadmap](ROADMAP.md).
 
 ### Controls

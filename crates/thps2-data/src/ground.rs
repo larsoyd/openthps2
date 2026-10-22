@@ -1723,7 +1723,8 @@ impl Skater {
         if delta == [0; 3] {
             return Ok(());
         }
-        let back = normalize(delta).map(|c| c * 16);
+        // a move under a whole unit gives no direction, so the sweep starts at the old position
+        let back = crate::collision::calc_unit(delta).map(|c| c * 16);
         let start = std::array::from_fn(|a| self.old_position[a] - back[a]);
         let fired = level.world.crossed_triggers(start, self.position)?;
         for &checksum in &fired {
@@ -2210,6 +2211,9 @@ impl Skater {
                     self.frozen = short(pc)? != 0;
                     pc += 2;
                 }
+                // the stance byte the switch bit is compared with is taken as regular
+                0x3a if self.switched => pc = scripts.offset(pc)?,
+                0x3a => pc += 2,
                 0x43 if self.switched => pc = scripts.offset(pc)?,
                 0x43 => pc += 2,
                 0x42 => {

@@ -584,7 +584,7 @@ pub fn shatter_draws(
 }
 
 /// The unit vector of the vector library, from the whole units of each axis.
-fn calc_unit(v: [i32; 3]) -> [i32; 3] {
+pub(crate) fn calc_unit(v: [i32; 3]) -> [i32; 3] {
     let len = whole_length(v);
     if len == 0 { [0; 3] } else { v.map(|c| c / len) }
 }

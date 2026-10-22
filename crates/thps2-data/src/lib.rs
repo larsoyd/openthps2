@@ -13,6 +13,7 @@ pub mod hangar;
 pub mod hud;
 pub mod input;
 pub mod materials;
+pub mod options;
 pub mod pkr;
 pub mod pose;
 pub mod pre;

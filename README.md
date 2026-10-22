@@ -9,7 +9,7 @@
   <a href="https://bevyengine.org/"><img src="https://img.shields.io/badge/Engine-Bevy_0.18-b6963c.svg" alt="Bevy 0.18"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-c6c7c9.svg" alt="MIT license"></a>
   <a href="#status"><img src="https://img.shields.io/badge/Status-in_development-4e3938.svg" alt="In development"></a>
-  <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-18.5%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>
+  <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-18.9%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@ original game frame by frame on recorded inputs: skating, ollies, flips, grabs, 
 bails, specials, scoring and combos, the scripted level events and moving props, the two minute clock, the end of the
 run and Retry. The session is drawn like the original: the level, the skater, the camera, the HUD, the trick text and
 the end screens equal the original's frames within a small per pixel tolerance. Particles, career mode, the menus,
-audio and the other levels are open. <!-- progress --> 18.5% of the executable implemented by bytes (283 of 4720 functions), 9.1% more recovered. <!-- /progress -->
+audio and the other levels are open. <!-- progress --> 18.9% of the executable implemented by bytes (292 of 4720 functions), 9.1% more recovered. <!-- /progress -->
 Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 
 ## Requirements

@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 283 (6.0%) | 177,646 (18.5%) |
+| Implemented | 292 (6.2%) | 181,799 (18.9%) |
 | Recovered | 218 (4.6%) | 87,068 (9.1%) |
-| Open | 4219 | 695,025 |
+| Open | 4210 | 690,872 |
 
-`████░░░░░░░░░░░░░░░░` 18.5% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 18.9% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 101 | 97 | `█░░░░░░░░░` 10% |
+| unattributed | 2977 | 354,046 | 110 | 97 | `█░░░░░░░░░` 11% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 2 | 8 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -374,6 +374,8 @@ Implemented routines and the Rust module that holds them.
 | 004cd5a0 | 226 | video.cpp | rec.rs |
 | 004cd690 | 128 | video.cpp | rec.rs |
 | 004cd710 | 53 | video.cpp | rec.rs |
+| 004cf030 | 710 | unattributed | options.rs |
+| 004cf300 | 274 | unattributed | options.rs |
 | 004d0a20 | 22 | unattributed | materials.rs |
 | 004d0a40 | 27 | unattributed | materials.rs |
 | 004d11d0 | 763 | unattributed | figure.rs |
@@ -403,6 +405,9 @@ Implemented routines and the Rust module that holds them.
 | 004e2ff0 | 113 | unattributed | skater.rs |
 | 004e3130 | 160 | unattributed | skater.rs |
 | 004e3ce0 | 59 | unattributed | rail.rs |
+| 004e3e80 | 252 | unattributed | options.rs |
+| 004e4d10 | 1872 | unattributed | options.rs |
+| 004e5460 | 698 | unattributed | options.rs |
 | 004e7c60 | 374 | unattributed | skater.rs |
 | 004e7de0 | 377 | unattributed | skater.rs |
 | 004e7f60 | 371 | unattributed | skater.rs |
@@ -421,6 +426,10 @@ Implemented routines and the Rust module that holds them.
 | 004f53b0 | 44 | unattributed | skater.rs |
 | 004f5f90 | 39 | unattributed | camera.rs |
 | 004f5fc0 | 19 | unattributed | skater.rs |
+| 004f6b90 | 203 | unattributed | options.rs |
+| 004f6c60 | 63 | unattributed | options.rs |
+| 004f6ca0 | 37 | unattributed | options.rs |
+| 004f6cd0 | 44 | unattributed | options.rs |
 
 ## Recovered, not yet reimplemented
 

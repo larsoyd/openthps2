@@ -1,4 +1,6 @@
 use super::*;
+use crate::collision::{Pane, model_panes};
+use std::collections::{HashMap, hash_map::Entry};
 
 pub(super) const SCRIPT_OBJECT: u16 = 0xcb;
 pub(super) const PROP: u16 = 0x192;
@@ -26,6 +28,7 @@ const MY_NODE: u16 = 0x212a;
 /// Conditionals SkipToEndif counts as opening a level.
 const CONDITIONALS: std::ops::RangeInclusive<u16> = 0x4112..=0x4116;
 const DIE_QUIETLY: u16 = 0x4205;
+const DIE_AND_SHATTER: u16 = 0x4301;
 const SFX: u16 = 0x4290;
 const SFX_AT: u16 = 0x4291;
 const SPIN: u16 = 0x2127;
@@ -47,21 +50,34 @@ const SLOW: i32 = 0x12;
 const FAST: i32 = 0x28;
 const TURN_MIN: i16 = 0x28;
 
-/// Box sizes of the object bank models by checksum, as the bouncy op reads them.
+/// Box sizes of the object bank models by checksum, as the bouncy op reads them, and the faces
+/// a prop breaks when it shatters itself.
 #[derive(Clone, Debug, Default)]
 pub struct PropModels {
-    sizes: std::collections::HashMap<u32, [u16; 3]>,
+    sizes: HashMap<u32, [u16; 3]>,
+    panes: HashMap<u32, Vec<Pane>>,
 }
 
 impl PropModels {
-    pub fn from_scene(scene: &crate::psx::Scene) -> Self {
-        let mut sizes = std::collections::HashMap::new();
+    pub fn from_scene(scene: &crate::psx::Scene) -> Result<Self, String> {
+        let colours = scene
+            .chunks
+            .iter()
+            .find(|c| c.kind == crate::collision::COLOUR_TABLE_KIND)
+            .map(|c| c.payload.as_slice());
+        let (mut sizes, mut panes) = (HashMap::new(), HashMap::new());
         for m in &scene.models {
             let w = |k: usize| i16::from_le_bytes([m.header[12 + 2 * k], m.header[13 + 2 * k]]);
             let size = [0, 1, 2].map(|a| w(2 * a).wrapping_sub(w(2 * a + 1)) as u16);
             sizes.entry(m.checksum).or_insert(size);
+            if let Entry::Vacant(e) = panes.entry(m.checksum) {
+                e.insert(
+                    model_panes(m, colours)
+                        .map_err(|err| format!("prop model={:#010x} {err}", m.checksum))?,
+                );
+            }
         }
-        Self { sizes }
+        Ok(Self { sizes, panes })
     }
 }
 
@@ -106,6 +122,8 @@ pub struct Prop {
     registers: [u16; 6],
     /// Set once the links have had the death pulse.
     pulsed: bool,
+    /// Particles of its own shatter, for the run to take into its list.
+    pub(super) particles: Vec<Particle>,
 }
 
 impl Prop {
@@ -139,6 +157,7 @@ impl Prop {
             wait_from: 0,
             registers: [0; 6],
             pulsed: false,
+            particles: Vec::new(),
         }
     }
 
@@ -351,13 +370,10 @@ impl Prop {
                     }
                     false
                 }
-                // dying pulses the links, once
-                DIE_QUIETLY => {
-                    if !std::mem::replace(&mut self.pulsed, true) {
-                        s.pulse_links(triggers, self.node, 0)?;
-                    }
-                    self.dead = true;
-                    return Ok(());
+                DIE_QUIETLY => return self.die(s, triggers),
+                DIE_AND_SHATTER => {
+                    self.die(s, triggers)?;
+                    return self.shatter(s, level);
                 }
                 _ => true,
             };
@@ -367,6 +383,28 @@ impl Prop {
                 return Ok(());
             }
         }
+    }
+
+    /// Dying pulses the links, once.
+    fn die(&mut self, s: &mut Skater, triggers: &Triggers) -> Result<(), String> {
+        if !std::mem::replace(&mut self.pulsed, true) {
+            s.pulse_links(triggers, self.node, 0)?;
+        }
+        self.dead = true;
+        Ok(())
+    }
+
+    /// Breaks every face of its model where it stands, turned like it is drawn.
+    fn shatter(&mut self, s: &mut Skater, level: &Level) -> Result<(), String> {
+        let panes = self
+            .model
+            .and_then(|m| level.props.panes.get(&m))
+            .ok_or_else(|| format!("prop node={} shatters without a known model", self.node))?;
+        let m = crate::pose::euler(self.angles);
+        let placed: Vec<Pane> = panes.iter().map(|p| p.placed(&m, self.position)).collect();
+        let (_, particles) = shatter_draws(&placed, level.world, &mut s.rng)?;
+        self.particles = particles;
+        Ok(())
     }
 
     /// The script runs when no wait is pending. A wait that ran out ends on the next update

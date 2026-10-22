@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 353 (7.5%) | 206,621 (21.5%) |
-| Recovered | 216 (4.6%) | 81,885 (8.5%) |
+| Implemented | 354 (7.5%) | 208,601 (21.7%) |
+| Recovered | 215 (4.6%) | 79,905 (8.3%) |
 | Open | 4151 | 671,233 |
 
-`████░░░░░░░░░░░░░░░░` 21.5% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 21.7% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 116 | 98 | `█░░░░░░░░░` 12% |
+| unattributed | 2977 | 354,046 | 117 | 97 | `█░░░░░░░░░` 13% |
 | physics.cpp | 110 | 64,313 | 47 | 38 | `███████░░░` 72% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
@@ -359,6 +359,7 @@ Implemented routines and the Rust module that holds them.
 | 004aa8c0 | 1608 | rail.cpp | rail.rs |
 | 004aaf70 | 2622 | unattributed | rail.rs |
 | 004ae090 | 1689 | Shatter.cpp | collision.rs |
+| 004ae730 | 1980 | unattributed | collision.rs |
 | 004af0b0 | 212 | unattributed | collision.rs |
 | 004af1c0 | 1124 | unattributed | collision.rs |
 | 004b1810 | 122 | skatmgr.cpp | fresh.rs |
@@ -614,7 +615,6 @@ Implemented routines and the Rust module that holds them.
 | 004ad9f0 | 17 | unattributed |
 | 004add10 | 336 | unattributed |
 | 004adee0 | 311 | unattributed |
-| 004ae730 | 1980 | unattributed |
 | 004b0cd0 | 101 | skatmgr.cpp |
 | 004b1430 | 109 | skatmgr.cpp |
 | 004baeb0 | 157 | unattributed |

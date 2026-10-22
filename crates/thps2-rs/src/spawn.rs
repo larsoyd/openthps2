@@ -137,7 +137,7 @@ pub fn initialize_spawn(
             .find(|(name, _)| *name == "data/SKHAN_O.PSX")
             .ok_or("spawn missing Hangar object bank")?
             .1;
-        let props = PropModels::from_scene(&Scene::parse(objects)?);
+        let props = PropModels::from_scene(&Scene::parse(objects)?)?;
         let keys = KeyTable::build(&scripts, TONY_HAWK)?;
         let collision = CollisionWorld::from_scene(&scene.0)?;
         let restart = triggers.restart_named("Start")?;

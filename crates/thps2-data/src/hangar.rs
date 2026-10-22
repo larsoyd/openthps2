@@ -158,7 +158,7 @@ impl Hangar {
             textures,
             figure,
             figure_textures,
-            prop_models: PropModels::from_scene(&objects),
+            prop_models: PropModels::from_scene(&objects)?,
             objects,
             object_infos,
             object_textures,

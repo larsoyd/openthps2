@@ -3630,6 +3630,8 @@ impl Run {
         };
         for prop in &mut self.props {
             prop.update(&mut self.skater, &live, self.vb)?;
+            let shards = std::mem::take(&mut prop.particles);
+            self.particles.splice(0..0, shards.into_iter().rev());
         }
         for object in &mut self.objects {
             object.update(&mut self.skater, level.triggers, frame.hold_delta)?;

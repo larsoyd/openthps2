@@ -247,7 +247,7 @@ enum Shade {
     Corners(Vec<[i32; 3]>),
 }
 
-const COLOUR_TABLE_KIND: u32 = u32::from_le_bytes(*b"RGBs");
+pub(crate) const COLOUR_TABLE_KIND: u32 = u32::from_le_bytes(*b"RGBs");
 
 fn brightness(rgb: &[u8]) -> i32 {
     rgb[..3].iter().map(|&c| i32::from(c)).sum::<i32>() / 3
@@ -308,10 +308,46 @@ fn pane(
         breakable: flags & BREAKABLE != 0,
         textured: word & 0x40 == 0 && word & 1 != 0,
         triangle,
-        corners: [corner(0)?, corner(1)?, corner(2)?],
+        corners: [
+            corner(0)?,
+            corner(1)?,
+            corner(2)?,
+            corner(if triangle { 2 } else { 3 })?,
+        ],
         normal,
         shade,
     })
+}
+
+/// The faces of an object bank model in model units. A prop that shatters itself breaks them all.
+pub fn model_panes(model: &Model, colours: Option<&[u8]>) -> Result<Vec<Pane>, String> {
+    model
+        .faces
+        .iter()
+        .map(|face| {
+            Ok(Pane {
+                breakable: true,
+                ..pane(model, face, [0; 3], colours)?
+            })
+        })
+        .collect()
+}
+
+impl Pane {
+    /// The face turned by a prop's matrix and moved to its position in whole units.
+    pub fn placed(&self, m: &[i16; 9], position: [i32; 3]) -> Pane {
+        let place = |c: [i32; 3]| -> [i32; 3] {
+            let v = c.map(|w| w >> 12);
+            std::array::from_fn(|i| {
+                let turned = (0..3).map(|j| i32::from(m[3 * i + j]) * v[j]).sum::<i32>() >> 12;
+                (turned + (position[i] >> 12)) << 12
+            })
+        };
+        Pane {
+            corners: self.corners.map(place),
+            ..*self
+        }
+    }
 }
 
 /// An origin inside the box on every axis, or outside it on every axis.
@@ -346,8 +382,9 @@ pub struct Pane {
     breakable: bool,
     textured: bool,
     triangle: bool,
-    /// World Q12 corners 0 to 2 and the model normal the particles fly out along.
-    corners: [[i32; 3]; 3],
+    /// World Q12 corners, the last repeating the third on a triangle, and the model normal the
+    /// particles fly out along.
+    corners: [[i32; 3]; 4],
     normal: [i32; 3],
     /// The brightest colour the particles take, quads pass green twice and drop red.
     shade: i32,
@@ -402,6 +439,47 @@ const LEAF_DRAWS: [i32; 15] = [
 ];
 const CENTRED_LEAF: usize = 7;
 
+type V3 = [i32; 3];
+
+/// The length in whole units the vector library takes, each axis cut to sixteen bits.
+fn whole_length(v: V3) -> i32 {
+    crate::skater::sqrt_int(
+        v.iter()
+            .map(|&c| ((c >> 12) as i16 as i32).pow(2))
+            .fold(0i32, i32::wrapping_add),
+    )
+}
+
+fn sub(a: V3, b: V3) -> V3 {
+    std::array::from_fn(|i| a[i].wrapping_sub(b[i]))
+}
+
+/// The whole unit average of three corners, back in Q12.
+fn centroid(p: [V3; 3]) -> V3 {
+    std::array::from_fn(|i| (((p[0][i] >> 12) + (p[1][i] >> 12) + (p[2][i] >> 12)) / 3) << 12)
+}
+
+/// The point d eighths of the way from a to b.
+fn split_point(a: V3, b: V3, d: i32) -> V3 {
+    std::array::from_fn(|i| a[i].wrapping_add(b[i].wrapping_sub(a[i]).wrapping_mul(d) >> 3))
+}
+
+impl Pane {
+    /// The centre the shards fly from: the whole unit average of the corners, a quad's floored.
+    fn centre(&self) -> V3 {
+        let c = self.corners;
+        if self.triangle {
+            return centroid([c[0], c[1], c[2]]);
+        }
+        std::array::from_fn(|i| {
+            c.iter()
+                .map(|v| (v[i] >> 2) & !0x3ff)
+                .fold(0i32, i32::wrapping_add)
+                & !0xfff
+        })
+    }
+}
+
 struct Counted<'a> {
     rng: &'a mut Rng,
     draws: u32,
@@ -415,7 +493,7 @@ impl Counted<'_> {
 
     /// A spot on the face, flung along the normal and away from the face centre.
     fn particle(&mut self, pane: &Pane, floor: i32) -> Particle {
-        let [v0, v1, v2] = pane.corners;
+        let [v0, v1, v2, _] = pane.corners;
         let edge = |v: [i32; 3]| -> [i32; 3] { std::array::from_fn(|i| (v[i] - v0[i]) >> 12) };
         let (e1, e2) = (edge(v1), edge(v2));
         let centre: [i32; 3] = std::array::from_fn(|i| (v1[i] + v2[i]) >> 1);
@@ -441,14 +519,28 @@ impl Counted<'_> {
         }
     }
 
-    /// A textured shard splits while depth lasts, a leaf on the face's own centre skips one draw.
-    fn shard(&mut self, depth: u32, centred: bool) {
+    /// A textured shard splits across its longest edge while depth lasts. A leaf whose whole
+    /// unit centroid sits on the face centre skips one draw.
+    fn shard(&mut self, [p1, p2, p3]: [V3; 3], depth: u32, centre: V3) {
         if depth > 0 {
-            self.next(9);
-            self.shard(depth - 1, false);
-            self.shard(depth - 1, false);
+            let (a, b, c) = (
+                whole_length(sub(p2, p3)),
+                whole_length(sub(p1, p3)),
+                whole_length(sub(p1, p2)),
+            );
+            let d = self.next(9);
+            let (keep, ends) = if c > a.max(b) {
+                (p3, [p1, split_point(p1, p2, d), p2])
+            } else if b > a {
+                (p2, [p1, split_point(p1, p3, d), p3])
+            } else {
+                (p1, [p2, split_point(p2, p3, d), p3])
+            };
+            self.shard([keep, ends[0], ends[1]], depth - 1, centre);
+            self.shard([keep, ends[2], ends[1]], depth - 1, centre);
             return;
         }
+        let centred = whole_length(sub(centroid([p1, p2, p3]), centre)) == 0;
         for (k, &n) in LEAF_DRAWS.iter().enumerate() {
             if !(centred && k == CENTRED_LEAF) {
                 self.next(n);
@@ -474,8 +566,11 @@ pub fn shatter_draws(
         if shards >= SHARD_LIMIT {
             shards += 1;
         } else if pane.textured {
-            for _ in 0..if pane.triangle { 1 } else { 2 } {
-                c.shard(split, pane.triangle && split == 0);
+            let [v0, v1, v2, v3] = pane.corners;
+            let centre = pane.centre();
+            c.shard([v0, v1, v2], split, centre);
+            if !pane.triangle {
+                c.shard([v1, v2, v3], split, centre);
             }
             shards += 1;
         } else {
@@ -490,11 +585,7 @@ pub fn shatter_draws(
 
 /// The unit vector of the vector library, from the whole units of each axis.
 fn calc_unit(v: [i32; 3]) -> [i32; 3] {
-    let len = crate::skater::sqrt_int(
-        v.iter()
-            .map(|&c| ((c >> 12) as i16 as i32).pow(2))
-            .fold(0i32, i32::wrapping_add),
-    );
+    let len = whole_length(v);
     if len == 0 { [0; 3] } else { v.map(|c| c / len) }
 }
 
@@ -768,7 +859,7 @@ impl CollisionWorld {
 
     /// The height a face's particles bounce at, found straight down from in front of its centre.
     fn particle_floor(&self, pane: &Pane) -> Result<i32, String> {
-        let [_, v1, v2] = pane.corners;
+        let [_, v1, v2, _] = pane.corners;
         let start: [i32; 3] =
             std::array::from_fn(|i| ((v1[i] + v2[i]) >> 1) + pane.normal[i] * FLOOR_LEAD);
         let end = [start[0], start[1] + FLOOR_DROP, start[2]];

@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 306 (6.5%) | 183,678 (19.1%) |
-| Recovered | 218 (4.6%) | 87,068 (9.1%) |
-| Open | 4196 | 688,993 |
+| Implemented | 318 (6.7%) | 189,147 (19.7%) |
+| Recovered | 217 (4.6%) | 86,064 (9.0%) |
+| Open | 4185 | 684,528 |
 
-`████░░░░░░░░░░░░░░░░` 19.1% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 19.7% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 111 | 97 | `█░░░░░░░░░` 11% |
+| unattributed | 2977 | 354,046 | 113 | 96 | `█░░░░░░░░░` 12% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 2 | 8 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -28,8 +28,8 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
 | create.cpp | 54 | 18,174 | 0 | 0 | `░░░░░░░░░░` 0% |
 | GenObjs.cpp | 58 | 15,497 | 0 | 0 | `░░░░░░░░░░` 0% |
-| panel.cpp | 37 | 14,181 | 16 | 1 | `██████░░░░` 62% |
-| career.cpp | 81 | 13,988 | 21 | 7 | `██░░░░░░░░` 20% |
+| panel.cpp | 37 | 14,181 | 17 | 1 | `██████░░░░` 63% |
+| career.cpp | 81 | 13,988 | 25 | 7 | `███░░░░░░░` 27% |
 | trig.cpp | 30 | 13,716 | 13 | 2 | `███████░░░` 73% |
 | main.cpp | 29 | 13,255 | 7 | 9 | `██░░░░░░░░` 22% |
 | spool.cpp | 41 | 12,775 | 7 | 0 | `████░░░░░░` 36% |
@@ -58,7 +58,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | ob.cpp | 29 | 4,297 | 4 | 3 | `████░░░░░░` 35% |
 | soundlib.cpp | 14 | 4,264 | 0 | 0 | `░░░░░░░░░░` 0% |
 | Image.cpp | 32 | 4,213 | 2 | 0 | `██░░░░░░░░` 21% |
-| powerup.cpp | 14 | 4,208 | 0 | 0 | `░░░░░░░░░░` 0% |
+| powerup.cpp | 14 | 4,208 | 5 | 0 | `████████░░` 77% |
 | statwin.cpp | 13 | 4,153 | 0 | 0 | `░░░░░░░░░░` 0% |
 | FontTools.cpp | 20 | 4,086 | 8 | 1 | `██████░░░░` 56% |
 | dust.cpp | 7 | 3,770 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -170,6 +170,10 @@ Implemented routines and the Rust module that holds them.
 | 00414bd0 | 125 | career.cpp | career.rs |
 | 00414c50 | 312 | career.cpp | career.rs |
 | 00414d90 | 518 | career.cpp | career.rs |
+| 00414fa0 | 179 | career.cpp | career.rs |
+| 00415060 | 275 | career.cpp | career.rs |
+| 00415180 | 353 | career.cpp | career.rs |
+| 004152f0 | 143 | career.cpp | career.rs |
 | 00416050 | 19 | career.cpp | career.rs |
 | 004305f0 | 773 | decomp.cpp | pose.rs |
 | 00430920 | 2157 | decomp.cpp | pose.rs |
@@ -206,6 +210,7 @@ Implemented routines and the Rust module that holds them.
 | 004624d0 | 1046 | unattributed | collision.rs |
 | 00462a20 | 2903 | m3dcolij.cpp | collision.rs |
 | 004638d0 | 1143 | m3dcolij.cpp | collision.rs |
+| 00464200 | 1004 | unattributed | pickups.rs |
 | 004647c0 | 704 | m3dinit.cpp | draw.rs |
 | 00465830 | 1831 | unattributed | rail.rs |
 | 00465f60 | 201 | unattributed | skater.rs |
@@ -249,6 +254,7 @@ Implemented routines and the Rust module that holds them.
 | 0048cd80 | 673 | panel.cpp | tricktext.rs |
 | 0048d090 | 1455 | panel.cpp | hud.rs |
 | 0048d710 | 135 | panel.cpp | manual.rs |
+| 0048d7c0 | 104 | panel.cpp | pickups.rs |
 | 0048ddc0 | 1346 | panel.cpp | tricktext.rs |
 | 0048e320 | 142 | panel.cpp | tricktext.rs |
 | 0048e3b0 | 623 | panel.cpp | score.rs |
@@ -301,6 +307,11 @@ Implemented routines and the Rust module that holds them.
 | 0049f780 | 1875 | platform.cpp | objects.rs |
 | 004a03e0 | 802 | platform.cpp | objects.rs |
 | 004a1060 | 469 | unattributed | objects.rs |
+| 004a7c50 | 1275 | powerup.cpp | pickups.rs |
+| 004a8300 | 789 | powerup.cpp | pickups.rs |
+| 004a8620 | 195 | powerup.cpp | pickups.rs |
+| 004a86f0 | 842 | powerup.cpp | pickups.rs |
+| 004a8ac0 | 140 | powerup.cpp | pickups.rs |
 | 004a9650 | 255 | unattributed | camera.rs |
 | 004a9820 | 71 | unattributed | camera.rs |
 | 004a9870 | 71 | unattributed | camera.rs |
@@ -365,6 +376,7 @@ Implemented routines and the Rust module that holds them.
 | 004c8650 | 316 | trig.cpp | trig.rs |
 | 004c9320 | 30 | unattributed | rng.rs |
 | 004c9500 | 136 | unattributed | camera.rs |
+| 004c9620 | 170 | unattributed | pickups.rs |
 | 004c9770 | 258 | unattributed | camera.rs |
 | 004c9f50 | 95 | unattributed | trig.rs |
 | 004ca0a0 | 32 | unattributed | camera.rs |
@@ -483,7 +495,6 @@ Implemented routines and the Rust module that holds them.
 | 0045c390 | 130 | unattributed |
 | 004628f0 | 182 | unattributed |
 | 00463d50 | 241 | m3dcolij.cpp |
-| 00464200 | 1004 | unattributed |
 | 004657c0 | 100 | unattributed |
 | 00468cf0 | 405 | main.cpp |
 | 00469400 | 412 | main.cpp |

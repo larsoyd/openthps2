@@ -1,5 +1,5 @@
 use crate::anim::{AnimState, AnimationTable};
-use crate::career::{CareerEvent, CareerRun};
+use crate::career::{CareerEvent, CareerRun, GoalKind};
 use crate::collision::{CollisionWorld, Hit, shatter_draws};
 use crate::input::{KeyTable, Presses};
 use crate::rail::{RailHit, Rails};
@@ -12,11 +12,13 @@ use crate::trig::{Command, Regions, Restart, Triggers};
 mod grind;
 mod manual;
 mod objects;
+mod pickups;
 mod session;
 mod wall;
 
 pub use manual::{Balance, QueuedTrick};
 pub use objects::{Prop, PropModels, ScriptObject};
+pub use pickups::{LETTERS, Pickup};
 pub use session::{SESSION_TICKS, Session};
 
 pub const GRAVITY: i32 = 0x1964;
@@ -459,6 +461,8 @@ pub struct Skater {
     pub text_events: Vec<TextEvent>,
     /// Gaps, landings and takeoffs of the frame, for the career run to count after it.
     pub career_events: Vec<CareerEvent>,
+    /// S-K-A-T-E letters taken this run, in panel order.
+    pub letters: [u8; 5],
     /// Light level of the ground under the skater, easing toward the doubled ground brightness.
     pub brightness: i32,
     pub brightness_target: i32,
@@ -849,6 +853,7 @@ impl Skater {
             world_events: Vec::new(),
             text_events: Vec::new(),
             career_events: Vec::new(),
+            letters: [0; 5],
             brightness: 0,
             brightness_target: 0,
             board_hidden: false,
@@ -1744,6 +1749,7 @@ impl Skater {
             {
                 self.world_events.push(WorldEvent::Prop(node))
             }
+            pickups::PICKUP_NODE => self.world_events.push(WorldEvent::Pickup(node)),
             kind if CREATED_OBJECTS.contains(&kind) => {}
             _ if triggers.is_command_point(node) => {
                 self.run_command_point(triggers, node, depth + 1)?
@@ -3323,6 +3329,8 @@ pub enum WorldEvent {
     /// A kill reached the objects of this node, with the skater's velocity when it was sent.
     Touch(usize, V3),
     Signal(usize),
+    /// A pulse reached the powerup of this node.
+    Pickup(usize),
 }
 
 /// One single session run: the skater, the frame clock and the unpaused VB counter.
@@ -3339,6 +3347,8 @@ pub struct Run {
     pub objects: Vec<ScriptObject>,
     /// Placed object models, the newest first like their draw list.
     pub props: Vec<Prop>,
+    /// Powerups, the newest first like their list.
+    pub pickups: Vec<Pickup>,
     pub career: Option<CareerRun>,
 }
 
@@ -3346,6 +3356,15 @@ impl Run {
     /// Each run starts on the special push animation and a refilled clock ring, and the restart
     /// script pulses the command points the restart links to.
     pub fn start(level: &Level, restart: &Restart) -> Result<Self, String> {
+        Self::start_with(level, restart, None)
+    }
+
+    /// A run with a career record: its pickups stay until taken.
+    pub fn start_with(
+        level: &Level,
+        restart: &Restart,
+        career: Option<CareerRun>,
+    ) -> Result<Self, String> {
         let mut skater = Skater::at_restart(restart.position_fixed, restart.angles);
         skater.anim.run(level.table, ANIM_PUSH_SPECIAL, 0, -1, -1)?;
         skater.jump_block = 1;
@@ -3360,9 +3379,12 @@ impl Run {
             world: None,
             objects: Vec::new(),
             props: Vec::new(),
-            career: None,
+            pickups: Vec::new(),
+            career,
         };
         run.apply_world_events(level)?;
+        // the level start seeds the generator again after the powerups drew their bob speeds
+        run.skater.rng = Rng::seeded(LEVEL_SEED);
         Ok(run)
     }
 
@@ -3394,8 +3416,11 @@ impl Run {
         let frame = self.clock.current();
         let outcome = step(&live, &mut self.skater, rules, frame, pad)?;
         self.skater.probe_shadow(live.world)?;
+        self.take_pickup()?;
         self.clock.end_frame(self.vb);
         self.apply_world_events(level)?;
+        let at = self.skater.position;
+        self.pickups.retain_mut(|p| p.update(at, frame.scale));
         // props draw their random numbers before the script objects
         let live = Level {
             world: self.world.as_ref().unwrap_or(level.world),
@@ -3416,6 +3441,25 @@ impl Run {
             career.check_score(self.skater.panel.score)?;
         }
         Ok(outcome)
+    }
+
+    /// The powerup the skater's travel this frame passes nearest, if it waits to be taken.
+    fn take_pickup(&mut self) -> Result<(), String> {
+        let s = &self.skater;
+        let Some(i) = pickups::swept(s.old_position, s.position, &self.pickups) else {
+            return Ok(());
+        };
+        if !self.pickups[i].active() {
+            return Ok(());
+        }
+        let pickup = self.pickups.remove(i);
+        match &mut self.career {
+            Some(career) => self.skater.take_pickup(career, &pickup),
+            None => Err(format!(
+                "pickup node={} taken outside a career",
+                pickup.node
+            )),
+        }
     }
 
     fn apply_world_events(&mut self, level: &Level) -> Result<(), String> {
@@ -3457,6 +3501,11 @@ impl Run {
                     for prop in self.props.iter_mut().filter(|p| p.node == node) {
                         prop.knock(&mut self.skater, push)?;
                     }
+                }
+                WorldEvent::Pickup(node) => {
+                    let career = self.career.as_ref();
+                    let p = Pickup::new(node, level.triggers, &mut self.skater.rng, career)?;
+                    self.pickups.insert(0, p);
                 }
                 WorldEvent::Signal(node) => {
                     if self.objects.iter().any(|o| o.node == node) {

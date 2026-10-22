@@ -231,6 +231,9 @@ pub struct CareerRun {
     pub awarded: i32,
     pub money_pickups: i32,
     pub level_pickups: i32,
+    pub level_pickups_got: i32,
+    /// Cash icon nodes in trigger order, a node's place is its bit in the money mask.
+    pub money_nodes: Vec<usize>,
     pub gaps: i32,
     pub goal_gaps: i32,
     pub trick_gaps: i32,
@@ -250,15 +253,14 @@ impl CareerRun {
         if level != 0 {
             return Err(format!("career level={level} has no gap table yet"));
         }
-        let pickups = |subtypes: &[u8]| {
-            triggers
-                .nodes
-                .iter()
-                .filter(|n| {
-                    n.kind == PICKUP_NODE && n.raw.get(2).is_some_and(|t| subtypes.contains(t))
-                })
-                .count() as i32
+        let nodes = |subtypes: &[u8]| -> Vec<usize> {
+            let pickup = |n: &&crate::trig::Node| {
+                n.kind == PICKUP_NODE && n.raw.get(2).is_some_and(|t| subtypes.contains(t))
+            };
+            let all = triggers.nodes.iter().enumerate();
+            all.filter(|(_, n)| pickup(n)).map(|(i, _)| i).collect()
         };
+        let money_nodes = nodes(&MONEY_ICONS);
         let [first, last] = LEVELS[level].gaps;
         let active: Vec<_> = HANGAR_GAPS
             .iter()
@@ -270,8 +272,10 @@ impl CareerRun {
             level,
             level_goals: 0,
             awarded: 0,
-            money_pickups: pickups(&MONEY_ICONS),
-            level_pickups: pickups(&[LEVEL_PICKUP]),
+            money_pickups: money_nodes.len() as i32,
+            level_pickups: nodes(&[LEVEL_PICKUP]).len() as i32,
+            level_pickups_got: 0,
+            money_nodes,
             gaps: active.len() as i32,
             goal_gaps: class(1),
             trick_gaps: class(2),
@@ -354,7 +358,7 @@ impl CareerRun {
         self.goal_of(kind).is_some_and(|n| self.got(n))
     }
 
-    fn give_kind(&mut self, kind: GoalKind) -> Result<(), String> {
+    pub(crate) fn give_kind(&mut self, kind: GoalKind) -> Result<(), String> {
         let n = self
             .goal_of(kind)
             .ok_or_else(|| format!("career level={} has no {kind:?} goal", self.level))?;
@@ -426,6 +430,38 @@ impl CareerRun {
             self.give_kind(GoalKind::Trick)?;
         }
         Ok(())
+    }
+
+    /// A cash icon: its bit in the level's money mask and the cash, then the clear check.
+    pub fn give_money(&mut self, node: usize, amount: i32) -> Result<(), String> {
+        let n = self
+            .money_nodes
+            .iter()
+            .position(|&m| m == node)
+            .ok_or_else(|| format!("career node={node} is not a cash icon"))?;
+        self.progress.money[self.level][n / 32] |= 1 << (n % 32);
+        self.progress.cash += amount;
+        self.progress.available += amount;
+        self.check_clear()
+    }
+
+    /// Whether a cash icon was picked up on an earlier run.
+    pub fn got_money(&self, node: usize) -> bool {
+        let n = self.money_nodes.iter().position(|&m| m == node);
+        n.is_some_and(|n| self.progress.money[self.level][n / 32] & 1 << (n % 32) != 0)
+    }
+
+    /// One more of the level's pickups, the pickup goal once all are in.
+    pub fn level_pickup(&mut self) -> Result<(), String> {
+        self.level_pickups_got += 1;
+        match self.goal_of(GoalKind::Pickups) {
+            Some(n) if self.level_pickups_got == self.level_pickups => self.give_goal(n),
+            _ => Ok(()),
+        }
+    }
+
+    pub fn tape(&mut self) -> Result<(), String> {
+        self.give_kind(GoalKind::Hidden)
     }
 
     fn goal_of(&self, kind: GoalKind) -> Option<usize> {

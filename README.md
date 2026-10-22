@@ -9,7 +9,7 @@
   <a href="https://bevyengine.org/"><img src="https://img.shields.io/badge/Engine-Bevy_0.18-b6963c.svg" alt="Bevy 0.18"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-c6c7c9.svg" alt="MIT license"></a>
   <a href="#status"><img src="https://img.shields.io/badge/Status-in_development-4e3938.svg" alt="In development"></a>
-  <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-19.1%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>
+  <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-19.7%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ The interactive session uses an original-style software renderer at 640×480, pr
 gameplay renderer are planned. Career-save handling and goal logic are partially implemented, but a playable career,
 the full front end, audio, particles and other playable levels remain unfinished.
 
-<!-- progress --> 19.1% of the executable implemented by bytes (306 of 4720 functions), 9.1% more recovered. <!-- /progress -->
+<!-- progress --> 19.7% of the executable implemented by bytes (318 of 4720 functions), 9.0% more recovered. <!-- /progress -->
 Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md), which also distinguishes recovered behavior from
 code that has been ported.
 

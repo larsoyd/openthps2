@@ -61,6 +61,7 @@ const COMMAND_POINT: i16 = 6;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObjectNode {
     pub object_type: u16,
+    pub links: Vec<usize>,
     pub flags: Vec<u8>,
     /// World position in 20.12 fixed point and the three angles.
     pub origin: [i32; 3],
@@ -188,7 +189,10 @@ impl Triggers {
                 .map(|b| u16::from_le_bytes([b[0], b[1]]))
                 .ok_or_else(|| format!("object node={node} truncated at={at}"))
         };
-        let mut at = 8 + usize::from(half(6)?) * 2;
+        let links = (0..usize::from(half(6)?))
+            .map(|k| half(8 + 2 * k).map(usize::from))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut at = 8 + links.len() * 2;
         let mut flags = Vec::new();
         loop {
             let flag = *n
@@ -223,6 +227,7 @@ impl Triggers {
             .collect::<Result<_, _>>()?;
         Ok(ObjectNode {
             object_type: half(2)?,
+            links,
             flags,
             origin,
             angles,

@@ -15,7 +15,7 @@ mod session;
 mod wall;
 
 pub use manual::{Balance, QueuedTrick};
-pub use objects::{Prop, ScriptObject};
+pub use objects::{Prop, PropModels, ScriptObject};
 pub use session::{SESSION_TICKS, Session};
 
 pub const GRAVITY: i32 = 0x1964;
@@ -562,6 +562,7 @@ pub struct Level<'a> {
     pub triggers: &'a Triggers,
     pub rails: &'a Rails,
     pub keys: &'a KeyTable,
+    pub props: &'a PropModels,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1647,9 +1648,9 @@ impl Skater {
                                 })?;
                                 self.world_events.push(WorldEvent::Kill(checksum));
                             }
-                            MOVING_OBJECT | SIGNALLED_OBJECT => {
-                                self.world_events.push(WorldEvent::Touch(link))
-                            }
+                            MOVING_OBJECT | SIGNALLED_OBJECT => self
+                                .world_events
+                                .push(WorldEvent::Touch(link, self.velocity)),
                             kind @ (10 | 11 | 500 | 501) => {
                                 return Err(format!(
                                     "command point node={node} kills node={link} kind={kind}"
@@ -3297,8 +3298,8 @@ pub enum WorldEvent {
     /// A pulse created the script object of this node.
     Create(usize),
     Prop(usize),
-    /// A kill reached the objects of this node.
-    Touch(usize),
+    /// A kill reached the objects of this node, with the skater's velocity when it was sent.
+    Touch(usize, V3),
     Signal(usize),
 }
 
@@ -3368,11 +3369,16 @@ impl Run {
         self.skater.probe_shadow(live.world)?;
         self.clock.end_frame(self.vb);
         self.apply_world_events(level)?;
+        // props draw their random numbers before the script objects
+        let live = Level {
+            world: self.world.as_ref().unwrap_or(level.world),
+            ..*level
+        };
+        for prop in &mut self.props {
+            prop.update(&mut self.skater, &live, self.vb)?;
+        }
         for object in &mut self.objects {
             object.update(&mut self.skater, level.triggers, frame.hold_delta)?;
-        }
-        for prop in &mut self.props {
-            prop.update(&mut self.skater, self.vb)?;
         }
         self.apply_world_events(level)?;
         Ok(outcome)
@@ -3405,14 +3411,17 @@ impl Run {
                 WorldEvent::Prop(node) => self
                     .props
                     .insert(0, Prop::new(node, &level.triggers.object(node)?)),
-                WorldEvent::Touch(node) => {
+                WorldEvent::Touch(node, push) => {
                     if self.objects.iter().any(|o| o.node == node) {
                         return Err(format!(
                             "kill or signal of script object node={node} unsupported"
                         ));
                     }
+                    if !level.triggers.object(node)?.links.is_empty() {
+                        return Err(format!("kill of prop node={node} with links unsupported"));
+                    }
                     for prop in self.props.iter_mut().filter(|p| p.node == node) {
-                        prop.knocked = true;
+                        prop.knock(&mut self.skater, push)?;
                     }
                 }
                 WorldEvent::Signal(node) => {

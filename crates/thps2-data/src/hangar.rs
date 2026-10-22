@@ -8,7 +8,7 @@ use crate::{
     },
     fixes::Fixes,
     font::Font,
-    ground::{Level, Outcome, Pad, Rules, Run, TONY_HAWK_STATS},
+    ground::{Level, Outcome, Pad, PropModels, Rules, Run, TONY_HAWK_STATS},
     hud::{self, EndScreens, FontId, ImageId, Overlay},
     input::KeyTable,
     materials::{TONY_HAWK_LOGOS, apply_logos, resolve_textures},
@@ -64,6 +64,7 @@ pub struct Hangar {
     figure_textures: usize,
     /// The level's object bank, the models props draw, and where its textures start.
     objects: Scene,
+    prop_models: PropModels,
     object_infos: Vec<TextureInfo>,
     object_textures: usize,
 }
@@ -158,6 +159,7 @@ impl Hangar {
             textures,
             figure,
             figure_textures,
+            prop_models: PropModels::from_scene(&objects),
             objects,
             object_infos,
             object_textures,
@@ -184,6 +186,7 @@ impl Hangar {
             triggers: &self.triggers,
             rails: &self.rails,
             keys: &self.keys,
+            props: &self.prop_models,
         }
     }
 }
@@ -443,7 +446,7 @@ impl Session {
             .props
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.frozen_at.is_none() && !p.knocked && !p.dead && !p.hidden)
+            .filter(|(_, p)| p.frozen_at.is_none() && !p.dead && !p.hidden)
             .filter_map(|(index, p)| p.model.map(|m| (index, p, m)))
             .map(|(index, p, checksum)| {
                 let model = hangar

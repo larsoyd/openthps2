@@ -8,17 +8,17 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 261 (5.5%) | 172,671 (18.0%) |
-| Recovered | 216 (4.6%) | 85,986 (9.0%) |
-| Open | 4243 | 701,082 |
+| Implemented | 270 (5.7%) | 175,575 (18.3%) |
+| Recovered | 213 (4.5%) | 83,336 (8.7%) |
+| Open | 4237 | 700,828 |
 
-`████░░░░░░░░░░░░░░░░` 18.0% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 18.3% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 92 | 98 | `█░░░░░░░░░` 10% |
+| unattributed | 2977 | 354,046 | 98 | 97 | `█░░░░░░░░░` 10% |
 | physics.cpp | 110 | 64,313 | 41 | 42 | `███████░░░` 66% |
 | mmu.cpp | 70 | 31,238 | 1 | 5 | `░░░░░░░░░░` 2% |
 | front.cpp | 42 | 29,072 | 4 | 4 | `██░░░░░░░░` 18% |
@@ -45,7 +45,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | camera.h | 1 | 7,297 | 1 | 0 | `██████████` 100% |
 | NetGame.cpp | 23 | 6,946 | 0 | 0 | `░░░░░░░░░░` 0% |
 | cresel.cpp | 8 | 6,893 | 0 | 0 | `░░░░░░░░░░` 0% |
-| baddy.cpp | 10 | 6,545 | 4 | 0 | `████████░░` 80% |
+| baddy.cpp | 10 | 6,545 | 5 | 0 | `████████░░` 80% |
 | trickdb.cpp | 22 | 6,398 | 11 | 3 | `████████░░` 81% |
 | FrontEnd2.cpp | 10 | 6,381 | 0 | 2 | `░░░░░░░░░░` 0% |
 | WinMain.cpp | 13 | 5,956 | 0 | 3 | `░░░░░░░░░░` 0% |
@@ -65,7 +65,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | commonfe.cpp | 26 | 3,710 | 0 | 0 | `░░░░░░░░░░` 0% |
 | rail.cpp | 14 | 3,610 | 5 | 2 | `███████░░░` 73% |
 | CreEdit.cpp | 9 | 3,519 | 0 | 0 | `░░░░░░░░░░` 0% |
-| platform.cpp | 4 | 3,463 | 1 | 2 | `██░░░░░░░░` 23% |
+| platform.cpp | 4 | 3,463 | 3 | 0 | `██████████` 97% |
 | skatmgr.cpp | 30 | 3,436 | 0 | 2 | `░░░░░░░░░░` 0% |
 | DxPlay.cpp | 24 | 2,986 | 0 | 0 | `░░░░░░░░░░` 0% |
 | decomp.cpp | 2 | 2,930 | 2 | 0 | `██████████` 100% |
@@ -138,6 +138,7 @@ Implemented routines and the Rust module that holds them.
 
 | Address | Size | Source file | Rust module |
 |---|---|---|---|
+| 004013b0 | 29 | baddy.cpp | objects.rs |
 | 00401520 | 177 | baddy.cpp | objects.rs |
 | 004015e0 | 4187 | baddy.cpp | objects.rs |
 | 004027c0 | 35 | baddy.cpp | objects.rs |
@@ -206,6 +207,7 @@ Implemented routines and the Rust module that holds them.
 | 0046d2e0 | 938 | unattributed | collision.rs |
 | 0046d7a0 | 416 | unattributed | ground.rs |
 | 0046d970 | 252 | unattributed | ground.rs |
+| 0046e1d0 | 106 | unattributed | objects.rs |
 | 0047b400 | 730 | mmu.cpp | rec.rs |
 | 004801d0 | 31 | ob.cpp | ground.rs |
 | 00480730 | 340 | ob.cpp | anim.rs |
@@ -272,6 +274,8 @@ Implemented routines and the Rust module that holds them.
 | 0049e480 | 229 | physics.cpp | session.rs |
 | 0049e680 | 2983 | physics.cpp | ground.rs |
 | 0049f250 | 235 | unattributed | objects.rs |
+| 0049f4c0 | 669 | platform.cpp | objects.rs |
+| 0049f780 | 1875 | platform.cpp | objects.rs |
 | 004a03e0 | 802 | platform.cpp | objects.rs |
 | 004a1060 | 469 | unattributed | objects.rs |
 | 004a9650 | 255 | unattributed | camera.rs |
@@ -341,15 +345,20 @@ Implemented routines and the Rust module that holds them.
 | 004ca0a0 | 32 | unattributed | camera.rs |
 | 004ca2d0 | 846 | unattributed | collision.rs |
 | 004ca8f0 | 73 | unattributed | camera.rs |
+| 004ca9b0 | 61 | unattributed | objects.rs |
 | 004ca9f0 | 41 | unattributed | skater.rs |
 | 004caa20 | 41 | unattributed | skater.rs |
 | 004caae0 | 39 | unattributed | rec.rs |
+| 004cab10 | 55 | unattributed | objects.rs |
 | 004cabb0 | 49 | unattributed | ground.rs |
 | 004cabf0 | 49 | unattributed | skater.rs |
 | 004cac30 | 46 | unattributed | skater.rs |
 | 004cac90 | 54 | unattributed | ground.rs |
 | 004cacd0 | 43 | unattributed | ground.rs |
 | 004cad30 | 35 | unattributed | skater.rs |
+| 004cad60 | 17 | unattributed | objects.rs |
+| 004cad80 | 61 | unattributed | objects.rs |
+| 004cae10 | 31 | unattributed | objects.rs |
 | 004ccd70 | 1898 | video.cpp | rec.rs |
 | 004cd5a0 | 226 | video.cpp | rec.rs |
 | 004cd690 | 128 | video.cpp | rec.rs |
@@ -455,7 +464,6 @@ Implemented routines and the Rust module that holds them.
 | 0046d6e0 | 58 | unattributed |
 | 0046dd20 | 61 | unattributed |
 | 0046e080 | 333 | unattributed |
-| 0046e1d0 | 106 | unattributed |
 | 0047a220 | 595 | mmu.cpp |
 | 0047ae10 | 884 | mmu.cpp |
 | 0047b1a0 | 297 | mmu.cpp |
@@ -513,8 +521,6 @@ Implemented routines and the Rust module that holds them.
 | 0049d8a0 | 283 | physics.cpp |
 | 0049dad0 | 168 | physics.cpp |
 | 0049e570 | 268 | physics.cpp |
-| 0049f4c0 | 669 | platform.cpp |
-| 0049f780 | 1875 | platform.cpp |
 | 004a12d0 | 354 | unattributed |
 | 004aa410 | 16 | rail.cpp |
 | 004aa420 | 16 | rail.cpp |

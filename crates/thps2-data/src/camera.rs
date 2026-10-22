@@ -143,7 +143,7 @@ fn direction(r: i32, [pitch, yaw]: [i32; 2]) -> V3 {
 }
 
 /// Whole unit length of a Q12 vector, its components folded through shorts first.
-fn length12(v: V3) -> i32 {
+pub(crate) fn length12(v: V3) -> i32 {
     let [x, y, z] = v.map(|c| i32::from((c >> 12) as i16));
     sqrt_int(
         x.wrapping_mul(x)

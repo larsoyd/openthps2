@@ -30,6 +30,32 @@ const COLLISION_TYPE: u16 = 0x4309;
 const NEGATIVE: u16 = 0x8000;
 /// Velocities inside this band stop.
 const VELOCITY_REST: i32 = 0x800;
+const GRAVITY: i32 = 0x8000;
+/// Bounces before a bouncing prop settles.
+const BOUNCES: u16 = 0x12;
+const SETTLE_FRAMES: u16 = 10;
+/// Horizontal speed in whole units below which a prop lands flat on its sides.
+const SLOW: i32 = 0x12;
+const FAST: i32 = 0x28;
+const TURN_MIN: i16 = 0x28;
+
+/// Box sizes of the object bank models by checksum, as the bouncy op reads them.
+#[derive(Clone, Debug, Default)]
+pub struct PropModels {
+    sizes: std::collections::HashMap<u32, [u16; 3]>,
+}
+
+impl PropModels {
+    pub fn from_scene(scene: &crate::psx::Scene) -> Self {
+        let mut sizes = std::collections::HashMap::new();
+        for m in &scene.models {
+            let w = |k: usize| i16::from_le_bytes([m.header[12 + 2 * k], m.header[13 + 2 * k]]);
+            let size = [0, 1, 2].map(|a| w(2 * a).wrapping_sub(w(2 * a + 1)) as u16);
+            sizes.entry(m.checksum).or_insert(size);
+        }
+        Self { sizes }
+    }
+}
 
 /// A model of the object bank a pulse placed at its node, moved and turned by its script.
 /// At an op that is not ported it stops and is no longer drawn, its place being unknown.
@@ -49,10 +75,17 @@ pub struct Prop {
     pub hidden: bool,
     /// Stopped until a signal reaches its node.
     pub waiting: bool,
-    /// A kill reached it. Bounces and removal are not ported, so its place is unknown.
-    pub knocked: bool,
     /// Gone from the world.
     pub dead: bool,
+    /// Angles a bouncing prop turns toward.
+    pub targets: [i16; 3],
+    pub bounces: u16,
+    /// Frames left before a settled prop goes.
+    pub countdown: u16,
+    /// Set by the bouncy op, the sound and kick of a knock depend on it.
+    kind: u16,
+    size: Option<[u16; 3]>,
+    bouncing: bool,
     signal: bool,
     active: bool,
     script: Vec<u16>,
@@ -77,8 +110,13 @@ impl Prop {
             frozen_at: None,
             hidden: true,
             waiting: false,
-            knocked: false,
             dead: false,
+            targets: [0; 3],
+            bounces: 0,
+            countdown: 0,
+            kind: 0,
+            size: None,
+            bouncing: false,
             signal: false,
             active: true,
             script: o.script.clone(),
@@ -139,7 +177,13 @@ impl Prop {
     }
 
     /// Runs the script up to its next wait, its end or an op that is not ported.
-    fn run(&mut self, s: &mut Skater, vb: i32, signalled: bool) -> Result<(), String> {
+    fn run(
+        &mut self,
+        s: &mut Skater,
+        models: &PropModels,
+        vb: i32,
+        signalled: bool,
+    ) -> Result<(), String> {
         loop {
             let at = self.pc;
             let op = self.word()?;
@@ -164,7 +208,12 @@ impl Prop {
                     }
                     false
                 }
-                COLLISION_TYPE | SFX | SFX_AT | SOUND => {
+                COLLISION_TYPE => {
+                    self.kind = self.word()?;
+                    self.size = self.model.and_then(|m| models.sizes.get(&m).copied());
+                    false
+                }
+                SFX | SFX_AT | SOUND => {
                     self.pc += 1;
                     false
                 }
@@ -236,17 +285,20 @@ impl Prop {
 
     /// The script runs when no wait is pending. A wait that ran out ends on the next update
     /// without running it.
-    pub(super) fn update(&mut self, s: &mut Skater, vb: i32) -> Result<(), String> {
+    pub(super) fn update(&mut self, s: &mut Skater, level: &Level, vb: i32) -> Result<(), String> {
         let signalled = std::mem::take(&mut self.signal);
         if self.frozen_at.is_some() || self.dead {
             return Ok(());
+        }
+        if self.kind != 0 {
+            return self.bounce_frame(s, level.world);
         }
         if self.wait != 0 {
             if self.waited >= self.wait {
                 (self.wait, self.waited, self.wait_from) = (0, 0, 0);
             }
         } else if self.active {
-            self.run(s, vb, signalled)?;
+            self.run(s, level.props, vb, signalled)?;
         }
         if self.frozen_at.is_none() && !self.dead {
             self.move_on(vb);
@@ -280,6 +332,179 @@ impl Prop {
             self.angles[k] = self.angles[k].wrapping_add(self.spin[k]) & 0xfff;
             let w = self.spin[k].wrapping_add(self.spin_change[k]);
             self.spin[k] = if (-1..=1).contains(&w) { 0 } else { w };
+        }
+    }
+
+    /// A kill knocks a bouncy prop off with the skater's speed, turning it toward random angles.
+    pub(super) fn knock(&mut self, s: &mut Skater, push: [i32; 3]) -> Result<(), String> {
+        if self.kind == 0 || self.bouncing || self.dead {
+            return Err(format!(
+                "kill of prop node={} kind={} bouncing={} dead={} unsupported",
+                self.node, self.kind, self.bouncing, self.dead
+            ));
+        }
+        let speed = crate::camera::length12([push[0], 0, push[2]]);
+        self.bouncing = true;
+        self.bounces = 0;
+        self.targets[1] = s.rng.next(0x1000) as i16;
+        self.targets[0] = ((s.rng.next(2) << 11) + i32::from(self.angles[0]) - 0x400) as i16;
+        self.targets[2] = ((s.rng.next(2) << 11) + i32::from(self.angles[2]) - 0x400) as i16;
+        if !matches!(self.kind, 1 | 3) {
+            return Err(format!(
+                "prop node={} knock kind={} unsupported",
+                self.node, self.kind
+            ));
+        }
+        // the skater's grunt sound is picked at random
+        s.rng.next(3);
+        let up = if speed >= FAST { -0x40000 } else { -0x20000 };
+        if speed < SLOW {
+            self.lie_flat(s);
+        }
+        self.velocity = [push[0], up, push[2]];
+        Ok(())
+    }
+
+    fn lie_flat(&mut self, s: &mut Skater) {
+        self.targets[1] = (s.rng.next(0x400) + i32::from(self.angles[1]) - 0x200) as i16;
+        self.targets[0] = self.angles[0].wrapping_add(0x200) & 0xc00;
+        self.targets[2] = self.angles[2].wrapping_add(0x200) & 0xc00;
+    }
+
+    /// Turns toward the targets, falls and bounces off the world up to three times a frame.
+    fn bounce_frame(&mut self, s: &mut Skater, world: &CollisionWorld) -> Result<(), String> {
+        if self.countdown != 0 {
+            self.countdown -= 1;
+            if self.countdown == 0 {
+                self.dead = true;
+                return Ok(());
+            }
+        }
+        if !self.bouncing {
+            return Ok(());
+        }
+        self.turn();
+        let size = self
+            .size
+            .ok_or_else(|| format!("prop node={} model={:?} box unknown", self.node, self.model))?;
+        let m = crate::pose::euler(self.angles);
+        let half = (0..3)
+            .map(|k| i32::from(m[3 + k]).abs() * i32::from(size[k]))
+            .sum::<i32>()
+            >> 1;
+        let mut v = self.velocity;
+        v[1] += GRAVITY;
+        settle_velocity(&mut v, [6, 6, 6]);
+        let speed = crate::camera::length12([v[0], 0, v[2]]);
+        let mut end: V3 = std::array::from_fn(|k| self.position[k].wrapping_add(v[k]));
+        for _ in 0..3 {
+            let hit = match world.query_filtered(self.position, end, false)? {
+                Some(hit) => hit,
+                None if v[1] <= 0 => return self.land(end, v),
+                None => {
+                    let (top, bottom) = (
+                        [end[0], end[1] - half, end[2]],
+                        [end[0], end[1] + half, end[2]],
+                    );
+                    match world.query_filtered(top, bottom, false)? {
+                        Some(hit) => hit,
+                        None => return self.land(end, v),
+                    }
+                }
+            };
+            if self.bounces < 5 && matches!(self.kind, 1 | 2 | 4 | 5) {
+                s.rng.next(2);
+            }
+            self.bounces += 1;
+            let n = hit.normal.map(i32::from);
+            let d = dot_q12(v, n);
+            for k in 0..3 {
+                v[k] = v[k].wrapping_sub(mul_q12(n[k], d) << 1);
+            }
+            let drag = if v[1].abs() < 0xc000 {
+                [2, 0, 2]
+            } else {
+                self.retarget(s, speed);
+                [3, 2, 3]
+            };
+            settle_velocity(&mut v, drag);
+            if self.bounces > BOUNCES {
+                return self.settle();
+            }
+            end = std::array::from_fn(|k| hit.position_fixed[k] + mul_q12(n[k], half));
+        }
+        if self.bounces > BOUNCES {
+            self.settle()?;
+        }
+        Ok(())
+    }
+
+    fn turn(&mut self) {
+        self.targets = self.targets.map(|t| t & 0xfff);
+        let gap = |p: &Self, k: usize| i32::from(p.targets[k]) - i32::from(p.angles[k]);
+        for k in 0..3 {
+            let w = (gap(self, k) >> 5) as i16;
+            self.spin[k] = if (-1..=1).contains(&w) { 0 } else { w };
+        }
+        for k in 0..3 {
+            if self.spin[k].abs() < TURN_MIN && gap(self, k).abs() > i32::from(TURN_MIN) {
+                self.spin[k] = if self.spin[k] >= 0 {
+                    TURN_MIN
+                } else {
+                    -TURN_MIN
+                };
+            }
+        }
+        for k in 0..3 {
+            self.angles[k] = self.angles[k].wrapping_add(self.spin[k]) & 0xfff;
+        }
+    }
+
+    fn land(&mut self, end: V3, v: V3) -> Result<(), String> {
+        (self.position, self.velocity) = (end, v);
+        if self.bounces > BOUNCES {
+            self.settle()?;
+        }
+        Ok(())
+    }
+
+    /// A hard bounce picks a new heading, the first one also new tilts.
+    fn retarget(&mut self, s: &mut Skater, speed: i32) {
+        self.targets[1] = s.rng.next(0x1000) as i16;
+        if self.bounces != 1 {
+            return;
+        }
+        let flip = |s: &mut Skater| ((s.rng.next(2) << 11) - 0x400) as i16;
+        let sideways = matches!(self.kind, 2 | 4);
+        self.targets[0] = self.targets[0].wrapping_add(flip(s));
+        let (x, z) = (self.targets[0], self.targets[2]);
+        if sideways && ((x == 0x800 && z == 0) || (x == 0 && z == 0x800)) {
+            self.targets[0] = flip(s);
+        }
+        self.targets[2] = z.wrapping_add(((s.rng.next(3) << 10) - 0x400) as i16);
+        let (x, z) = (i32::from(self.targets[0]), i32::from(self.targets[2]));
+        if sideways && ((x.abs() == 0x800 && z == 0) || (x == 0 && z.abs() == 0x800)) {
+            self.targets[2] = flip(s);
+        }
+        if speed < SLOW {
+            self.lie_flat(s);
+        }
+    }
+
+    fn settle(&mut self) -> Result<(), String> {
+        (self.angles[0], self.angles[2]) = (self.targets[0], self.targets[2]);
+        self.countdown = SETTLE_FRAMES;
+        self.bouncing = false;
+        Ok(())
+    }
+}
+
+/// Drags each component by its own shift, then stops what is left inside the rest band.
+fn settle_velocity(v: &mut V3, shifts: [u32; 3]) {
+    for k in 0..3 {
+        v[k] -= v[k] >> shifts[k];
+        if (-VELOCITY_REST..=VELOCITY_REST).contains(&v[k]) {
+            v[k] = 0;
         }
     }
 }

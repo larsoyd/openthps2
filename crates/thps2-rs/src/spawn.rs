@@ -2,7 +2,7 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use thps2_data::{
     anim::AnimationTable,
     collision::{CollisionWorld, Hit},
-    ground::{Level, Outcome, Pad, Rules, Run},
+    ground::{Level, Outcome, Pad, PropModels, Rules, Run},
     input::KeyTable,
     psx::Scene,
     rail::Rails,
@@ -34,6 +34,10 @@ pub struct SessionRails(pub Rails);
 
 #[derive(Resource)]
 pub struct SessionKeys(pub KeyTable);
+
+/// Box sizes of the object bank models, from SKHAN_O.PSX.
+#[derive(Resource)]
+pub struct SessionProps(pub PropModels);
 
 #[derive(Resource, Clone, Copy)]
 pub struct SessionRules(pub Rules);
@@ -127,6 +131,13 @@ pub fn initialize_spawn(
             .ok_or("spawn missing trick scripts")?
             .1;
         let scripts = TrickScripts::parse(tricks.clone())?;
+        let objects = &assets
+            .files
+            .iter()
+            .find(|(name, _)| *name == "data/SKHAN_O.PSX")
+            .ok_or("spawn missing Hangar object bank")?
+            .1;
+        let props = PropModels::from_scene(&Scene::parse(objects)?);
         let keys = KeyTable::build(&scripts, TONY_HAWK)?;
         let collision = CollisionWorld::from_scene(&scene.0)?;
         let restart = triggers.restart_named("Start")?;
@@ -141,6 +152,7 @@ pub fn initialize_spawn(
                     triggers: &triggers,
                     rails: &rails,
                     keys: &keys,
+                    props: &props,
                 },
                 restart,
             )?,
@@ -149,16 +161,17 @@ pub fn initialize_spawn(
             halted: None,
         };
         Ok::<_, String>((
-            triggers, rails, table, scripts, keys, collision, placement, motion,
+            triggers, rails, table, scripts, keys, props, collision, placement, motion,
         ))
     })();
     match result {
-        Ok((triggers, rails, table, scripts, keys, collision, placement, motion)) => {
+        Ok((triggers, rails, table, scripts, keys, props, collision, placement, motion)) => {
             commands.insert_resource(SessionTriggers(triggers));
             commands.insert_resource(SessionAnimations(table));
             commands.insert_resource(SessionScripts(scripts));
             commands.insert_resource(SessionRails(rails));
             commands.insert_resource(SessionKeys(keys));
+            commands.insert_resource(SessionProps(props));
             commands.insert_resource(SessionCollision(collision));
             commands.spawn((placement, motion));
         }
@@ -175,6 +188,7 @@ pub struct SessionLevel<'w> {
     triggers: Option<Res<'w, SessionTriggers>>,
     rails: Option<Res<'w, SessionRails>>,
     keys: Option<Res<'w, SessionKeys>>,
+    props: Option<Res<'w, SessionProps>>,
 }
 
 /// One run frame per fixed tick with the held pad, stopping at the first unsupported contact.
@@ -184,14 +198,24 @@ pub fn advance_ground(
     pad: Res<SessionPad>,
     mut motions: Query<&mut SkaterMotion>,
 ) {
-    let (Some(collision), Some(animations), Some(scripts), Some(triggers), Some(rails), Some(keys)) = (
+    let (
+        Some(collision),
+        Some(animations),
+        Some(scripts),
+        Some(triggers),
+        Some(rails),
+        Some(keys),
+        Some(props),
+    ) = (
         &session.collision,
         &session.animations,
         &session.scripts,
         &session.triggers,
         &session.rails,
         &session.keys,
-    ) else {
+        &session.props,
+    )
+    else {
         return;
     };
     let level = Level {
@@ -201,6 +225,7 @@ pub fn advance_ground(
         triggers: &triggers.0,
         rails: &rails.0,
         keys: &keys.0,
+        props: &props.0,
     };
     for mut motion in &mut motions {
         if motion.halted.is_some() {

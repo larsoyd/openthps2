@@ -735,7 +735,7 @@ impl ScriptObject {
                         .push(crate::career::CareerEvent::GoalCounter);
                 }
                 // sound is not part of the rewrite yet
-                SOUND => self.pc += 1,
+                SFX | SFX_AT | SOUND => self.pc += 1,
                 SOUND_AT => self.pc += 2,
                 SOUND_STOP => {}
                 op => {

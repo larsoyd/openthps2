@@ -1,6 +1,6 @@
 # Development guide
 
-Build prerequisites and the interactive Hangar command are in the [README](README.md#build-and-run).
+Build prerequisites and the interactive Hangar command are in the [README](README.md#getting-started).
 This guide describes the current diagnostic interfaces and the constraints on planned extensions.
 
 ## Diagnostic runs
@@ -206,7 +206,7 @@ rights and attribution; local playback does not imply permission to redistribute
 
 ## Compatibility decisions
 
-[README defaults](README.md#defaults-and-compatibility) govern the finished product. Record confirmed original defects
+[README highlights](README.md#highlights) govern the finished product. Record confirmed original defects
 and their policy in [BUGFIXES.md](BUGFIXES.md), independently of incomplete ports and optional enhancements.
 
 - Keep original movement, collision outcomes, trick timing, scoring and career rules authoritative by default.

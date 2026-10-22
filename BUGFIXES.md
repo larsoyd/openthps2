@@ -62,5 +62,5 @@ reference calculation may establish the cause of a difference; the cheapest adeq
 another supported player configuration. Record the method and its limits, and remove obsolete comparison machinery
 when it no longer answers a useful question.
 
-This policy complements the [public defaults](README.md#defaults-and-compatibility) and
+This policy complements the [public defaults](README.md#highlights) and
 [development compatibility decisions](DEVELOPMENT.md#compatibility-decisions).

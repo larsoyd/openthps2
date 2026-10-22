@@ -3526,6 +3526,10 @@ fn landing_bails(level: &Level, s: &mut Skater, rules: Rules, normal: V3) -> Res
             return s.sideways_bail(level, flat, normal);
         }
     }
+    // a landing in the vert spin mode of a lip ride is never judged for the drop
+    if s.lip_spin {
+        return Ok(());
+    }
     let height = (s.clearance + s.fall) >> 12;
     let base = rules.big_drop_limit(s.stance());
     let mut limit = base;
@@ -3533,14 +3537,17 @@ fn landing_bails(level: &Level, s: &mut Skater, rules: Rules, normal: V3) -> Res
         limit += (0xb - s.charge) * 0x3c;
     }
     if height > limit {
-        return Err(format!(
-            "big drop bail unsupported height={height} limit={limit}"
-        ));
+        s.style = Style::default();
+        return s.start_bail(level.table, level.tricks, 0, false);
     }
-    if height > base && s.combo {
-        return Err(format!(
-            "big drop entry unsupported height={height} base={base}"
-        ));
+    // the score is negative below full charge, which makes it an entry that never degrades
+    if height > base {
+        let points = (s.charge * 5 - 55) * 20;
+        s.push_entry(Entry {
+            trick: points >= 0,
+            switched: s.switched,
+            ..Entry::new("BIG DROP", points.abs(), 0, 0)
+        });
     }
     Ok(())
 }

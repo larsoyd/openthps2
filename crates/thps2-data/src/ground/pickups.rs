@@ -26,6 +26,9 @@ pub struct Pickup {
     pub timer: u16,
     /// Hidden by a region script, which stops the bob but not the touch.
     pub hidden: bool,
+    /// The shadow comes with the powerup and is dropped for good the first time it is out of view.
+    pub shadow: bool,
+    pub glow: bool,
 }
 
 fn word(raw: &[u8], at: usize) -> Result<i32, String> {
@@ -79,6 +82,8 @@ impl Pickup {
             reach: if kind == TAPE { TAPE_REACH } else { REACH },
             timer: if taken { 1 } else { record(4) },
             hidden: false,
+            shadow: true,
+            glow: false,
         })
     }
 
@@ -96,10 +101,14 @@ impl Pickup {
             }
         }
         // hidden or past the far clip a powerup stops bobbing
-        if self.hidden || rough_distance(skater, self.position) > crate::render::HANGAR_VIEWPORT.far
-        {
+        if self.hidden {
             return true;
         }
+        if rough_distance(skater, self.position) > crate::render::HANGAR_VIEWPORT.far {
+            (self.shadow, self.glow) = (false, false);
+            return true;
+        }
+        self.glow = true;
         let lift = crate::camera::rsin(i32::from(self.phase & 0xfff)) * BOB_HEIGHT;
         self.position = self.base;
         self.position[1] += lift / 4096 * 4096;
@@ -167,20 +176,32 @@ pub(super) fn swept(from: V3, to: V3, pickups: &[Pickup]) -> Option<usize> {
 }
 
 impl Skater {
-    /// A taken pickup: its career award, wrapped in a takeoff and landing when it is a cash icon
-    /// or a level pickup met on the ground.
-    pub(super) fn take_pickup(&mut self, career: &mut CareerRun, p: &Pickup) -> Result<(), String> {
+    /// A touched pickup gives its career award, a cash icon or level pickup met on the ground
+    /// wrapped in a takeoff and landing. Hidden ones, and cash and level pickups during a bail,
+    /// stay where they are.
+    pub(super) fn take_pickup(
+        &mut self,
+        career: &mut CareerRun,
+        p: &Pickup,
+    ) -> Result<bool, String> {
+        if p.hidden {
+            return Ok(false);
+        }
         if let Some(slot) = LETTERS.iter().position(|&k| k == p.kind) {
             self.letters[slot] = 1;
             if self.letters.iter().all(|&l| l == 1) {
                 career.give_kind(GoalKind::Skate)?;
             }
-            return Ok(());
+            return Ok(true);
         }
         if p.kind == TAPE {
-            return career.tape();
+            career.tape()?;
+            return Ok(true);
         }
-        let rolling = self.state == State::Ground && !self.bailing;
+        if self.bailing {
+            return Ok(false);
+        }
+        let rolling = self.state == State::Ground;
         if rolling {
             self.open_combo();
         }
@@ -191,6 +212,6 @@ impl Skater {
         if rolling {
             self.commit_combo()?;
         }
-        Ok(())
+        Ok(true)
     }
 }

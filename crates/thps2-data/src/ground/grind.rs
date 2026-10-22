@@ -18,7 +18,6 @@ const RAIL_OLLIE_BLOCK: i32 = 5;
 const RAIL_OLLIE_STEER: i32 = 200;
 const LIP_NO_STICK: i32 = 5;
 const SPARKS: usize = 9;
-const SPARK_DRAWS: usize = 5;
 /// How long after its press a buffered grind move can still start, in frame halves.
 const GRIND_TRICK_LIFE: i32 = 0x1d;
 const WALL_LOOK: i32 = 0x78;
@@ -240,11 +239,15 @@ impl Skater {
         pad: Pad,
     ) -> Result<(), String> {
         self.grind_time = self.now;
-        if self.grind.sparks {
-            // sparks are not drawn but their draws come first, the original skips them only with
-            // 250 particles alive
-            for _ in 0..SPARKS * SPARK_DRAWS {
-                self.rng.next(1);
+        if self.grind.sparks && self.effects_live < EFFECT_LIMIT {
+            // sparks are not drawn but their spread and life draws come first
+            for _ in 0..SPARKS {
+                self.rng.next(40);
+                self.rng.next(450);
+                self.rng.next(900);
+                let life = self.rng.next(5) as u16 + 1;
+                self.rng.next(0x9f);
+                self.sparks.push(Spark { age: 0, life });
             }
         }
         let rails = level.rails;

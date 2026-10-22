@@ -9,7 +9,7 @@
   <a href="https://bevyengine.org/"><img src="https://img.shields.io/badge/Engine-Bevy_0.18-b6963c.svg" alt="Bevy 0.18"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-c6c7c9.svg" alt="MIT license"></a>
   <a href="#status"><img src="https://img.shields.io/badge/Status-in_development-4e3938.svg" alt="In development"></a>
-  <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-21.8%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>
+  <a href="PROGRESS.md"><img src="https://img.shields.io/badge/Reimplemented-22.4%25-e0a33a.svg" alt="Share of the executable reimplemented"></a>
 </p>
 
 <p align="center">
@@ -36,7 +36,7 @@ Career mode is on its way. Goals, cash, pickups and the career save format alrea
 hood, but there is no career menu yet. Menus, audio, the other levels and multiplayer are still to come, and some moves
 can still end a session with a message about an unsupported situation.
 
-<!-- progress --> 21.8% of the executable implemented by bytes (357 of 4720 functions), 8.3% more recovered. <!-- /progress -->
+<!-- progress --> 22.4% of the executable implemented by bytes (378 of 4720 functions), 8.2% more recovered. <!-- /progress -->
 Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 
 ## Highlights

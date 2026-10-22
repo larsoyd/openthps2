@@ -8,21 +8,21 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 357 (7.6%) | 209,300 (21.8%) |
-| Recovered | 213 (4.5%) | 79,455 (8.3%) |
-| Open | 4150 | 670,984 |
+| Implemented | 378 (8.0%) | 215,381 (22.4%) |
+| Recovered | 211 (4.5%) | 79,079 (8.2%) |
+| Open | 4131 | 665,279 |
 
-`████░░░░░░░░░░░░░░░░` 21.8% implemented by bytes
+`████░░░░░░░░░░░░░░░░` 22.4% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 118 | 96 | `█░░░░░░░░░` 13% |
+| unattributed | 2977 | 354,046 | 123 | 94 | `█░░░░░░░░░` 13% |
 | physics.cpp | 110 | 64,313 | 48 | 37 | `███████░░░` 72% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
-| bit.cpp | 123 | 25,393 | 2 | 3 | `░░░░░░░░░░` 3% |
+| bit.cpp | 123 | 25,393 | 6 | 3 | `█░░░░░░░░░` 5% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
@@ -55,13 +55,13 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | PCMovie.cpp | 7 | 4,977 | 0 | 0 | `░░░░░░░░░░` 0% |
 | trickscript.cpp | 2 | 4,585 | 1 | 0 | `█████████░` 95% |
 | create_stitch.cpp | 15 | 4,319 | 0 | 0 | `░░░░░░░░░░` 0% |
-| ob.cpp | 29 | 4,297 | 4 | 3 | `████░░░░░░` 35% |
+| ob.cpp | 29 | 4,297 | 6 | 3 | `████░░░░░░` 45% |
 | soundlib.cpp | 14 | 4,264 | 0 | 0 | `░░░░░░░░░░` 0% |
 | Image.cpp | 32 | 4,213 | 2 | 0 | `██░░░░░░░░` 21% |
-| powerup.cpp | 14 | 4,208 | 5 | 0 | `████████░░` 77% |
+| powerup.cpp | 14 | 4,208 | 6 | 0 | `████████░░` 78% |
 | statwin.cpp | 13 | 4,153 | 0 | 0 | `░░░░░░░░░░` 0% |
 | FontTools.cpp | 20 | 4,086 | 8 | 1 | `██████░░░░` 56% |
-| dust.cpp | 7 | 3,770 | 0 | 0 | `░░░░░░░░░░` 0% |
+| dust.cpp | 7 | 3,770 | 7 | 0 | `██████████` 100% |
 | commonfe.cpp | 26 | 3,710 | 0 | 0 | `░░░░░░░░░░` 0% |
 | rail.cpp | 14 | 3,610 | 5 | 2 | `███████░░░` 73% |
 | CreEdit.cpp | 9 | 3,519 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -76,7 +76,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | EditorGlobal.cpp | 14 | 2,379 | 0 | 0 | `░░░░░░░░░░` 0% |
 | m3dzone.cpp | 2 | 2,370 | 1 | 0 | `████████░░` 77% |
 | Credits.cpp | 7 | 2,201 | 0 | 0 | `░░░░░░░░░░` 0% |
-| mech.cpp | 9 | 2,197 | 2 | 1 | `██░░░░░░░░` 17% |
+| mech.cpp | 9 | 2,197 | 4 | 1 | `██░░░░░░░░` 21% |
 | Spooler.cpp | 17 | 2,191 | 0 | 0 | `░░░░░░░░░░` 0% |
 | d3dpoly.cpp | 7 | 2,138 | 0 | 0 | `░░░░░░░░░░` 0% |
 | create_color.cpp | 5 | 2,129 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -145,8 +145,13 @@ Implemented routines and the Rust module that holds them.
 | 00402bb0 | 815 | baddy.cpp | objects.rs |
 | 00403000 | 171 | unattributed | objects.rs |
 | 00403410 | 511 | unattributed | objects.rs |
+| 00403f00 | 71 | bit.cpp | ground.rs |
+| 00403f70 | 20 | bit.cpp | ground.rs |
+| 00406200 | 255 | bit.cpp | ground.rs |
+| 00406330 | 171 | bit.cpp | ground.rs |
 | 00406e30 | 474 | bit.cpp | collision.rs |
 | 00407050 | 384 | bit.cpp | collision.rs |
+| 0040b060 | 315 | unattributed | grind.rs |
 | 0040b650 | 1409 | camera.cpp | camera.rs |
 | 0040bd40 | 249 | camera.cpp | camera.rs |
 | 0040be70 | 508 | unattributed | camera.rs |
@@ -201,6 +206,13 @@ Implemented routines and the Rust module that holds them.
 | 004236d0 | 302 | create.cpp | fresh.rs |
 | 004305f0 | 773 | decomp.cpp | pose.rs |
 | 00430920 | 2157 | decomp.cpp | pose.rs |
+| 00431260 | 192 | dust.cpp | dust.rs |
+| 00431320 | 810 | dust.cpp | dust.rs |
+| 00431650 | 362 | dust.cpp | dust.rs |
+| 004317c0 | 216 | dust.cpp | dust.rs |
+| 004318a0 | 724 | dust.cpp | dust.rs |
+| 00431b80 | 733 | dust.cpp | dust.rs |
+| 00431e80 | 733 | dust.cpp | dust.rs |
 | 004321d0 | 117 | DynamicLogo.cpp | materials.rs |
 | 00432330 | 752 | DynamicLogo.cpp | materials.rs |
 | 00448860 | 289 | exp.cpp | collision.rs |
@@ -252,6 +264,8 @@ Implemented routines and the Rust module that holds them.
 | 0046c5f0 | 62 | unattributed | ground.rs |
 | 0046c630 | 64 | unattributed | ground.rs |
 | 0046c670 | 167 | unattributed | ground.rs |
+| 0046cdf0 | 44 | mech.cpp | score.rs |
+| 0046ce20 | 62 | mech.cpp | score.rs |
 | 0046ce70 | 172 | mech.cpp | score.rs |
 | 0046cf20 | 191 | mech.cpp | score.rs |
 | 0046d1d0 | 77 | unattributed | collision.rs |
@@ -259,10 +273,14 @@ Implemented routines and the Rust module that holds them.
 | 0046d2e0 | 938 | unattributed | collision.rs |
 | 0046d7a0 | 416 | unattributed | ground.rs |
 | 0046d970 | 252 | unattributed | ground.rs |
+| 0046da70 | 684 | unattributed | ground.rs |
+| 0046dd20 | 61 | unattributed | ground.rs |
 | 0046e1d0 | 106 | unattributed | objects.rs |
 | 00475700 | 305 | mmu.cpp | card.rs |
 | 0047b400 | 730 | mmu.cpp | rec.rs |
 | 004801d0 | 31 | ob.cpp | ground.rs |
+| 00480430 | 37 | ob.cpp | pickups.rs |
+| 00480460 | 361 | ob.cpp | pickups.rs |
 | 00480730 | 340 | ob.cpp | anim.rs |
 | 00480950 | 709 | ob.cpp | anim.rs |
 | 00480d90 | 436 | ob.cpp | figure.rs |
@@ -285,6 +303,7 @@ Implemented routines and the Rust module that holds them.
 | 0048e320 | 142 | panel.cpp | tricktext.rs |
 | 0048e3b0 | 623 | panel.cpp | score.rs |
 | 0048e680 | 538 | panel.cpp | score.rs |
+| 0048e8a0 | 163 | unattributed | score.rs |
 | 0048ea80 | 131 | unattributed | collision.rs |
 | 0048eb70 | 59 | unattributed | wall.rs |
 | 0048f3a0 | 491 | physics.cpp | ground.rs |
@@ -342,6 +361,7 @@ Implemented routines and the Rust module that holds them.
 | 004a1060 | 469 | unattributed | objects.rs |
 | 004a12d0 | 354 | unattributed | objects.rs |
 | 004a7c50 | 1275 | powerup.cpp | pickups.rs |
+| 004a8290 | 36 | powerup.cpp | pickups.rs |
 | 004a8300 | 789 | powerup.cpp | pickups.rs |
 | 004a8620 | 195 | powerup.cpp | pickups.rs |
 | 004a86f0 | 842 | powerup.cpp | pickups.rs |
@@ -374,6 +394,7 @@ Implemented routines and the Rust module that holds them.
 | 004b43e0 | 602 | spool.cpp | materials.rs |
 | 004b46a0 | 247 | spool.cpp | materials.rs |
 | 004b82b0 | 137 | unattributed | career.rs |
+| 004b8340 | 31 | unattributed | input.rs |
 | 004b9720 | 8 | texteffects.cpp | tricktext.rs |
 | 004b9790 | 132 | texteffects.cpp | tricktext.rs |
 | 004b9820 | 56 | texteffects.cpp | tricktext.rs |
@@ -504,7 +525,6 @@ Implemented routines and the Rust module that holds them.
 | 00403d30 | 139 | bit.cpp |
 | 00403e40 | 82 | bit.cpp |
 | 004053d0 | 220 | bit.cpp |
-| 0040b060 | 315 | unattributed |
 | 00411fc0 | 1621 | unattributed |
 | 00413d60 | 357 | career.cpp |
 | 00414770 | 61 | career.cpp |
@@ -551,7 +571,6 @@ Implemented routines and the Rust module that holds them.
 | 0046c720 | 1212 | mech.cpp |
 | 0046d040 | 285 | unattributed |
 | 0046d6e0 | 58 | unattributed |
-| 0046dd20 | 61 | unattributed |
 | 0046e080 | 333 | unattributed |
 | 004758e0 | 2324 | mmu.cpp |
 | 0047a0b0 | 363 | mmu.cpp |
@@ -714,4 +733,4 @@ Implemented routines and the Rust module that holds them.
 | 00502f74 | 233 | unattributed |
 | 0050b7a0 | 208 | unattributed |
 
-Status entries outside the function inventory: 0040f850, 00457940, 0046d160, 0049fef0, 004a07e0, 004b9860, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0
+Status entries outside the function inventory: 0040b1d0, 0040f850, 00457940, 0046d160, 0049fef0, 004a07e0, 004b9860, 004b9b30, 004b9c80, 004ba070, 004ba430, 004ba450, 004ba480, 004ba760, 004d4bf0, 004d68b0

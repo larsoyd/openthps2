@@ -9,7 +9,9 @@ use crate::score::{Entry, Panel, Shown, Style, TextEvent, hangar_gap};
 use crate::script::TrickScripts;
 use crate::skater::{STANDING_HEIGHT, dot_q12, mul_q12, normalize, sqrt_int};
 use crate::trig::{Command, Regions, Restart, Triggers};
+pub use dust::{Dust, DustKind};
 
+mod dust;
 mod grind;
 mod manual;
 mod objects;
@@ -29,6 +31,12 @@ const WALL_REACH_BAILING: i32 = 100;
 pub const BOUNCE_REACH: i32 = 10;
 const BOUNCE_REACH_BAILING: i32 = 70;
 pub const UNSTICK_SPAN: i32 = 8000;
+/// Effect objects past which no sparks are thrown.
+pub const EFFECT_LIMIT: usize = 250;
+const BLOOD_SPARKS: usize = 250;
+const ANIM_BAIL_FALL: u16 = 0x2e;
+/// Tony's frame of the bail fall, other skaters spray on 17 or not at all.
+const BAIL_SPRAY_FRAME: i16 = 19;
 const HEAD_REACH: i32 = 0x3c;
 const HEAD_TURN: i32 = 0x200;
 const SHADOW_REACH: i32 = 4000;
@@ -369,6 +377,13 @@ pub enum State {
     Lip,
 }
 
+/// A rail or blood spark, an effect object that only counts against the live limit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Spark {
+    pub age: u16,
+    pub life: u16,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Skater {
     pub state: State,
@@ -439,8 +454,13 @@ pub struct Skater {
     /// Turn within the current half turn on the ground, a lip or in the air, and the half turns done.
     pub spin_angle: i32,
     pub spins: i32,
-    /// Bails that asked for a blood spray, whose sparks this port does not throw yet.
+    /// Bails that asked for a blood spray, and whether one waits for the display pass.
     pub blood_sprays: u32,
+    pub blood_request: bool,
+    pub sparks: Vec<Spark>,
+    pub dust: Dust,
+    /// Effect objects alive when the frame starts, rail sparks need fewer than the limit.
+    pub effects_live: usize,
     /// Where the follow camera stood after the last frame, the air pitch turns by it.
     pub camera: V3,
     /// Camera shakes object scripts asked for this frame, by shake type.
@@ -892,6 +912,10 @@ impl Skater {
             spin_angle: 0,
             spins: 0,
             blood_sprays: 0,
+            blood_request: false,
+            sparks: Vec::new(),
+            dust: Dust::default(),
+            effects_live: 0,
             camera: [0; 3],
             camera_shakes: Vec::new(),
             enabled_rails: Vec::new(),
@@ -1100,6 +1124,7 @@ impl Skater {
                 self.boost += (self.panel.total(self.landed_style()) / 100).min(BOOST_MAX);
                 if self.manual == 0 {
                     self.commit_combo()?;
+                    self.dust.reset(DustKind::Land, self.terrain);
                 }
             }
             self.trick_running = false;
@@ -2353,7 +2378,7 @@ impl Skater {
                 0x32 => self.board_hidden = false,
                 0x33 => self.board_hidden = true,
                 // rumble only changes what is felt
-                0x46 => {}
+                0x46 => self.dust.reset(DustKind::Bail, self.terrain),
                 0x36 => pc += 2,
                 0x37 => pc += 4,
                 0x38 | 0x45 => pc += 6,
@@ -2459,7 +2484,7 @@ impl Skater {
                 }
                 // clears the spin lock, which no ported op sets
                 0x3c => {}
-                0x30 => self.blood_sprays += 1,
+                0x30 => (self.blood_sprays, self.blood_request) = (self.blood_sprays + 1, true),
                 0x4b if dot_q12(self.forward, self.velocity) < -0x800 => pc = scripts.offset(pc)?,
                 0x4b => pc += 2,
                 0x4c if scripts.byte(pc) == Some(native_state(self.state)) => {
@@ -2675,6 +2700,7 @@ impl Skater {
                     // a fast slide that ends still braking picks one of two sounds at random
                     if self.brake_mode == 1 && braking {
                         self.rng.next(0x80);
+                        self.dust.reset(DustKind::Brake, self.terrain);
                     }
                     self.brake_mode = if self.brake_mode == 1 { 3 } else { 6 };
                 }
@@ -3770,6 +3796,7 @@ impl Run {
             ..*level
         };
         let frame = self.clock.current();
+        self.skater.effects_live = self.live_bits();
         let outcome = step_with(&live, &mut self.skater, &mut self.props, rules, frame, pad)?;
         self.skater.probe_shadow(live.world)?;
         self.take_pickup()?;
@@ -3777,6 +3804,10 @@ impl Run {
         self.apply_world_events(level)?;
         let rng = &mut self.skater.rng;
         self.particles.retain_mut(|p| p.update(rng));
+        self.skater.sparks.retain_mut(|s| {
+            s.age += 1;
+            s.age < s.life
+        });
         let at = self.skater.position;
         self.pickups.retain_mut(|p| p.update(at, frame.scale));
         // props draw their random numbers before the script objects
@@ -3803,6 +3834,32 @@ impl Run {
         Ok(outcome)
     }
 
+    /// Effect objects alive, which cap blood and rail sparks.
+    pub fn live_bits(&self) -> usize {
+        let pickups: usize = self
+            .pickups
+            .iter()
+            .map(|p| usize::from(p.shadow) + usize::from(p.glow))
+            .sum();
+        pickups + self.particles.len() + self.skater.sparks.len() + self.skater.dust.clouds()
+    }
+
+    /// The display pass after a frame, before the trick text: a requested blood spray throws
+    /// sparks while fewer than the limit live, each drawing its spread and life.
+    pub fn display(&mut self) {
+        let live = self.live_bits();
+        if !std::mem::take(&mut self.skater.blood_request) || live >= EFFECT_LIMIT {
+            return;
+        }
+        let rng = &mut self.skater.rng;
+        for i in 0..(EFFECT_LIMIT - live).min(BLOOD_SPARKS) {
+            rng.next(1200);
+            rng.next(800);
+            let life = rng.next((i as i32 & 7) + 50) as u16;
+            self.skater.sparks.push(Spark { age: 0, life });
+        }
+    }
+
     /// The powerup the skater's travel this frame passes nearest, if it waits to be taken.
     fn take_pickup(&mut self) -> Result<(), String> {
         let s = &self.skater;
@@ -3812,14 +3869,16 @@ impl Run {
         if !self.pickups[i].active() {
             return Ok(());
         }
-        let pickup = self.pickups.remove(i);
-        match &mut self.career {
-            Some(career) => self.skater.take_pickup(career, &pickup),
-            None => Err(format!(
+        let Some(career) = &mut self.career else {
+            return Err(format!(
                 "pickup node={} taken outside a career",
-                pickup.node
-            )),
+                self.pickups[i].node
+            ));
+        };
+        if self.skater.take_pickup(career, &self.pickups[i])? {
+            self.pickups.remove(i);
         }
+        Ok(())
     }
 
     fn apply_world_events(&mut self, level: &Level) -> Result<(), String> {
@@ -3925,6 +3984,7 @@ pub fn step_with(
     pad: Pad,
 ) -> Result<Outcome, String> {
     let table = level.table;
+    s.dust.update(&mut s.rng);
     s.panel.count_up();
     s.gravity = s.air_gravity(rules);
     s.special.drain(frame.hold_delta);
@@ -3968,6 +4028,11 @@ pub fn step_with(
     s.previous_state = s.state;
     if dispatched == State::Ground && frame.time - s.landed_at > (20 * frame.scale) >> 8 {
         s.start_manual(level, rules, true)?;
+    }
+    // the fall of a bail sprays blood and dust on one frame of its animation
+    if s.bailing && s.anim.id == ANIM_BAIL_FALL && s.anim.frame == BAIL_SPRAY_FRAME {
+        (s.blood_sprays, s.blood_request) = (s.blood_sprays + 1, true);
+        s.dust.reset(DustKind::Bail, s.terrain);
     }
     let outcome = if s.frozen {
         Outcome::Frozen

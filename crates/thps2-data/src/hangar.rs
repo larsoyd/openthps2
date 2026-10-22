@@ -262,6 +262,7 @@ impl Session {
             self.fixes = fixes;
             return Ok(());
         }
+        self.run.display();
         let tricks = self
             .text
             .pass(&hangar.trick_font, &mut self.run.skater, self.fixes)?;

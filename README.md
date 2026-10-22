@@ -19,7 +19,7 @@
 <p align="center">
   <b>Tony Hawk's Pro Skater 2, rebuilt in Rust on your own copy of the game.</b><br>
   The same levels, skaters, physics, tricks and scoring, running natively on modern Windows and Linux,<br>
-  with bugs fixed and room for mods.
+  with bugs fixed, an improved default renderer, and room for mods.
 </p>
 
 > [!IMPORTANT]

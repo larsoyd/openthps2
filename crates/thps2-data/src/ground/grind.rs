@@ -274,7 +274,11 @@ impl Skater {
                 self.rng.next(900);
                 let life = self.rng.next(5) as u16 + 1;
                 self.rng.next(0x9f);
-                self.sparks.push(Spark { age: 0, life });
+                self.sparks.push(Spark {
+                    age: 0,
+                    life,
+                    blood: None,
+                });
             }
         }
         let rails = level.rails;

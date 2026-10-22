@@ -13,7 +13,7 @@ use crate::{
     input::KeyTable,
     materials::{TONY_HAWK_LOGOS, apply_logos, resolve_textures},
     pkr::Archive,
-    pose::Rig,
+    pose::{PoseRecord, Rig},
     pre::Pre,
     psx::Scene,
     rail::Rails,
@@ -263,7 +263,12 @@ impl Session {
             self.fixes = fixes;
             return Ok(());
         }
-        self.run.display();
+        let pose = self.pose(hangar)?;
+        let s = &self.run.skater;
+        let orientation = object_matrix(tilted_basis(s.basis_matrix(), s.balance.angle));
+        let hook = effects::head_hook(&pose, orientation, s.position)
+            .ok_or("[figure] head part missing from the pose")?;
+        self.run.display_at(&level, hook)?;
         let tricks = self
             .text
             .pass(&hangar.trick_font, &mut self.run.skater, self.fixes)?;
@@ -308,13 +313,10 @@ impl Session {
         polys.extend(self.props(hangar, &view)?);
         polys.extend(self.figure.iter().cloned());
         // the effects pass queues after the 3D pass, so its primitives lead their slots
-        let mut effects: Vec<(usize, effects::Prim)> = self
-            .run
-            .particles
-            .iter()
-            .map(|p| view.particle(p))
-            .enumerate()
-            .collect();
+        let particles = self.run.particles.iter().map(|p| view.particle(p));
+        let blood = self.run.skater.sparks.iter().rev();
+        let blood = blood.filter_map(|s| s.blood.as_ref().and_then(|b| view.blood(b)));
+        let mut effects: Vec<(usize, effects::Prim)> = particles.chain(blood).enumerate().collect();
         effects.sort_by(|a, b| b.1.slot.cmp(&a.1.slot).then(b.0.cmp(&a.0)));
         let mut effects = effects.into_iter().map(|e| e.1).peekable();
         let mut draws: Vec<FrameDraw> = Vec::new();
@@ -426,8 +428,8 @@ impl Session {
         Ok(draws)
     }
 
-    /// The skater's polygons for the frame, its pose from the current anim frame.
-    fn figure_polys(&mut self, hangar: &Hangar) -> Result<Vec<Poly>, String> {
+    /// Each part's place for the skater's current anim frame.
+    fn pose(&mut self, hangar: &Hangar) -> Result<Vec<PoseRecord>, String> {
         let s = &self.run.skater;
         let anim = s.anim.id;
         if self.clip.as_ref().is_none_or(|(id, _)| *id != anim) {
@@ -441,7 +443,13 @@ impl Session {
                 frames.len()
             )
         })?;
-        let pose = hangar.figure.rig.pose(frame);
+        Ok(hangar.figure.rig.pose(frame))
+    }
+
+    /// The skater's polygons for the frame, its pose from the current anim frame.
+    fn figure_polys(&mut self, hangar: &Hangar) -> Result<Vec<Poly>, String> {
+        let pose = self.pose(hangar)?;
+        let s = &self.run.skater;
         let view = View::new(
             self.run.camera.eye,
             &self.run.camera.matrix,

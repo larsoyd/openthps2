@@ -377,11 +377,13 @@ pub enum State {
     Lip,
 }
 
-/// A rail or blood spark, an effect object that only counts against the live limit.
+/// A rail or blood spark, an effect object that counts against the live limit. Blood thrown
+/// where the skater's head can be found carries its flight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Spark {
     pub age: u16,
     pub life: u16,
+    pub blood: Option<crate::effects::Blood>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3855,6 +3857,9 @@ impl Run {
         self.particles.retain_mut(|p| p.update(rng));
         self.chunks.retain_mut(Chunk::update);
         self.skater.sparks.retain_mut(|s| {
+            if let Some(blood) = &mut s.blood {
+                blood.update();
+            }
             s.age += 1;
             s.age < s.life
         });
@@ -3902,17 +3907,39 @@ impl Run {
     /// The display pass after a frame, before the trick text: a requested blood spray throws
     /// sparks while fewer than the limit live, each drawing its spread and life.
     pub fn display(&mut self) {
+        self.spray(None)
+            .expect("a spray without a hook probes nothing");
+    }
+
+    /// The display pass with the skater's head hook in Q12, so the blood flies and can be drawn.
+    pub fn display_at(&mut self, level: &Level, hook: V3) -> Result<(), String> {
+        self.spray(Some((level, hook)))
+    }
+
+    fn spray(&mut self, at: Option<(&Level, V3)>) -> Result<(), String> {
         let live = self.live_bits();
         if !std::mem::take(&mut self.skater.blood_request) || live >= EFFECT_LIMIT {
-            return;
+            return Ok(());
         }
-        let rng = &mut self.skater.rng;
+        let origin = match at {
+            Some((level, hook)) => {
+                let world = self.world.as_ref().unwrap_or(level.world);
+                Some(crate::effects::spray_origin(world, hook)?)
+            }
+            None => None,
+        };
+        let s = &mut self.skater;
         for i in 0..(EFFECT_LIMIT - live).min(BLOOD_SPARKS) {
-            rng.next(1200);
-            rng.next(800);
-            let life = rng.next((i as i32 & 7) + 50) as u16;
-            self.skater.sparks.push(Spark { age: 0, life });
+            let spread = [s.rng.next(1200) - 600, s.rng.next(800) - 400];
+            let life = s.rng.next((i as i32 & 7) + 50) as u16;
+            let blood = origin.map(|o| crate::effects::Blood::thrown(o, i, spread, s.velocity));
+            s.sparks.push(Spark {
+                age: 0,
+                life,
+                blood,
+            });
         }
+        Ok(())
     }
 
     /// The powerup the skater's travel this frame passes nearest, if it waits to be taken.

@@ -8,21 +8,21 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 
 | | Functions | Bytes |
 |---|---|---|
-| Implemented | 389 (8.2%) | 219,604 (22.9%) |
-| Recovered | 211 (4.5%) | 91,976 (9.6%) |
-| Open | 4120 | 648,159 |
+| Implemented | 391 (8.3%) | 220,349 (23.0%) |
+| Recovered | 215 (4.6%) | 93,107 (9.7%) |
+| Open | 4114 | 646,283 |
 
-`█████░░░░░░░░░░░░░░░` 22.9% implemented by bytes
+`█████░░░░░░░░░░░░░░░` 23.0% implemented by bytes
 
 ## By original source file
 
 | Source file | Functions | Bytes | Implemented | Recovered | Progress |
 |---|---|---|---|---|---|
-| unattributed | 2977 | 354,046 | 128 | 93 | `█░░░░░░░░░` 14% |
+| unattributed | 2977 | 354,046 | 129 | 96 | `█░░░░░░░░░` 14% |
 | physics.cpp | 110 | 64,313 | 49 | 36 | `███████░░░` 73% |
 | mmu.cpp | 70 | 31,238 | 2 | 9 | `░░░░░░░░░░` 3% |
 | front.cpp | 42 | 29,072 | 5 | 3 | `██░░░░░░░░` 20% |
-| bit.cpp | 123 | 25,393 | 9 | 4 | `█░░░░░░░░░` 9% |
+| bit.cpp | 123 | 25,393 | 10 | 4 | `█░░░░░░░░░` 10% |
 | LevelEditor.cpp | 56 | 23,929 | 0 | 0 | `░░░░░░░░░░` 0% |
 | LevelGen.cpp | 38 | 23,037 | 0 | 0 | `░░░░░░░░░░` 0% |
 | options.cpp | 54 | 22,299 | 0 | 1 | `░░░░░░░░░░` 0% |
@@ -81,7 +81,7 @@ THawk2.exe holds 4720 code functions (959,739 bytes). Each function is attribute
 | d3dpoly.cpp | 7 | 2,138 | 0 | 0 | `░░░░░░░░░░` 0% |
 | create_color.cpp | 5 | 2,129 | 0 | 0 | `░░░░░░░░░░` 0% |
 | pal.cpp | 12 | 2,059 | 1 | 0 | `████░░░░░░` 36% |
-| m3dutils.cpp | 4 | 1,997 | 0 | 0 | `░░░░░░░░░░` 0% |
+| m3dutils.cpp | 4 | 1,997 | 0 | 1 | `░░░░░░░░░░` 0% |
 | FaceRemoval.cpp | 3 | 1,841 | 0 | 0 | `░░░░░░░░░░` 0% |
 | Shatter.cpp | 1 | 1,689 | 1 | 0 | `██████████` 100% |
 | tricksel.cpp | 3 | 1,634 | 0 | 0 | `░░░░░░░░░░` 0% |
@@ -148,8 +148,9 @@ Implemented routines and the Rust module that holds them.
 | 00403f00 | 71 | bit.cpp | ground.rs |
 | 00403f70 | 20 | bit.cpp | ground.rs |
 | 004051c0 | 458 | bit.cpp | collision.rs |
-| 00406200 | 255 | bit.cpp | ground.rs |
-| 00406330 | 171 | bit.cpp | ground.rs |
+| 004060b0 | 167 | bit.cpp | effects.rs |
+| 00406200 | 255 | bit.cpp | effects.rs |
+| 00406330 | 171 | bit.cpp | effects.rs |
 | 004069a0 | 365 | bit.cpp | collision.rs |
 | 00406d00 | 171 | bit.cpp | collision.rs |
 | 00406e30 | 474 | bit.cpp | collision.rs |
@@ -485,6 +486,7 @@ Implemented routines and the Rust module that holds them.
 | 004d29e0 | 959 | unattributed | render.rs |
 | 004d3600 | 188 | unattributed | text.rs |
 | 004d4120 | 117 | unattributed | text.rs |
+| 004d5e40 | 578 | unattributed | effects.rs |
 | 004d8cd0 | 285 | d3dtex.cpp | bitmap.rs |
 | 004d8df0 | 273 | d3dtex.cpp | materials.rs |
 | 004d8f10 | 1010 | d3dtex.cpp | bitmap.rs |
@@ -567,6 +569,7 @@ Implemented routines and the Rust module that holds them.
 | 0045c390 | 130 | unattributed |
 | 004628f0 | 182 | unattributed |
 | 00463d50 | 241 | m3dcolij.cpp |
+| 00464e90 | 459 | m3dutils.cpp |
 | 004657c0 | 100 | unattributed |
 | 00468cf0 | 405 | main.cpp |
 | 00469400 | 412 | main.cpp |
@@ -697,7 +700,9 @@ Implemented routines and the Rust module that holds them.
 | 004e2070 | 182 | unattributed |
 | 004e2130 | 168 | unattributed |
 | 004e2450 | 96 | unattributed |
+| 004e29d0 | 184 | unattributed |
 | 004e2ef0 | 42 | unattributed |
+| 004e3070 | 184 | unattributed |
 | 004e3290 | 151 | unattributed |
 | 004e4190 | 21 | unattributed |
 | 004e42c0 | 901 | unattributed |
@@ -730,6 +735,7 @@ Implemented routines and the Rust module that holds them.
 | 004ed2c0 | 180 | unattributed |
 | 004ed380 | 49 | unattributed |
 | 004ed7d0 | 84 | unattributed |
+| 004f5160 | 304 | unattributed |
 | 004f5f10 | 17 | unattributed |
 | 004f5ff0 | 115 | unattributed |
 | 004f6510 | 52 | unattributed |

@@ -51,9 +51,24 @@ Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 Faithful comes first: anything that changes how the game plays, such as cheats or rebalanced physics, will always be
 something you switch on yourself. Everything that is planned is in the [roadmap](ROADMAP.md).
 
-## Getting started
+### Controls
 
-You need your own **Tony Hawk's Pro Skater 2 for Windows (USA rerelease)**. OpenTHPS2 reads `ALL.PKR` from the game's
+| Key | Action |
+| --- | --- |
+| Arrow keys | Move and steer |
+| Z | Ollie (hold to crouch, release to jump) |
+| X | Flip tricks |
+| C | Grab tricks |
+| V | Grind |
+| A / S | Spin left / right |
+| Enter | Ollie, and choose on the end screens |
+
+These keys are temporary; remappable keyboard and controller input will follow. The window is 640×480 for now.
+
+
+## Manual Build
+
+A binary release and an installer with a picker is planned for both Windows and Linux. But for now you need to manually build towards your own **Tony Hawk's Pro Skater 2 for Windows (USA rerelease)**. OpenTHPS2 reads `ALL.PKR` from the game's
 `SETUP/data` folder and checks it against the known release (SHA-256
 `7e2ae173577c41598dc644824b52f7eaf9664ea478e177a8703f77c0185207da`). There are no release builds yet, so for now you
 build OpenTHPS2 from source with [Rust](https://rust-lang.org/tools/install/).
@@ -88,6 +103,8 @@ Copy `target/x86_64-pc-windows-gnu/release/thps2-rs.exe` to a Windows folder and
 The Windows build is compiled by continuous integration but has not been tried on many machines yet. Reports are
 welcome.
 
+---
+
 ### Linux
 
 Install the build tools and graphics libraries for your distribution, plus the Vulkan driver for your GPU:
@@ -109,19 +126,6 @@ cargo build --locked --release -p thps2-rs --features viewer
 
 On Wayland desktops the game currently runs through XWayland.
 
-### Controls
-
-| Key | Action |
-| --- | --- |
-| Arrow keys | Move and steer |
-| Z | Ollie (hold to crouch, release to jump) |
-| X | Flip tricks |
-| C | Grab tricks |
-| V | Grind |
-| A / S | Spin left / right |
-| Enter | Ollie, and choose on the end screens |
-
-These keys are temporary; remappable keyboard and controller input will follow. The window is 640×480 for now.
 
 ## Contributing
 

@@ -386,6 +386,9 @@ pub struct Skater {
     /// A script swapped the side and stance the next grind start picks, until the ground, an
     /// ollie or a board flip clears it.
     pub mirrored: bool,
+    /// Set by a nollie, read once by a trick script branch, gone after an ollie or a settled
+    /// frame on the ground.
+    pub nollie: bool,
     /// Downward travel accumulated while airborne, Q12.
     pub fall: i32,
     /// Ground distance below the origin minus the standing height at frame start, Q12.
@@ -836,6 +839,7 @@ impl Skater {
             terrain: 0,
             switched: false,
             mirrored: false,
+            nollie: false,
             fall: 0,
             clearance: 0,
             turn: 0,
@@ -1188,7 +1192,7 @@ impl Skater {
             (self.trick_running, self.script, self.manual_pending) = (false, None, None);
             self.balance.kick = 0;
         }
-        (self.armed, self.mirrored) = (false, false);
+        (self.armed, self.mirrored, self.nollie) = (false, false, false);
         self.jumped = true;
         self.vert_jump = self.vert;
         self.pop_speed = speed_of(self.velocity)?;
@@ -2384,9 +2388,18 @@ impl Skater {
                 0x35 => self.switch_on_anim = true,
                 // lip sounds by rail kind
                 0x4f => pc += 8,
-                // a trick database value, how near its end a trick may take a rail and the nollie
-                // flag, none of which this port reads
-                0x2d | 0x4e | 0x51 => pc += 2,
+                // a trick database value and how near its end a trick may take a rail, which this
+                // port does not read
+                0x2d | 0x51 => pc += 2,
+                0x4e if std::mem::take(&mut self.nollie) => pc = scripts.offset(pc)?,
+                0x4e => pc += 2,
+                0x55 => {
+                    self.nollie = scripts
+                        .byte(pc)
+                        .ok_or("trick script nollie flag truncated")?
+                        != 0;
+                    pc += 1;
+                }
                 // clears the spin lock, which no ported op sets
                 0x3c => {}
                 0x30 => self.blood_sprays += 1,
@@ -3890,6 +3903,7 @@ pub fn step_with(
     s.cancel_gaps(level.triggers)?;
     (s.last_start, s.frame_start) = (s.frame_start, s.position);
     let dispatched = s.state;
+    s.previous_state = s.state;
     if dispatched == State::Ground && frame.time - s.landed_at > (20 * frame.scale) >> 8 {
         s.start_manual(level, rules, true)?;
     }
@@ -3953,6 +3967,9 @@ pub fn step_with(
     }
     if s.state == State::Ground {
         s.ground_y = s.position[1];
+    }
+    if s.state == s.previous_state && matches!(s.state, State::Ground | State::Stopped) {
+        s.nollie = false;
     }
     Ok(outcome)
 }

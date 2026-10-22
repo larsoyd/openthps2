@@ -1320,7 +1320,6 @@ impl Skater {
     fn wallie(&mut self, rules: Rules) -> Result<(), String> {
         self.push_entry(Entry {
             trick: true,
-            switched: self.switched,
             ..Entry::new("WALLIE", WALLIE_POINTS, 0, 1)
         });
         self.charge = rules.max_charge(self.stance());
@@ -1360,7 +1359,6 @@ impl Skater {
     fn push_ollie_trick(&mut self, name: &str, points: i32) {
         self.push_entry(Entry {
             trick: true,
-            switched: self.switched,
             ..Entry::new(name, points, 0, 0)
         });
         self.trick_landed = true;
@@ -1640,10 +1638,12 @@ impl Skater {
     }
 
     /// A new entry after a gap freezes the gap's half spins, riding switch adds a fifth.
+    /// The panel keeps the stance of every entry, tricks and gaps alike, for its repeat history.
     fn push_entry(&mut self, mut entry: Entry) {
         if !self.combo {
             return;
         }
+        entry.switched = self.switched;
         if let Some(id) = entry.gap {
             self.career_events.push(CareerEvent::Gap(id));
         }
@@ -1685,7 +1685,6 @@ impl Skater {
         if spin_ollie {
             self.push_entry(Entry {
                 trick: true,
-                switched: self.switched,
                 ..Entry::new("OLLIE", SPIN_OLLIE_POINTS * self.spins, 0, 0)
             });
             self.trick_landed = true;
@@ -2188,7 +2187,6 @@ impl Skater {
         };
         self.push_entry(Entry {
             trick: true,
-            switched: self.switched,
             ..Entry::new(&self.trick_name, self.trick_points, 0, kind)
         });
         self.trick_landed = true;
@@ -3545,7 +3543,6 @@ fn landing_bails(level: &Level, s: &mut Skater, rules: Rules, normal: V3) -> Res
         let points = (s.charge * 5 - 55) * 20;
         s.push_entry(Entry {
             trick: points >= 0,
-            switched: s.switched,
             ..Entry::new("BIG DROP", points.abs(), 0, 0)
         });
     }

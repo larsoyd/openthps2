@@ -33,7 +33,6 @@ impl Skater {
         self.set_state(State::Wall);
         self.push_entry(Entry {
             trick: true,
-            switched: self.switched,
             ..Entry::new("WALL RIDE", WALL_POINTS, 0, 1)
         });
         self.wall_time = self.frame_time;

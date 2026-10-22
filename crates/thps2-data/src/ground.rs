@@ -2686,10 +2686,10 @@ impl Skater {
         if strength == 0 {
             return Ok(0);
         }
-        if self.align_time + 10 < self.now {
+        if self.align_time + 10 < self.frame_time {
             self.align_dir = 0;
         }
-        self.align_time = self.now;
+        self.align_time = self.frame_time;
         let down = normalize(self.slope_gravity);
         let across = cross_q12(short(self.ground_normal), short(down));
         let lean = dot_q12(self.forward, across);

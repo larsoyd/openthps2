@@ -13,6 +13,7 @@ on:
       - ".cargo/config.toml"
       - "rust-toolchain"
       - "rust-toolchain.toml"
+      - ".github/workflows/build.yml"
 
 permissions:
   contents: read
@@ -51,15 +52,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/cache@v6
+        with:
+          path: ~/apt-archives
+          key: apt-ubuntu-24.04-${{ matrix.target }}-v1
+
+      # the azure mirror sometimes serves the mingw packages at a few KB/s
       - name: Install build prerequisites
-        timeout-minutes: 5
+        timeout-minutes: 15
         run: |
-          sudo apt-get update
+          mkdir -p ~/apt-archives/partial
+          apt=(sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o APT::Keep-Downloaded-Packages=true -o Dir::Cache::Archives="$HOME/apt-archives")
+          "${apt[@]}" update
           if [[ "$BUILD_TARGET" == x86_64-pc-windows-gnu ]]; then
-            sudo apt-get install -y --no-install-recommends build-essential pkg-config gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+            "${apt[@]}" install -y --no-install-recommends build-essential pkg-config gcc-mingw-w64-x86-64
           else
-            sudo apt-get install -y --no-install-recommends build-essential pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-x11-0 libvulkan1
+            "${apt[@]}" install -y --no-install-recommends build-essential pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-x11-0 libvulkan1
           fi
+          sudo rm -f ~/apt-archives/lock
+          sudo chown -R "$USER" ~/apt-archives
 
       - name: Install Rust
         timeout-minutes: 5

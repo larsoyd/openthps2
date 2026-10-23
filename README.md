@@ -44,9 +44,11 @@ Every reimplemented routine is listed in [PROGRESS.md](PROGRESS.md).
 - **The real THPS2** - original physics, trick timing, scoring and career, read from your own game data.
 - **Native on Windows and Linux** - a modern 64-bit build of the game.
 - **Modern displays** - high resolutions, widescreen and high refresh rates, with the original 30 Hz simulation kept intact.
-- **Improved Draw Distance and Memory** - The default improved renderer running on your GPU offer improvements like no limits on draw distance or memory allowing for larger skate parks, intricate modifications, and much more!
+- **No hard limits** - the improved GPU renderer drops the original's caps on draw distance and memory, leaving room
+  for larger skate parks and more intricate mods.
 - **Bugs fixed** - clear mistakes of the original are corrected and listed in [BUGFIXES.md](BUGFIXES.md).
-- **Your saves keep working** - career saves and created parks made for the Classic Renderer stay compatible with the original and OpenTHPS2.
+- **Your saves keep working** - career saves and created parks load in both the original and OpenTHPS2. Parks that
+  use the larger limits get an extended format only OpenTHPS2 reads.
 - **Made for modding** - custom skaters, levels and trick scripts are part of the plan from the start.
 
 Faithful comes first: anything that changes how the game plays, such as cheats or mods, will always be
@@ -69,12 +71,13 @@ These keys are temporary; remappable keyboard and controller input will follow. 
 
 ## Manual Build
 
-A binary release and an installer that allows you to graphically pick your THPS2 install and update OpenTHPS2 is planned for both Windows and Linux. 
+Binary releases and a graphical installer that lets you pick your THPS2 install and keeps OpenTHPS2 updated are
+planned for Windows and Linux. Until then you build OpenTHPS2 from source with
+[Rust](https://rust-lang.org/tools/install/).
 
-This has not been implemented yet, however, so for now you need to manually build towards your own **Tony Hawk's Pro Skater 2 for Windows (USA rerelease)**. OpenTHPS2 reads `ALL.PKR` from the game's
+You need your own **Tony Hawk's Pro Skater 2 for Windows (USA rerelease)**. OpenTHPS2 reads `ALL.PKR` from the game's
 `SETUP/data` folder and checks it against the known release (SHA-256
-`7e2ae173577c41598dc644824b52f7eaf9664ea478e177a8703f77c0185207da`). There are no release builds yet, so for now you
-build OpenTHPS2 from source with [Rust](https://rust-lang.org/tools/install/).
+`7e2ae173577c41598dc644824b52f7eaf9664ea478e177a8703f77c0185207da`).
 
 ### Windows
 
@@ -89,7 +92,7 @@ Open Ubuntu, install [Rust](https://rust-lang.org/tools/install/) there, then bu
 
 ```bash
 sudo apt update
-sudo apt install build-essential git curl pkg-config gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+sudo apt install build-essential git curl pkg-config gcc-mingw-w64-x86-64
 rustup target add x86_64-pc-windows-gnu
 git clone https://github.com/larsoyd/openthps2.git
 cd openthps2

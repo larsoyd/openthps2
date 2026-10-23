@@ -66,15 +66,17 @@ The [build workflow](.github/workflows/build.yml) compiles the viewer-enabled ap
 on Ubuntu 24.04 runners. The Windows job checks the cross-compilation route used by Ubuntu WSL; it does not boot WSL
 or verify a Windows launch. Fedora and Arch package recipes are not separately exercised by this workflow.
 
-Runs are restricted to branch pushes changing Rust/shader sources, Cargo manifests/lockfiles or Rust build/toolchain
-configuration. README, other Markdown, media and workflow-only edits do not trigger a build. There is no pull-request,
-scheduled or manual duplicate trigger. The first run therefore requires a subsequent qualifying source push.
+Runs are restricted to branch pushes changing Rust/shader sources, Cargo manifests/lockfiles, Rust build/toolchain
+configuration or the workflow itself. README, other Markdown and media edits do not trigger a build. There is no
+pull-request, scheduled or manual duplicate trigger.
 
 Only builds run: no tests, game launches, original assets or release uploads. The two target jobs run one at a time,
 with two compiler jobs each, per-step deadlines and cancellation of superseded runs on the same branch. Rust is pinned
 in the workflow to keep caches reusable. [rust-cache](https://github.com/Swatinem/rust-cache) restores downloaded
 dependencies and compiled dependency artifacts, keyed by target, toolchain and build inputs. A cold cache or compiler
-update still needs a full dependency build; a cache hit does not imply a measured duration guarantee.
+update still needs a full dependency build; a cache hit does not imply a measured duration guarantee. The Ubuntu
+packages are cached as well, because the runner's package mirror has served the MinGW toolchain slowly enough to
+time out the install.
 
 ## Current architecture and coverage
 

@@ -10,9 +10,11 @@ modern platforms and community creation. Current progress is in [PROGRESS.md](PR
 - **Complete gameplay and career** - every original level, goal, competition, skater and unlock, with THPS2's physics,
   tricks and scoring.
 - **Original audio** - sound effects, music and movies from your own game data, with independent volumes and playlists
-  of your own music. Improved from the original which was plagued with bugs due to the DirectSound wrappers for the audio routines that were originally written around the PlayStation’s SPU (Sound Processing Unit)
-- **Compatible saves and parks** - career saves and created parks that load in both OpenTHPS2 and the original game (as long as both are built for the Classic Renderer),
-  plus automatic backups (autosave) and portable profiles.
+  of your own music. Played on a modern audio backend, without the bugs of the PC version's DirectSound wrappers around
+  sound code written for the PlayStation's sound chip.
+- **Compatible saves and parks** - career saves and created parks load in both OpenTHPS2 and the original game. Parks
+  that use OpenTHPS2's larger limits are saved in an extended format only OpenTHPS2 reads. Automatic backups
+  (autosave) and portable profiles come with them.
 
 ## Platforms and presentation
 
@@ -20,19 +22,27 @@ modern platforms and community creation. Current progress is in [PROGRESS.md](PR
 - **High resolutions and ultrawide** - 1440p, 4K and ultrawide with correct aspect ratios and readable, scalable menus.
 - **High refresh rates** - interpolated movement and animation while the 30 Hz simulation keeps trick timing and
   game speed.
-- **No Hard Limits** - No hard set limits from vanilla like on draw distance, 3d models, and in memory for the default improved rendering.
-- **Classic and modern rendering** - the authentic software look or modern GPU graphics, sharing one simulation. - NB: Classic rendering may fail with a message when loading any skate parks/content relying on its improvements
+- **No hard limits** - the modern renderer drops the original's fixed caps on draw distance, models and memory, so
+  larger custom assets and worlds fit wherever the file formats and game rules allow.
+- **Classic and modern rendering** - the authentic software look or modern GPU graphics, sharing one simulation. The
+  classic renderer keeps the original's limits, so content built beyond them is refused with a clear message.
 - **Displays and cameras** - windowed, fullscreen or borderless play, widescreen-aware framing and adjustable field of
   view.
 - **Keyboard and controllers** - detected modern controllers, remapping and dead zones.
 - **Accessibility** - readable text options and a choice of classic or modern interface.
+- **Installer and updates** - binary releases for Windows and Linux, a graphical installer that lets you pick your
+  THPS2 install and keeps OpenTHPS2 up to date. Update checks can be turned off.
 - **Offline first** - portable or installed builds that find and check your game data and never need an account.
 
 ## Playing together
 
-- **Local multiplayer** - the original alternating-player modes and split screen. A new Versus mode where both play at the same time, and a Sandbox mode where both can skate without time limits.
-- **LAN and online play** - the original multiplayer modes over a network, with version and content checks.
-- **Community servers** - dedicated servers for Windows and Linux with maps, administration and optional modes. Many players at the same time!
+- **Local multiplayer** - the original two player modes (Trick Attack, Graffiti, Tag, HORSE and Free Skate) and split
+  screen, plus a new Versus mode where both play at the same time and a Sandbox mode where both skate without a time
+  limit.
+- **LAN and online play** - the original multiplayer modes over a network between OpenTHPS2 players, with version and
+  content checks. Playing with the original game's DirectPlay network code is not planned.
+- **Community servers** - dedicated servers for Windows and Linux with maps, administration and optional modes, and many
+  players in one session.
 - **Server browser and private sessions** - find servers by ping, players and map, or join a private session.
 - **Spectating** - watch matches without taking a player slot.
 - **Events and leaderboards** - with declared rules, keeping modded results apart from original-rules play.
@@ -55,7 +65,6 @@ modern platforms and community creation. Current progress is in [PROGRESS.md](PR
 - **Practice and challenges** - practice sessions, time trials and custom trick challenges, kept apart from career
   progress.
 - **Modernized defaults** - interface bugs fixed, helpful loading messages and quiet performance improvements.
-- **Expanded limits** - larger custom assets and worlds where the formats and rules allow.
 
 Gameplay stays faithful by default. Cheats, assistance and rebalanced physics will always be opt-in, and fixes of the
 original's bugs are listed in [BUGFIXES.md](BUGFIXES.md).

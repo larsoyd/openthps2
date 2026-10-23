@@ -30,9 +30,9 @@ modern platforms and community creation. Current progress is in [PROGRESS.md](PR
 
 ## Playing together
 
-- **Local multiplayer** - the original alternating-player modes and split screen.
+- **Local multiplayer** - the original alternating-player modes and split screen. A new Versus mode where both play at the same time, and a Sandbox mode where both can skate without time limits.
 - **LAN and online play** - the original multiplayer modes over a network, with version and content checks.
-- **Community servers** - dedicated servers for Windows and Linux with maps, administration and optional modes.
+- **Community servers** - dedicated servers for Windows and Linux with maps, administration and optional modes. Many players at the same time!
 - **Server browser and private sessions** - find servers by ping, players and map, or join a private session.
 - **Spectating** - watch matches without taking a player slot.
 - **Events and leaderboards** - with declared rules, keeping modded results apart from original-rules play.

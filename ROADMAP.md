@@ -36,9 +36,8 @@ modern platforms and community creation. Current progress is in [PROGRESS.md](PR
 
 ## Playing together
 
-- **Local multiplayer** - the original two player modes (Trick Attack, Graffiti, Tag, HORSE and Free Skate) and split
-  screen, plus a new Versus mode where both play at the same time and a Sandbox mode where both skate without a time
-  limit.
+- **Local multiplayer** - the original two player modes (Trick Attack, Graffiti, Tag, HORSE, and Free Skate where both
+  skate without a time limit) and split screen, plus a new Versus mode where both play at the same time.
 - **LAN and online play** - the original multiplayer modes over a network between OpenTHPS2 players, with version and
   content checks. Playing with the original game's DirectPlay network code is not planned.
 - **Community servers** - dedicated servers for Windows and Linux with maps, administration and optional modes, and many
